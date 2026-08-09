@@ -187,8 +187,25 @@ body {
   font-size: 0.85rem;
   white-space: nowrap;
 }
-.time-scheduled-superseded { text-decoration: line-through; opacity: 0.6; }
 .time-row .badge { font-size: 0.78rem; white-space: nowrap; }
+
+/* Platform number: huge, fills the row height, impossible to miss */
+.platform-num {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.1rem;
+  padding-inline: 0.3rem;
+  font-size: 2.1rem;
+  font-weight: 800;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.platform-num-live { color: var(--accent); }
+.platform-num-scheduled { color: var(--text-muted); }
+.min-w-0 { min-width: 0; }
 
 .badge { font-weight: 600; letter-spacing: 0.01em; }
 .badge.bg-primary { background: var(--accent) !important; }

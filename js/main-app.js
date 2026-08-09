@@ -477,10 +477,22 @@ function displayTrainSchedule(trainData) {
       const real = ritardo !== 0 ? realDepartureTime(train) : null
 
       const item = document.createElement('div')
-      item.classList.add('list-group-item', 'py-2')
+      item.classList.add('list-group-item', 'py-2', 'd-flex', 'align-items-stretch', 'gap-2')
+
+      const rawPlatform = train.binarioEffettivoPartenzaDescrizione || train.binarioProgrammatoPartenzaDescrizione
+      const platformIsRealTime = Boolean(train.binarioEffettivoPartenzaDescrizione)
+      const platformLabel = normalizePlatformLabel(rawPlatform)
+
+      const platformNum = document.createElement('div')
+      platformNum.classList.add('platform-num', platformIsRealTime ? 'platform-num-live' : 'platform-num-scheduled')
+      platformNum.textContent = platformLabel || '–'
+      platformNum.title = platformLabel ? `${getLabel('platform')} ${platformLabel}` : getLabel('platformUnknown')
+
+      const details = document.createElement('div')
+      details.classList.add('flex-grow-1', 'min-w-0')
 
       const topRow = document.createElement('div')
-      topRow.classList.add('d-flex', 'align-items-center', 'justify-content-between', 'gap-2')
+      topRow.classList.add('d-flex', 'align-items-center', 'gap-2')
 
       const trainBadge = document.createElement('span')
       trainBadge.classList.add('badge', 'rounded-pill', 'd-inline-flex', 'align-items-center', 'gap-1', 'text-white')
@@ -494,25 +506,14 @@ function displayTrainSchedule(trainData) {
       destination.classList.add('fw-bold', 'text-truncate', 'flex-grow-1')
       destination.textContent = train.destinazione || '—'
 
-      const rawPlatform = train.binarioEffettivoPartenzaDescrizione || train.binarioProgrammatoPartenzaDescrizione
-      const platformIsRealTime = Boolean(train.binarioEffettivoPartenzaDescrizione)
-      const platformLabel = normalizePlatformLabel(rawPlatform)
-
-      const platformBadge = document.createElement('span')
-      platformBadge.classList.add('badge', 'rounded-pill', 'd-inline-flex', 'align-items-center', 'gap-1', platformIsRealTime ? 'bg-primary' : 'bg-secondary', 'bg-opacity-75')
-      const platformIcon = document.createElement('i')
-      platformIcon.classList.add('bi', platformIsRealTime ? 'bi-broadcast-pin' : 'bi-signpost-2')
-      platformBadge.append(platformIcon, document.createTextNode(platformLabel || getLabel('platformUnknown')))
-
-      topRow.append(trainBadge, destination, platformBadge)
+      topRow.append(trainBadge, destination)
 
       const bottomRow = document.createElement('div')
       bottomRow.classList.add('d-flex', 'align-items-center', 'gap-2', 'mt-1', 'time-row')
 
-      // Scheduled time: plain, always shown, struck through when a live time replaces it.
+      // Scheduled time: always shown, plain.
       const scheduledWrap = document.createElement('span')
       scheduledWrap.classList.add('time-scheduled')
-      if (real) scheduledWrap.classList.add('time-scheduled-superseded')
       const scheduledIcon = document.createElement('i')
       scheduledIcon.classList.add('bi', 'bi-clock')
       scheduledWrap.append(scheduledIcon, document.createTextNode(scheduled))
@@ -535,7 +536,8 @@ function displayTrainSchedule(trainData) {
       }
       bottomRow.appendChild(liveBadge)
 
-      item.append(topRow, bottomRow)
+      details.append(topRow, bottomRow)
+      item.append(platformNum, details)
       list.appendChild(item)
     })
 
