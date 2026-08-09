@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Panel Treno</title>
+
+    <!-- Bootstrap CSS -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <!-- Bootstrap Icons -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css"
+      rel="stylesheet"
+    />
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css" />
+
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+  </head>
+  <body class="bg-light">
+    <!-- Header with time and legend -->
+    <header class="app-header fixed-top">
+      <div class="container d-flex flex-column align-items-center py-2">
+        <div class="d-flex align-items-center gap-2 fs-4 fw-bold text-dark">
+          <i class="bi bi-clock-history text-primary"></i>
+          <span id="currentTime"></span>
+        </div>
+
+        <div id="searchLegendContainer">
+          <div
+            class="d-flex align-items-center justify-content-center gap-3 mt-2 small text-muted flex-wrap"
+          >
+            <a href="search.html" class="btn btn-outline-primary btn-sm">
+              <i class="bi bi-search"></i> <span id="text-search"></span>
+            </a>
+
+            <div class="d-flex align-items-center gap-1">
+              <i class="bi bi-diagram-3"></i>
+              <select id="groupBySelect" class="form-select form-select-sm"></select>
+            </div>
+
+            <div class="d-flex align-items-center gap-1">
+              <i class="bi bi-funnel"></i>
+              <input
+                type="text"
+                id="groupFilterInput"
+                class="form-control form-control-sm"
+                style="max-width: 160px"
+              />
+            </div>
+
+            <!-- Légende -->
+            <div id="legend">
+              <!-- JS will inject icons/labels here -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Spacer under header -->
+    <div class="app-header-spacer"></div>
+
+    <!-- Train info cards -->
+    <main id="trainInfo" class="container-fluid pt-3"></main>
+
+    <!-- Footer with update and version info -->
+    <footer class="app-footer fixed-bottom">
+      <div class="container">
+        <div
+          id="controlsContainer"
+          class="d-flex align-items-center justify-content-between flex-nowrap small text-truncate"
+        >
+          <!-- Attribution -->
+          <div
+            id="attribution"
+            class="d-inline-flex align-items-center gap-1 text-truncate"
+          >
+            <i class="bi bi-globe2"></i>
+            <span class="text-truncate">
+              Data:
+              <a
+                href="http://www.viaggiatreno.it"
+                target="_blank"
+                rel="noopener"
+                >ViaggiaTreno (RFI)</a
+              >,
+            </span>
+            <i class="bi bi-arrow-clockwise"></i>
+            <span class="text-truncate" id="updateDate"></span>
+          </div>
+
+          <!-- Version -->
+          <div
+            id="version"
+            class="d-inline-flex align-items-center gap-1 text-truncate"
+          >
+            <i class="bi bi-info-circle"></i>
+            <span>v<span id="versionNumber"></span></span>
+          </div>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Custom JS -->
+    <script src="js/modules/proxy.js"></script>
+    <script src="js/main-app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,171 @@
+/* ===============================
+   Base / Global
+   =============================== */
+html { font-size: 18px; }
+body { padding-bottom: 60px; background-color: #EEE;}
+
+/* ===============================
+   Train Cards
+   =============================== */
+.train-card {
+  border: none;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+  will-change: transform, box-shadow;
+}
+.train-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0.7rem 1.5rem rgba(0,0,0,.10);
+}
+
+/* Header */
+.train-card-header {
+  background: var(--line-color);
+  padding: 12px 16px;
+}
+.train-card-header-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 64px;
+  min-width: 0;
+}
+.train-card-header-left  { display: flex; align-items: center; gap: .5rem; }
+.train-card-header-right { display: flex; align-items: center; gap: .25rem; opacity: .75; }
+
+/* Direction */
+.station-title {
+  flex: 1 1 auto;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1.2;
+  text-shadow: 2px 2px #333;
+}
+
+/* Badge (numero treno) */
+.train-card-header .badge {
+  flex-shrink: 0;
+  max-width: none;
+  white-space: normal;
+  text-overflow: unset;
+  overflow: visible;
+  text-align: center;
+}
+
+/* Liste horaires */
+.list-group-item { padding-top: .35rem; padding-bottom: .35rem; }
+.list-group-item .badge { font-size: .98rem; padding: .5rem .75rem; }
+
+/* Animations */
+@media (prefers-reduced-motion: no-preference) {
+  .transition-soft { transition: transform .2s ease, box-shadow .2s ease; }
+  .train-card.clicked { transform: scale(0.995); }
+}
+
+/* ===============================
+   Header & Footer (glass)
+   =============================== */
+.app-header {
+  background: linear-gradient(135deg, #ffffffcc 0%, #f8f9fae6 100%);
+  backdrop-filter: saturate(160%) blur(12px);
+  -webkit-backdrop-filter: saturate(160%) blur(12px);
+  border-bottom: 2px solid var(--bs-primary);
+  box-shadow: 0 4px 20px rgba(0,0,0,.1);
+  padding-block: .6rem;
+  z-index: 1040;
+}
+.app-header-spacer { height: 92px; }
+.app-header #currentTime {
+  font-size: 1.8rem;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: #212529;
+}
+.app-header #legend { font-size: .95rem; display: flex; gap: 1.5rem; margin-top: .25rem; }
+.app-header #legend i { font-size: 1.2rem; opacity: 0.9; vertical-align: middle; }
+
+.app-footer {
+  --ftr-bg: rgba(255,255,255,0.75);
+  background: var(--ftr-bg);
+  backdrop-filter: saturate(160%) blur(12px);
+  -webkit-backdrop-filter: saturate(160%) blur(12px);
+  border-top: 1px solid rgba(0,0,0,.06);
+  box-shadow: 0 -6px 24px rgba(0,0,0,.08);
+  padding-block: .35rem;
+  z-index: 1040;
+}
+@supports (background: color(display-p3 1 1 1)) {
+  .app-footer { background: color-mix(in srgb, white 78%, transparent); }
+  .app-header { background: color-mix(in srgb, white 72%, transparent); }
+}
+#controlsContainer { font-size: .95rem; }
+#updateDate i, #version i { opacity: .8; }
+
+/* ===============================
+   Utilities
+   =============================== */
+#trainInfo .row > [class*="col"] { min-width: 0; }
+
+/* ===============================
+   Responsive
+   =============================== */
+@media (max-width: 800px) {
+  html { font-size: 14.5px; }
+
+  .app-header-spacer { height: 60px; }
+
+  .app-header #currentTime { font-size: clamp(1.6rem, 5.2vw, 2rem); }
+  .app-header #legend { font-size: clamp(0.95rem, 3.2vw, 1.1rem); }
+  .app-header #legend i { font-size: clamp(1.05rem, 3.6vw, 1.3rem); }
+
+  .train-card-header-left {
+    flex-direction: column;
+    align-items: center;
+    gap: .25rem;
+    width: 100%;
+  }
+  .train-card-header-title,
+  .train-card-header { overflow: visible; }
+
+  .station-title {
+    width: 100%;
+    text-align: center;
+    font-size: clamp(1rem, 4.2vw, 1.4rem);
+    line-height: 1.25;
+    text-shadow: 1px 1px #333;
+  }
+  .train-card-header .badge {
+    font-size: clamp(1rem, 3.6vw, 1.15rem);
+  }
+
+  .list-group-item {
+    font-size: clamp(1.05rem, 3.6vw, 1.2rem);
+    padding-top: .6rem;
+    padding-bottom: .6rem;
+  }
+  .list-group-item .badge {
+    font-size: clamp(1rem, 3.6vw, 1.15rem);
+    padding: .55rem .9rem;
+  }
+
+  #controlsContainer { font-size: clamp(0.95rem, 3.2vw, 1.1rem); }
+}
+
+@media (max-width: 480px) {
+  html { font-size: 12px; }
+}
+
+#controlsContainer {
+  font-size: 0.875rem;
+}
+@media (max-width: 800px) {
+  #controlsContainer {
+    font-size: 0.70rem;
+  }
+}
