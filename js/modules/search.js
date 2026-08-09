@@ -1,42 +1,19 @@
 // Labels
 const TIME_BETWEEN_REQ_ACCEPTABLE = 300 // [ms]
-let language = "it"
 
 const LABELS = {
-  en: {
-    searching: 'Searching',
-    noresult: 'No result',
-    btnsearch: "Search",
-    title: "Search Station"
-  },
-  it: {
-    searching: 'Ricerca in corso',
-    noresult: 'Nessun risultato',
-    btnsearch: "Cerca",
-    title: "Cerca Stazione"
-  },
-  fr: {
-    searching: 'Recherche en cours',
-    noresult: 'Pas de résultat',
-    btnsearch: "Chercher",
-    title: "Rechercher Gare"
-  }
+  searching: 'Searching',
+  noresult: 'No result',
+  btnsearch: 'Search',
+  title: 'Search Station'
 }
 
 function getLabel(key) {
-  const lang = LABELS[language] || LABELS['en']
-  return lang[key]
-}
-
-function getLangFromURL() {
-  return new URLSearchParams(window.location.search).get('lang')
+  return LABELS[key]
 }
 
 // Events
 document.addEventListener('DOMContentLoaded', () => {
-  const paramLang = getLangFromURL()
-  language = paramLang ? paramLang.toLowerCase() : navigator.language.split('-')[0]
-
   document.getElementById("btn-search").textContent = getLabel("btnsearch")
   document.getElementById("title").textContent = getLabel("title")
 })

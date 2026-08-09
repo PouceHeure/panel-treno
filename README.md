@@ -16,10 +16,10 @@ Use `search.html` to find a station by name and get a direct link.
 ```html
 # generic
 <URL>/?stationID=<ID>&stationName=<Name>
-# change language (default = your navigator system language)
-<URL>/?stationID=<ID>&lang={it,en,fr}
 # hide the search/legend bar
 <URL>/?stationID=<ID>&hidebar=true
+# how departures are grouped, and an optional filter applied after grouping
+<URL>/?stationID=<ID>&groupby={platform,destination,category,train}&groupfilter=<text>
 ```
 
 - default ID: `S01700` (Milano Centrale)

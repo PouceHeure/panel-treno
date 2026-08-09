@@ -15,92 +15,37 @@ let appState = ""
 let lastUpdateData = null
 let lastUpdateTime = null
 let autoRefreshInterval = null
-let language = 'it'
 let groupByMode = 'platform'
 let groupFilterText = ''
 
 // =======================
-// Labels (multilingual)
+// Labels (English only)
 // =======================
 const LABELS = {
-  en: {
-    serviceOFF: 'No departures',
-    legend: 'Legend',
-    realTime: 'Real Time',
-    scheduledTime: 'Scheduled Time',
-    waitingConnection: 'Waiting Connection',
-    search: "Search station",
-    update: 'Update',
-    station: 'Station',
-    departed: 'Departed',
-    platform: 'Platform',
-    platformUnknown: 'Platform N/A',
-    onTime: 'On time',
-    scheduled: 'Scheduled',
-    real: 'Real',
-    train: 'Train',
-    groupByPlatform: 'By platform',
-    groupByDestination: 'By destination',
-    groupByCategory: 'By train type',
-    groupByTrain: 'By train (chronological)',
-    nextDepartures: 'Next departures',
-    destinationUnknown: 'Unknown destination',
-    categoryUnknown: 'Unknown type',
-    early: 'early',
-    filterPlaceholder: 'Filter…'
-  },
-  it: {
-    serviceOFF: 'Nessuna partenza',
-    legend: 'Legenda',
-    realTime: 'Tempo Reale',
-    scheduledTime: 'Orario Previsto',
-    waitingConnection: 'Connessione In Corso',
-    search: "Cerca stazione",
-    update: 'Aggiornato',
-    station: 'Stazione',
-    departed: 'Partito',
-    platform: 'Binario',
-    platformUnknown: 'Binario N/D',
-    onTime: 'In orario',
-    scheduled: 'Previsto',
-    real: 'Reale',
-    train: 'Treno',
-    groupByPlatform: 'Per binario',
-    groupByDestination: 'Per destinazione',
-    groupByCategory: 'Per tipo treno',
-    groupByTrain: 'Per treno (cronologico)',
-    nextDepartures: 'Prossime partenze',
-    destinationUnknown: 'Destinazione sconosciuta',
-    categoryUnknown: 'Tipo sconosciuto',
-    early: 'in anticipo',
-    filterPlaceholder: 'Filtro…'
-  },
-  fr: {
-    serviceOFF: 'Aucun départ',
-    legend: 'Légende',
-    realTime: 'Temps Réel',
-    scheduledTime: 'Temps Planifié',
-    waitingConnection: 'Connexion En Cours',
-    search: "Chercher gare",
-    update: 'Mise à Jour',
-    station: 'Gare',
-    departed: 'Parti',
-    platform: 'Voie',
-    platformUnknown: 'Voie N/D',
-    onTime: 'À l\'heure',
-    scheduled: 'Prévu',
-    real: 'Réel',
-    train: 'Train',
-    groupByPlatform: 'Par voie',
-    groupByDestination: 'Par destination',
-    groupByCategory: 'Par type de train',
-    groupByTrain: 'Par train (chronologique)',
-    nextDepartures: 'Prochains départs',
-    destinationUnknown: 'Destination inconnue',
-    categoryUnknown: 'Type inconnu',
-    early: 'avance',
-    filterPlaceholder: 'Filtrer…'
-  }
+  serviceOFF: 'No departures',
+  legend: 'Legend',
+  realTime: 'Real Time',
+  scheduledTime: 'Scheduled Time',
+  waitingConnection: 'Connecting',
+  search: 'Search station',
+  update: 'Updated',
+  station: 'Station',
+  departed: 'Departed',
+  platform: 'Platform',
+  platformUnknown: 'Platform N/A',
+  onTime: 'On time',
+  scheduled: 'Scheduled',
+  real: 'Real',
+  train: 'Train',
+  groupByPlatform: 'By platform',
+  groupByDestination: 'By destination',
+  groupByCategory: 'By train type',
+  groupByTrain: 'By train (chronological)',
+  nextDepartures: 'Next departures',
+  destinationUnknown: 'Unknown destination',
+  categoryUnknown: 'Unknown type',
+  early: 'early',
+  filterPlaceholder: 'Filter…'
 }
 
 // =======================
@@ -169,8 +114,7 @@ function normalizeForCompare(s) {
 // Helpers
 // =======================
 function getLabel(key) {
-  const lang = LABELS[language] || LABELS['en']
-  return lang[key]
+  return LABELS[key]
 }
 
 // URL Param Helpers
@@ -179,9 +123,6 @@ function getStationIDFromURL() {
 }
 function getStationNameFromURL() {
   return new URLSearchParams(window.location.search).get('stationName')
-}
-function getLangFromURL() {
-  return new URLSearchParams(window.location.search).get('lang')
 }
 function getHideBarFromURL() {
   return new URLSearchParams(window.location.search).get('hidebar')
@@ -214,7 +155,7 @@ function clearContainer(el) {
 
 // Date Helpers
 function dateToStringHHMMSS(d) {
-  return d.toLocaleTimeString(navigator.language, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 // Category colors (Trenitalia-ish palette)
@@ -270,7 +211,7 @@ function normalizePlatformLabel(label) {
 // Time helpers
 function formatEpochHHMM(epochMs) {
   if (!epochMs) return null
-  return new Date(epochMs).toLocaleTimeString(navigator.language, { hour: '2-digit', minute: '2-digit' })
+  return new Date(epochMs).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 function realDepartureTime(train) {
   const ritardo = typeof train.ritardo === 'number' ? train.ritardo : 0
@@ -357,7 +298,7 @@ function updateDateRefresh(d) {
 }
 
 function updateDateAndNameStation() {
-  const currentTimeStr = new Date().toLocaleTimeString(navigator.language, {
+  const currentTimeStr = new Date().toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit'
   })
@@ -366,7 +307,7 @@ function updateDateAndNameStation() {
   if (stationName) {
     const stationWorld = getLabel('station')
     title = `${currentTimeStr} - ${stationWorld}: ${stationName}`
-    siteName = `Treno: ${stationName}`
+    siteName = `Train: ${stationName}`
   } else {
     title = `${currentTimeStr} - ${appState}`
     siteName = appState
@@ -623,9 +564,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (paramHideBar != null && paramHideBar.toLowerCase() == 'true') {
     hideBar()
   }
-
-  const paramLang = getLangFromURL()
-  language = paramLang ? paramLang.toLowerCase() : navigator.language.split('-')[0]
 
   const paramGroupBy = getGroupByFromURL()
   if (paramGroupBy && GROUP_MODES.includes(paramGroupBy.toLowerCase())) {
