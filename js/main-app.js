@@ -306,6 +306,22 @@ function initGroupBySelect() {
   })
 }
 
+function initFilterToggle() {
+  const toggle = document.getElementById('filterToggle')
+  const wrap = document.getElementById('filterWrap')
+  const input = document.getElementById('groupFilterInput')
+
+  toggle.addEventListener('click', () => {
+    const expanding = !wrap.classList.contains('expanded')
+    wrap.classList.toggle('expanded', expanding)
+    if (expanding) input.focus()
+  })
+  input.addEventListener('blur', () => {
+    if (!input.value) wrap.classList.remove('expanded')
+  })
+  if (input.value) wrap.classList.add('expanded')
+}
+
 function initGroupFilterInput() {
   const filterInput = document.getElementById('groupFilterInput')
   filterInput.placeholder = getLabel('filterPlaceholder')
@@ -604,9 +620,12 @@ document.addEventListener('DOMContentLoaded', () => {
     groupByMode = paramGroupBy.toLowerCase()
   }
 
-  document.getElementById("text-search").textContent = getLabel("search")
+  const searchLink = document.getElementById("text-search")
+  searchLink.title = getLabel("search")
+  searchLink.setAttribute("aria-label", getLabel("search"))
   initGroupBySelect()
   initGroupFilterInput()
+  initFilterToggle()
   syncStateToURL()
 
   toggleAutoRefresh(true)
