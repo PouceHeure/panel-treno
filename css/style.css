@@ -177,38 +177,18 @@ body {
 }
 .list-group-item:first-child { padding-top: .25rem; }
 
-/* Scheduled / real time pills: equal visual weight, side by side */
-.time-row { width: 100%; }
-.time-pill {
-  flex: 1 1 0;
-  display: flex;
+/* Scheduled time (plain) + real/delay badge (compact), on one line */
+.time-row { width: 100%; flex-wrap: wrap; row-gap: 0.25rem; }
+.time-scheduled {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  min-width: 0;
-  padding: 0.4rem 0.5rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.86rem;
-  font-weight: 500;
+  gap: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
   white-space: nowrap;
 }
-.time-pill strong { font-weight: 700; }
-.time-pill .bi { font-size: 0.95rem; flex-shrink: 0; }
-
-.time-pill-scheduled {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-}
-.time-pill-scheduled .bi { color: var(--text-muted); }
-
-.time-pill-live {
-  border: 1px solid transparent;
-  color: #fff;
-}
-.time-pill-late { background: linear-gradient(135deg, var(--danger), #e0475f); }
-.time-pill-early { background: linear-gradient(135deg, var(--success), #1fb787); color: #04241a; }
-.time-pill-ontime { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+.time-scheduled-superseded { text-decoration: line-through; opacity: 0.6; }
+.time-row .badge { font-size: 0.78rem; white-space: nowrap; }
 
 .badge { font-weight: 600; letter-spacing: 0.01em; }
 .badge.bg-primary { background: var(--accent) !important; }

@@ -40,7 +40,7 @@ const LABELS = {
   groupByPlatform: 'By platform',
   groupByDestination: 'By destination',
   groupByCategory: 'By train type',
-  groupByTrain: 'By train (chronological)',
+  groupByTrain: 'By next departures',
   nextDepartures: 'Next departures',
   destinationUnknown: 'Unknown destination',
   categoryUnknown: 'Unknown type',
@@ -507,32 +507,29 @@ function displayTrainSchedule(trainData) {
       topRow.append(trainBadge, destination, platformBadge)
 
       const bottomRow = document.createElement('div')
-      bottomRow.classList.add('d-flex', 'align-items-stretch', 'gap-2', 'mt-1', 'time-row')
+      bottomRow.classList.add('d-flex', 'align-items-center', 'gap-2', 'mt-1', 'time-row')
 
-      // Scheduled time: always shown, own pill, equal visual weight to the live one.
-      const scheduledBadge = document.createElement('span')
-      scheduledBadge.classList.add('time-pill', 'time-pill-scheduled')
+      // Scheduled time: plain, always shown, struck through when a live time replaces it.
+      const scheduledWrap = document.createElement('span')
+      scheduledWrap.classList.add('time-scheduled')
+      if (real) scheduledWrap.classList.add('time-scheduled-superseded')
       const scheduledIcon = document.createElement('i')
       scheduledIcon.classList.add('bi', 'bi-clock')
-      const scheduledValue = document.createElement('strong')
-      scheduledValue.textContent = scheduled
-      scheduledBadge.append(scheduledIcon, getLabel('scheduled') + ' ', scheduledValue)
-      bottomRow.appendChild(scheduledBadge)
+      scheduledWrap.append(scheduledIcon, document.createTextNode(scheduled))
+      bottomRow.appendChild(scheduledWrap)
 
-      // Real/live time (or on-time confirmation), own pill, color-coded.
+      // Real/live time (or on-time confirmation): compact colored badge.
       const liveBadge = document.createElement('span')
-      liveBadge.classList.add('time-pill', 'time-pill-live')
+      liveBadge.classList.add('badge', 'rounded-pill', 'd-inline-flex', 'align-items-center', 'gap-1')
       const liveIcon = document.createElement('i')
 
       if (real) {
-        liveBadge.classList.add(ritardo > 0 ? 'time-pill-late' : 'time-pill-early')
+        liveBadge.classList.add(ritardo > 0 ? 'bg-danger' : 'bg-success')
         liveIcon.classList.add('bi', 'bi-broadcast-pin')
-        const liveValue = document.createElement('strong')
-        liveValue.textContent = real
         const delayText = ritardo > 0 ? `+${ritardo}′` : `-${Math.abs(ritardo)}′`
-        liveBadge.append(liveIcon, getLabel('real') + ' ', liveValue, document.createTextNode(` (${delayText})`))
+        liveBadge.append(liveIcon, document.createTextNode(`${real} (${delayText})`))
       } else {
-        liveBadge.classList.add('time-pill-ontime')
+        liveBadge.classList.add('bg-primary')
         liveIcon.classList.add('bi', 'bi-check2-circle')
         liveBadge.append(liveIcon, document.createTextNode(getLabel('onTime')))
       }
