@@ -374,6 +374,17 @@ function updateDateAndNameStation() {
 
   document.getElementById('currentTime').textContent = title
   document.title = siteName
+
+  syncHeaderSpacerHeight()
+}
+
+// Keep the spacer under the fixed header exactly as tall as the header itself,
+// since its height varies with font size and station name length/wrapping.
+function syncHeaderSpacerHeight() {
+  const header = document.querySelector('.app-header')
+  const spacer = document.querySelector('.app-header-spacer')
+  if (!header || !spacer) return
+  spacer.style.height = `${header.offsetHeight}px`
 }
 
 // =======================
@@ -596,6 +607,7 @@ function displayTrainSchedule(trainData) {
 // Events
 // =======================
 window.addEventListener('pageshow', e => { if (e.persisted) window.location.reload(true) })
+window.addEventListener('resize', syncHeaderSpacerHeight)
 
 // =======================
 // DOM Ready Init
