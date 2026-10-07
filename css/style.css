@@ -64,7 +64,6 @@ h1, p { margin: 0; }
 .is-slight { color: var(--slight); }
 .is-ok, .is-early { color: var(--ok); }
 .is-at-platform { color: var(--here); }
-.is-approaching { color: var(--slight); }
 .is-here { color: var(--here); }
 
 /* ===============================
@@ -248,7 +247,6 @@ body.view-nerd #groupBySelect { display: none; }
 }
 .platform-tile.is-long { font-size: 0.72rem; line-height: 1.05; text-align: center; padding-inline: 0.1rem; }
 .platform-tile.is-at-platform { background: var(--here); color: var(--on-here); }
-.platform-tile.is-approaching { border: 2px dashed var(--accent); color: var(--accent); }
 .platform-tile.is-not-here { background: var(--tile); }
 
 .flap-time { font-size: 1.05rem; font-weight: 700; white-space: nowrap; }

@@ -9,7 +9,6 @@ const GROUP_MODES = ['platform', 'destination', 'category', 'train']
 const GROUP_ITEM_LIMIT = { platform: 3, destination: 3, category: 3, train: 20 }
 const VIEWS = ['board', 'nerd']
 const LOCALE = 'en-GB'
-const APPROACH_MINUTES = 15 // a running train only counts as "approaching" when it leaves within this window
 const LATE_THRESHOLD = 5 // min: from this delay a train counts as late in the nerd stats
 const TIMELINE_MINUTES = 60
 const NERD_TABLE_LIMIT = 25
@@ -25,7 +24,6 @@ const LABELS = {
   platform: 'Platform',
   platformUnknown: 'No platform yet',
   atPlatform: 'at platform',
-  approaching: 'approaching',
   now: 'now',
   filter: 'Filter',
   filterPlaceholder: 'Filter…',
@@ -188,16 +186,14 @@ function comparePlatforms(a, b) {
   return na - nb || a.localeCompare(b)
 }
 
-// 'at-platform' (in station), 'approaching' (running and due to leave soon) or null.
+// 'at-platform' when the API says the train is in the station, otherwise null.
 // The API keeps inStazione=true after a train has left, so a train whose real
-// departure time is already past is never reported as present. A train that is
-// running but leaves in an hour is not "approaching": it gets no state at all.
+// departure time is already past is never reported as present. Nothing else is
+// claimed: the API does not say how close a running train is.
 function trainPresence(train, now = Date.now()) {
   const real = realDepartureMs(train)
   if (real && real < now) return null
-  if (train.inStazione) return 'at-platform'
-  if (train.circolante && !train.nonPartito && (!real || real - now <= APPROACH_MINUTES * 60000)) return 'approaching'
-  return null
+  return train.inStazione ? 'at-platform' : null
 }
 
 function delayClass(delay) {
@@ -316,8 +312,8 @@ function boardRow(train, now) {
   const dest = el('span', ['flap-dest'])
   dest.append(el('span', ['flap-dest-name'], train.destinazione || '—'))
   const meta = el('span', ['flap-meta'], trainLabel(train))
-  if (presence !== 'not-here') {
-    meta.append(' · ', el('span', [`is-${presence}`], label(presence === 'at-platform' ? 'atPlatform' : 'approaching')))
+  if (presence === 'at-platform') {
+    meta.append(' · ', el('span', ['is-at-platform'], label('atPlatform')))
   }
   dest.append(meta)
 
@@ -375,7 +371,6 @@ function nerdStats(trains, now) {
     medianDelay: median([...delays].sort((a, b) => a - b)),
     worst: worst && delayOf(worst) > 0 ? worst : null,
     atPlatform: presences.filter(p => p === 'at-platform').length,
-    approaching: presences.filter(p => p === 'approaching').length,
     platformsInUse: platforms.size
   }
 }
@@ -397,7 +392,7 @@ function nerdStatTiles(stats) {
       stats.worst ? `${stats.worst.numeroTreno} · ${(stats.worst.destinazione || '').toLowerCase()}` : 'no delay',
       stats.worst ? 'is-late' : 'is-ok'
     ),
-    statTile('at platform', String(stats.atPlatform), `${stats.approaching} approaching`, 'is-here'),
+    statTile('at platform', String(stats.atPlatform), `of ${stats.total} upcoming`, 'is-here'),
     statTile('platforms', String(stats.platformsInUse), 'in use')
   )
   return grid
