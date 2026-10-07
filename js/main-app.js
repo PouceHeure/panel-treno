@@ -9,6 +9,7 @@ const GROUP_MODES = ['platform', 'destination', 'category', 'train']
 const GROUP_ITEM_LIMIT = { platform: 3, destination: 3, category: 3, train: 20 }
 const VIEWS = ['board', 'nerd']
 const LOCALE = 'en-GB'
+const APPROACH_MINUTES = 15 // a running train only counts as "approaching" when it leaves within this window
 const LATE_THRESHOLD = 5 // min: from this delay a train counts as late in the nerd stats
 const TIMELINE_MINUTES = 60
 const NERD_TABLE_LIMIT = 25
@@ -187,14 +188,15 @@ function comparePlatforms(a, b) {
   return na - nb || a.localeCompare(b)
 }
 
-// 'at-platform' (in station), 'approaching' (running, not there yet) or null (not here yet).
+// 'at-platform' (in station), 'approaching' (running and due to leave soon) or null.
 // The API keeps inStazione=true after a train has left, so a train whose real
-// departure time is already past is never reported as present.
+// departure time is already past is never reported as present. A train that is
+// running but leaves in an hour is not "approaching": it gets no state at all.
 function trainPresence(train, now = Date.now()) {
   const real = realDepartureMs(train)
   if (real && real < now) return null
   if (train.inStazione) return 'at-platform'
-  if (train.circolante && !train.nonPartito) return 'approaching'
+  if (train.circolante && !train.nonPartito && (!real || real - now <= APPROACH_MINUTES * 60000)) return 'approaching'
   return null
 }
 
