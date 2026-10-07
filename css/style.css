@@ -216,7 +216,7 @@ body.view-nerd #groupBySelect { display: none; }
 
 .flap-row {
   display: grid;
-  grid-template-columns: 2.6rem 3.9rem 3.9rem minmax(0, 1fr) 4.2rem;
+  grid-template-columns: 2.3rem 3.9rem 3.9rem minmax(0, 1fr) 4.2rem;
   align-items: center;
   gap: 0.5rem;
   padding: 0.6rem 0.35rem;
@@ -238,15 +238,15 @@ body.view-nerd #groupBySelect { display: none; }
   align-items: center;
   justify-content: center;
   align-self: stretch;
-  min-height: 2rem;
+  min-height: 1.75rem;
   border: 2px solid transparent;
   border-radius: 5px;
   color: var(--muted);
-  font-size: 1.25rem;
+  font-size: 1.05rem;
   font-weight: 700;
   line-height: 1;
 }
-.platform-tile.is-long { font-size: 0.8rem; line-height: 1.05; text-align: center; padding-inline: 0.1rem; }
+.platform-tile.is-long { font-size: 0.72rem; line-height: 1.05; text-align: center; padding-inline: 0.1rem; }
 .platform-tile.is-at-platform { background: var(--here); color: var(--on-here); }
 .platform-tile.is-approaching { border: 2px dashed var(--accent); color: var(--accent); }
 .platform-tile.is-not-here { background: var(--tile); }
@@ -446,14 +446,14 @@ body.view-nerd #groupBySelect { display: none; }
   .card-grid { gap: 1.4rem; }
   .card-grid.is-multi { grid-template-columns: minmax(0, 1fr); }
   .station-name { font-size: 1.1rem; }
-  .flap-row { grid-template-columns: 2.2rem 3.2rem 3.8rem minmax(0, 1fr) 3.3rem; gap: 0.4rem; }
+  .flap-row { grid-template-columns: 1.9rem 3.2rem 3.8rem minmax(0, 1fr) 3.3rem; gap: 0.4rem; }
   .flap-time { font-size: 0.98rem; }
-  .platform-tile { font-size: 1.1rem; min-height: 1.9rem; }
+  .platform-tile { font-size: 0.95rem; min-height: 1.65rem; }
   .flap-meta { font-size: 0.74rem; }
   .delay-chip { font-size: 0.72rem; }
   .nerd-trow { grid-template-columns: 2.2rem 4.6rem minmax(0, 1fr) 3.2rem 3.2rem 2.2rem; font-size: 0.72rem; }
 }
 @media (max-width: 380px) {
   .app-footer a { display: none; }
-  .flap-row { grid-template-columns: 2rem 3rem 3.4rem minmax(0, 1fr) 3rem; }
+  .flap-row { grid-template-columns: 1.8rem 3rem 3.4rem minmax(0, 1fr) 3rem; }
 }
