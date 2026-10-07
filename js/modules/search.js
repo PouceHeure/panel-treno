@@ -1,70 +1,77 @@
-// Labels
-const TIME_BETWEEN_REQ_ACCEPTABLE = 300 // [ms]
+const TIME_BETWEEN_REQ_ACCEPTABLE = 300 // ms
 
 const LABELS = {
-  searching: 'Searching',
   noresult: 'No result',
+  failed: 'Search failed, please try again',
   btnsearch: 'Search',
   title: 'Search Station'
 }
 
-function getLabel(key) {
-  return LABELS[key]
-}
-
-// Events
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById("btn-search").textContent = getLabel("btnsearch")
-  document.getElementById("title").textContent = getLabel("title")
-})
-
 function debounce(fn, delay) {
   let timeout
-  return function (...args) {
+  return (...args) => {
     clearTimeout(timeout)
-    timeout = setTimeout(() => fn.apply(this, args), delay)
+    timeout = setTimeout(() => fn(...args), delay)
   }
 }
 
-async function do_req_search(e) {
+function showResultsMessage(text, className) {
+  const message = document.createElement('p')
+  message.className = className
+  message.textContent = text
+  document.getElementById('results').replaceChildren(message)
+}
+
+// Search results are untrusted text: build nodes with textContent, never innerHTML.
+function resultLink(name, id) {
+  const link = document.createElement('a')
+  link.className = 'result-item'
+  link.href = `index.html?stationID=${encodeURIComponent(id)}&stationName=${encodeURIComponent(name)}`
+
+  const nameEl = document.createElement('strong')
+  nameEl.textContent = name
+  const idEl = document.createElement('small')
+  idEl.textContent = id
+  link.append(nameEl, idEl)
+  return link
+}
+
+let latestRequest = 0
+
+async function doSearch(e) {
   e.preventDefault()
-  const keyword = document.getElementById("searchInput").value.trim()
+  const keyword = document.getElementById('searchInput').value.trim()
   if (!keyword) return
 
+  const requestId = ++latestRequest
   const url = `http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/autocompletaStazione/${encodeURIComponent(keyword)}`
-  const resultsDiv = document.getElementById("results")
 
   try {
     const text = await fetchViaProxy(url, { asJSON: false })
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+    if (requestId !== latestRequest) return // a newer search superseded this one
 
-    if (!lines.length) {
-      resultsDiv.innerHTML = `<div class="text-danger">${getLabel("noresult")}.</div>`
+    const stations = text
+      .split('\n')
+      .map(line => line.trim().split('|'))
+      .filter(([name, id]) => name && id)
+
+    if (!stations.length) {
+      showResultsMessage(LABELS.noresult, 'result-error')
       return
     }
-
-    resultsDiv.innerHTML = ""
-    lines.forEach(line => {
-      const [name, id] = line.split('|')
-      if (!name || !id) return
-
-      const link = document.createElement("a")
-      link.href = `index.html?stationID=${id}&stationName=${encodeURIComponent(name)}`
-      link.className = "list-group-item list-group-item-action"
-      link.innerHTML = `
-        <strong>${name}</strong>
-        <small class="text-primary">(${id})</small>
-      `
-      resultsDiv.appendChild(link)
-    })
+    document.getElementById('results').replaceChildren(...stations.map(([name, id]) => resultLink(name, id)))
   } catch (err) {
-    resultsDiv.innerHTML = `<div class="text-danger">Fail during searching</div>`
+    if (requestId !== latestRequest) return
     console.error(err)
+    showResultsMessage(LABELS.failed, 'result-error')
   }
 }
 
-document.getElementById("searchForm").addEventListener("input", debounce(async e => {
-  do_req_search(e)
-}, TIME_BETWEEN_REQ_ACCEPTABLE))
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btn-search').textContent = LABELS.btnsearch
+  document.getElementById('title').textContent = LABELS.title
 
-document.getElementById("searchForm").addEventListener("submit", async e => { do_req_search(e) })
+  const form = document.getElementById('searchForm')
+  form.addEventListener('input', debounce(doSearch, TIME_BETWEEN_REQ_ACCEPTABLE))
+  form.addEventListener('submit', doSearch)
+})
