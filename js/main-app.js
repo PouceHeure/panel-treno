@@ -478,7 +478,7 @@ function nerdScatter(trains, now) {
 
   const panel = el('div', ['nerd-panel'])
   const head = el('div', ['nerd-panel-head'])
-  head.append(el('span', [], 'delay vs scheduled time'), el('span', ['nerd-dim'], '- - moving average'))
+  head.append(el('span', [], 'delay vs scheduled time'))
   panel.append(head)
   if (!points.length) {
     panel.append(el('p', ['nerd-dim'], 'nothing in the next 3 hours'))
@@ -510,14 +510,6 @@ function nerdScatter(trains, now) {
       'text-anchor': minute === 0 ? 'start' : minute === HORIZON_MINUTES ? 'end' : 'middle'
     }, formatTime(new Date(now + minute * 60000))))
   })
-
-  // Moving average over 5 neighbouring trains
-  const avgPath = points.map((p, i) => {
-    const win = points.slice(Math.max(0, i - 2), i + 3)
-    const avg = win.reduce((sum, q) => sum + q.delay, 0) / win.length
-    return `${i === 0 ? 'M' : 'L'}${xOf(p.x).toFixed(1)} ${yOf(avg).toFixed(1)}`
-  }).join(' ')
-  if (points.length > 2) svg.append(svgEl('path', { d: avgPath, class: 'tl-avg' }))
 
   points.forEach(p => {
     const dot = svgEl('circle', { cx: xOf(p.x), cy: yOf(p.delay), r: 4, class: `tl-dot ${delayClass(p.delay)}` })
