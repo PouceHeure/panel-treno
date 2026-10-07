@@ -446,40 +446,14 @@ body.view-nerd #groupBySelect { display: none; }
   .card-grid { gap: 1.4rem; }
   .card-grid.is-multi { grid-template-columns: minmax(0, 1fr); }
   .station-name { font-size: 1.1rem; }
-  .flap-cols { display: none; }
-  .flap-card { padding: 0.2rem 0.6rem 0.5rem; }
-  .flap-title { padding-block: 0.7rem; font-size: 1.05rem; }
-  .flap-row {
-    grid-template-columns: 3rem auto minmax(0, 1fr) auto;
-    grid-template-areas:
-      "tile dest dest cd"
-      "tile sched real real";
-    column-gap: 0.7rem;
-    row-gap: 0.3rem;
-    padding: 0.75rem 0.2rem;
-  }
-  .flap-row > .platform-tile { grid-area: tile; min-height: 3rem; font-size: 1.5rem; }
-  .flap-row > .flap-dest { grid-area: dest; }
-  .flap-row > .flap-countdown { grid-area: cd; align-self: start; font-size: 1.05rem; }
-  .flap-row > .flap-time { grid-area: sched; font-size: 1.2rem; }
-  .flap-row > .flap-realcell { grid-area: real; display: grid; grid-template-columns: auto auto; justify-content: start; align-items: center; column-gap: 0.5rem; }
-  .flap-dest-name { font-size: 1rem; }
-  .flap-meta { font-size: 0.82rem; }
-  .flap-row > .flap-time::before,
-  .flap-realcell::before {
-    display: block;
-    color: var(--muted);
-    font-size: 0.68rem;
-    font-weight: 400;
-    letter-spacing: 0.06em;
-  }
-  .flap-row > .flap-time::before { content: "sched"; }
-  .flap-realcell::before { content: "real"; grid-column: 1 / -1; }
-  .flap-realcell .flap-time { font-size: 1.2rem; }
-  .delay-chip { font-size: 0.8rem; }
+  .flap-row { grid-template-columns: 2.5rem 3.2rem 3.8rem minmax(0, 1fr) 3.3rem; gap: 0.35rem; }
+  .flap-time { font-size: 0.98rem; }
+  .platform-tile { font-size: 1.3rem; }
+  .flap-meta { font-size: 0.74rem; }
+  .delay-chip { font-size: 0.72rem; }
   .nerd-trow { grid-template-columns: 2.2rem 4.6rem minmax(0, 1fr) 3.2rem 3.2rem 2.2rem; font-size: 0.72rem; }
 }
 @media (max-width: 380px) {
   .app-footer a { display: none; }
-  .flap-row { grid-template-columns: 2.6rem auto minmax(0, 1fr) auto; }
+  .flap-row { grid-template-columns: 2.2rem 3rem 3.4rem minmax(0, 1fr) 3rem; }
 }
