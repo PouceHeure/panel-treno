@@ -17,11 +17,13 @@ const CORS_PROXIES = [
   }
 ]
 
+const PROXY_TIMEOUT = 8000 // ms: a hanging proxy must not block the fallbacks
+
 async function fetchViaProxy(targetUrl, { asJSON = true } = {}) {
   let lastErr
   for (const proxy of CORS_PROXIES) {
     try {
-      const res = await fetch(proxy.build(targetUrl), { headers: proxy.headers || {} })
+      const res = await fetch(proxy.build(targetUrl), { headers: proxy.headers || {}, signal: AbortSignal.timeout(PROXY_TIMEOUT) })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const text = await res.text()
       return asJSON ? JSON.parse(text) : text
