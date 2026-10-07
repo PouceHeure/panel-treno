@@ -147,7 +147,10 @@ function normalizePlatformLabel(raw) {
   return arabic ? `${arabic}${match[2]}`.trim() : trimmed
 }
 // 'at-platform' (in station), 'approaching' (running, not there yet) or null (not here yet).
-function trainPresence(train) {
+// The API keeps inStazione=true after a train has left, so a train whose real
+// departure time is already past is never reported as present.
+function trainPresence(train, now = Date.now()) {
+  if (train.orarioPartenza && train.orarioPartenza + delayOf(train) * 60000 < now) return null
   if (train.inStazione) return 'at-platform'
   if (train.circolante && !train.nonPartito) return 'approaching'
   return null
