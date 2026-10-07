@@ -1,13 +1,17 @@
 // =======================
 // Constants
 // =======================
-const APP_VERSION = '1.1.0'
+const APP_VERSION = '2.0.0'
 const REFRESH_REQUEST_INTERVAL = 30 * 1000 // ms
 const CLOCK_INTERVAL = 10 * 1000 // ms
 const TRAIN_MODE_KEY = 'ALL'
 const GROUP_MODES = ['platform', 'destination', 'category', 'train']
 const GROUP_ITEM_LIMIT = { platform: 3, destination: 3, category: 3, train: 20 }
+const VIEWS = ['board', 'nerd']
 const LOCALE = 'en-GB'
+const LATE_THRESHOLD = 5 // min: from this delay a train counts as late in the nerd stats
+const TIMELINE_MINUTES = 60
+const NERD_TABLE_LIMIT = 25
 
 const LABELS = {
   serviceOFF: 'No departures',
@@ -18,11 +22,10 @@ const LABELS = {
   search: 'Search station',
   update: 'Updated',
   platform: 'Platform',
-  platformUnknown: 'Platform not announced yet',
-  onTime: 'On time',
-  atPlatform: 'At the platform',
-  approaching: 'Approaching the station',
-  early: 'early',
+  platformUnknown: 'No platform yet',
+  atPlatform: 'at platform',
+  approaching: 'approaching',
+  now: 'now',
   filter: 'Filter',
   filterPlaceholder: 'Filter…',
   filterHint: 'Separate several values with a comma, | or "or" (e.g. torino, milano)',
@@ -32,7 +35,9 @@ const LABELS = {
   groupByPlatform: 'By platform',
   groupByDestination: 'By destination',
   groupByCategory: 'By train type',
-  groupByTrain: 'By next departures'
+  groupByTrain: 'By next departures',
+  viewNerd: 'nerd mode',
+  viewBoard: 'board'
 }
 const GROUP_LABEL_KEYS = {
   platform: 'groupByPlatform',
@@ -47,15 +52,14 @@ const GROUP_ICONS = {
   train: 'bi-list-ul'
 }
 
-// Train category colors (Trenitalia-ish palette)
-const CATEGORY_COLORS = {
-  FR: '#c8102e', FA: '#c8102e', FB: '#c8102e', ES: '#c8102e',
-  EC: '#2a62b5', EN: '#2a62b5',
-  IC: '#1f7bd1', ICN: '#1f7bd1',
-  RV: '#2e9e6a',
-  REG: '#5b657a', R: '#5b657a'
-}
-const DEFAULT_CATEGORY_COLOR = '#5b657a'
+// Train type families (used for the nerd breakdown)
+const CATEGORY_FAMILIES = [
+  { name: 'regional', codes: ['REG', 'R', 'RV'], color: '#8a8f9c' },
+  { name: 'intercity', codes: ['IC', 'ICN'], color: '#4aa3ff' },
+  { name: 'freccia', codes: ['FR', 'FA', 'FB', 'ES'], color: '#e5484d' },
+  { name: 'eurocity', codes: ['EC', 'EN'], color: '#6f7cff' }
+]
+const OTHER_FAMILY = { name: 'other', color: '#6b6757' }
 
 // =======================
 // State
@@ -65,35 +69,44 @@ let stationName = null
 let lastUpdateData = null
 let groupByMode = 'platform'
 let groupFilterText = ''
+let viewMode = 'board'
 
 // =======================
 // Helpers
 // =======================
 const label = key => LABELS[key]
+const $ = id => document.getElementById(id)
 
 function el(tag, classes = [], text) {
   const node = document.createElement(tag)
-  if (classes.length) node.classList.add(...classes)
+  const names = classes.filter(Boolean)
+  if (names.length) node.classList.add(...names)
   if (text !== undefined) node.textContent = text
   return node
 }
 function icon(name) {
   return el('i', ['bi', name])
 }
-function $(id) {
-  return document.getElementById(id)
+const SVG_NS = 'http://www.w3.org/2000/svg'
+function svgEl(tag, attrs = {}, text) {
+  const node = document.createElementNS(SVG_NS, tag)
+  Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v))
+  if (text !== undefined) node.textContent = text
+  return node
 }
 
 function getParam(name) {
   return new URLSearchParams(window.location.search).get(name)
 }
 
-// Keep groupby/groupfilter in the URL (no reload) so a view can be bookmarked or shared.
+// Keep the view state in the URL (no reload) so a view can be bookmarked or shared.
 function syncStateToURL() {
   const params = new URLSearchParams(window.location.search)
   params.set('groupby', groupByMode)
   if (groupFilterText) params.set('groupfilter', groupFilterText)
   else params.delete('groupfilter')
+  if (viewMode === 'nerd') params.set('view', 'nerd')
+  else params.delete('view')
   window.history.replaceState(null, '', `${window.location.pathname}?${params}${window.location.hash}`)
 }
 
@@ -110,12 +123,28 @@ function formatEpochHHMM(epochMs) {
 function delayOf(train) {
   return typeof train.ritardo === 'number' ? train.ritardo : 0
 }
-function realDepartureTime(train) {
-  return train.orarioPartenza ? formatEpochHHMM(train.orarioPartenza + delayOf(train) * 60000) : null
+function realDepartureMs(train) {
+  return train.orarioPartenza ? train.orarioPartenza + delayOf(train) * 60000 : null
+}
+function scheduledLabel(train) {
+  return train.compOrarioPartenza || formatEpochHHMM(train.orarioPartenza) || '—'
+}
+function realLabel(train) {
+  return delayOf(train) !== 0 ? formatEpochHHMM(realDepartureMs(train)) : null
+}
+function trainLabel(train) {
+  return `${(train.categoria || '').trim()} ${train.numeroTreno}`.trim()
 }
 
-function colorForCategory(cat) {
-  return CATEGORY_COLORS[(cat || '').trim().toUpperCase()] || DEFAULT_CATEGORY_COLOR
+// Minutes until the real departure, as a short label ("now", "9 min", "1h05").
+function countdownLabel(train, now = Date.now()) {
+  if (trainPresence(train, now) === 'at-platform') return label('now')
+  const real = realDepartureMs(train)
+  if (!real) return ''
+  const minutes = Math.max(0, Math.ceil((real - now) / 60000))
+  if (minutes === 0) return label('now')
+  if (minutes < 60) return `${minutes} min`
+  return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}`
 }
 
 // Some stations report platforms as roman numerals ("III", "IV"…): show arabic numbers.
@@ -146,47 +175,49 @@ function normalizePlatformLabel(raw) {
   const arabic = match && romanToArabic(match[1])
   return arabic ? `${arabic}${match[2]}`.trim() : trimmed
 }
+function platformOf(train) {
+  return normalizePlatformLabel(train.binarioEffettivoPartenzaDescrizione || train.binarioProgrammatoPartenzaDescrizione)
+}
+function comparePlatforms(a, b) {
+  const na = parseInt(a, 10)
+  const nb = parseInt(b, 10)
+  if (isNaN(na) && isNaN(nb)) return a.localeCompare(b)
+  if (isNaN(na)) return 1
+  if (isNaN(nb)) return -1
+  return na - nb || a.localeCompare(b)
+}
+
 // 'at-platform' (in station), 'approaching' (running, not there yet) or null (not here yet).
 // The API keeps inStazione=true after a train has left, so a train whose real
 // departure time is already past is never reported as present.
 function trainPresence(train, now = Date.now()) {
-  if (train.orarioPartenza && train.orarioPartenza + delayOf(train) * 60000 < now) return null
+  const real = realDepartureMs(train)
+  if (real && real < now) return null
   if (train.inStazione) return 'at-platform'
   if (train.circolante && !train.nonPartito) return 'approaching'
   return null
 }
-function platformOf(train) {
-  const live = train.binarioEffettivoPartenzaDescrizione
-  const planned = train.binarioProgrammatoPartenzaDescrizione
-  return { label: normalizePlatformLabel(live || planned), isLive: Boolean(live) }
+
+function delayClass(delay) {
+  if (delay >= LATE_THRESHOLD) return 'is-late'
+  if (delay > 0) return 'is-slight'
+  return 'is-ok'
 }
 
 // =======================
-// Grouping & filtering
+// Data selection (shared by both views)
 // =======================
-function getGroupKey(train, mode) {
-  if (mode === 'destination') return train.destinazione || label('destinationUnknown')
-  if (mode === 'category') return (train.categoria || '').trim() || label('categoryUnknown')
-  if (mode === 'train') return TRAIN_MODE_KEY
-  return platformOf(train).label || label('platformUnknown')
+// The API still lists trains that already left: keep only those not yet gone.
+function upcomingTrains(trainData, now = Date.now()) {
+  return trainData
+    .filter(t => !t.nonPartito || t.orarioPartenza)
+    .filter(t => {
+      const real = realDepartureMs(t)
+      return !real || real >= now - 60000
+    })
+    .sort((a, b) => (realDepartureMs(a) || 0) - (realDepartureMs(b) || 0))
 }
-function groupHeaderLabel(mode, key) {
-  if (mode === 'platform') return key === label('platformUnknown') ? key : `${label('platform')} ${key}`
-  if (mode === 'train') return label('nextDepartures')
-  return key
-}
-function sortGroupKeys(mode, keys) {
-  if (mode === 'train') return keys
-  if (mode !== 'platform') return keys.sort((a, b) => a.localeCompare(b))
-  return keys.sort((a, b) => {
-    const na = parseInt(a, 10)
-    const nb = parseInt(b, 10)
-    if (isNaN(na) && isNaN(nb)) return a.localeCompare(b)
-    if (isNaN(na)) return 1
-    if (isNaN(nb)) return -1
-    return na - nb
-  })
-}
+
 // "torino, milano" / "torino | milano" / "torino or milano" -> match any of the terms.
 function parseFilterTerms(text) {
   return text.split(/\s*(?:,|\||\bor\b)\s*/i).map(t => t.trim()).filter(Boolean)
@@ -199,15 +230,31 @@ function trainMatchesFilter(train, terms) {
   return matchesAnyTerm(`${train.categoria || ''} ${train.numeroTreno || ''} ${train.destinazione || ''}`, terms)
 }
 
+// =======================
+// Grouping (board view)
+// =======================
+function getGroupKey(train, mode) {
+  if (mode === 'destination') return train.destinazione || label('destinationUnknown')
+  if (mode === 'category') return (train.categoria || '').trim() || label('categoryUnknown')
+  if (mode === 'train') return TRAIN_MODE_KEY
+  return platformOf(train) || label('platformUnknown')
+}
+function groupHeaderLabel(mode, key) {
+  if (mode === 'platform') return key === label('platformUnknown') ? key : `${label('platform')} ${key}`
+  if (mode === 'train') return label('nextDepartures')
+  return key
+}
+function sortGroupKeys(mode, keys) {
+  if (mode === 'train') return keys
+  if (mode !== 'platform') return keys.sort((a, b) => a.localeCompare(b))
+  return keys.sort(comparePlatforms)
+}
+
 // Returns [{ key, trains }] ready to render (grouped, sorted, filtered, limited).
 function buildGroups(trainData) {
-  const departures = trainData
-    .filter(t => !t.nonPartito || t.orarioPartenza)
-    .sort((a, b) => (a.orarioPartenza || 0) - (b.orarioPartenza || 0))
-
   const filterTerms = parseFilterTerms(groupFilterText)
   const groups = new Map()
-  departures.forEach(train => {
+  upcomingTrains(trainData).forEach(train => {
     if (groupByMode === 'train' && filterTerms.length && !trainMatchesFilter(train, filterTerms)) return
     const key = getGroupKey(train, groupByMode)
     if (!groups.has(key)) groups.set(key, [])
@@ -223,15 +270,13 @@ function buildGroups(trainData) {
 }
 
 // =======================
-// Rendering
+// Board view
 // =======================
 function renderMessage(iconName, text, withRetry = false) {
-  const container = $('trainInfo')
-  container.replaceChildren()
   const box = el('div', ['state-box'])
   box.append(icon(iconName), el('p', [], text))
   if (withRetry) {
-    const btn = el('button', ['btn-retry'], label('retry'))
+    const btn = el('button', ['btn-retry'], 'Retry')
     btn.type = 'button'
     btn.addEventListener('click', () => {
       renderMessage('bi-hourglass-split', label('connecting'))
@@ -239,84 +284,291 @@ function renderMessage(iconName, text, withRetry = false) {
     })
     box.append(btn)
   }
-  container.append(box)
+  $('trainInfo').replaceChildren(box)
 }
 
-function renderTrainRow(train) {
+function boardRow(train, now) {
   const delay = delayOf(train)
-  const scheduled = train.compOrarioPartenza || formatEpochHHMM(train.orarioPartenza) || '—'
-  const real = delay !== 0 ? realDepartureTime(train) : null
+  const presence = trainPresence(train, now) || 'not-here'
   const platform = platformOf(train)
+  const real = realLabel(train)
 
-  const row = el('div', ['train-row'])
-  row.style.setProperty('--cat-color', colorForCategory(train.categoria))
+  const row = el('div', ['flap-row', `is-${presence}`])
 
-  const platformTile = el('div', ['platform-tile', platform.isLive ? 'is-live' : 'is-planned'], platform.label || '–')
-  platformTile.title = platform.label ? `${label('platform')} ${platform.label}` : label('platformUnknown')
+  const tile = el('span', ['platform-tile', `is-${presence}`], platform || '–')
+  tile.title = platform ? `${label('platform')} ${platform}` : label('platformUnknown')
+  if (platform && platform.length > 2) tile.classList.add('is-long')
 
-  const presence = trainPresence(train) || 'not-here'
-  platformTile.classList.add(`is-${presence}`)
+  const sched = el('span', ['flap-time'], scheduledLabel(train))
+  const realEl = real
+    ? el('span', ['flap-time', 'flap-real', delay > 0 ? 'is-late' : 'is-early'], real)
+    : el('span', ['flap-time', 'flap-none'], '--')
+
+  const dest = el('span', ['flap-dest'])
+  dest.append(el('span', ['flap-dest-name'], train.destinazione || '—'))
+  const meta = el('span', ['flap-meta'], trainLabel(train))
   if (presence !== 'not-here') {
-    platformTile.title += ` · ${label(presence === 'at-platform' ? 'atPlatform' : 'approaching')}`
+    meta.append(' · ', el('span', [`is-${presence}`], label(presence === 'at-platform' ? 'atPlatform' : 'approaching')))
   }
-
-  const topRow = el('div', ['train-top'])
-  const trainBadge = el('span', ['train-badge'])
-  trainBadge.append(icon('bi-train-front'), `${(train.categoria || '').trim()} ${train.numeroTreno}`.trim())
-  topRow.append(trainBadge, el('span', ['train-dest'], train.destinazione || '—'))
-
-  const timeRow = el('div', ['train-times'])
-  timeRow.append(el('span', ['time-scheduled'], scheduled))
-
-  if (real) {
-    const late = delay > 0
-    const live = el('span', ['time-live', late ? 'is-late' : 'is-early'])
-    live.append(icon('bi-arrow-right-short'), el('strong', [], real))
-    const delayText = late ? `+${delay} min` : `${Math.abs(delay)} min ${label('early')}`
-    timeRow.append(live, el('span', ['delay-pill', late ? 'is-late' : 'is-early'], delayText))
-  } else {
-    const ok = el('span', ['delay-pill', 'is-ontime'])
-    ok.append(icon('bi-check2-circle'), label('onTime'))
-    timeRow.append(ok)
+  if (delay !== 0) {
+    const text = delay > 0 ? `+${delay}` : `-${Math.abs(delay)}`
+    meta.append(' · ', el('span', [delay > 0 ? 'is-late' : 'is-early'], text))
   }
+  dest.append(meta)
 
-  const details = el('div', ['train-details'])
-  details.append(topRow, timeRow)
-  row.append(platformTile, details)
+  const countdown = el('span', ['flap-countdown'], countdownLabel(train, now))
+  if (presence === 'at-platform') countdown.classList.add('is-at-platform')
+  row.append(tile, sched, realEl, dest, countdown)
   return row
 }
 
-function renderGroupCard(group) {
-  const card = el('article', ['train-card'])
-
-  const header = el('header', ['train-card-header'])
-  header.append(
-    icon(GROUP_ICONS[groupByMode]),
-    el('span', ['train-card-title'], groupHeaderLabel(groupByMode, group.key))
-  )
-  card.append(header)
-
-  const list = el('div', ['train-list'])
-  group.trains.forEach(train => list.append(renderTrainRow(train)))
-  card.append(list)
-  return card
+function boardSection(group, now) {
+  const section = el('section', ['flap-card'])
+  const title = el('header', ['flap-title'])
+  title.append(icon(GROUP_ICONS[groupByMode]), el('span', [], groupHeaderLabel(groupByMode, group.key)))
+  const cols = el('div', ['flap-row', 'flap-cols'])
+  ;['plt', 'sched', 'real', 'to', 'in'].forEach(name => cols.append(el('span', [], name)))
+  section.append(title, cols)
+  group.trains.forEach(train => section.append(boardRow(train, now)))
+  return section
 }
 
-function displayTrainSchedule(trainData) {
+function renderBoard(trainData) {
   const groups = buildGroups(trainData)
   if (groups.length === 0) {
-    const noData = !trainData.length
+    const noData = upcomingTrains(trainData).length === 0
     renderMessage(noData ? 'bi-moon-stars' : 'bi-funnel', label(noData ? 'serviceOFF' : 'noMatch'))
     return
   }
-
+  const now = Date.now()
   const grid = el('div', ['card-grid', groupByMode === 'train' ? 'is-single' : 'is-multi'])
-  groups.forEach(group => grid.append(renderGroupCard(group)))
-  $('trainInfo').replaceChildren(grid)
+  groups.forEach(group => grid.append(boardSection(group, now)))
+  const legend = el('p', ['board-legend'], '-- : on time, or no live data yet')
+  $('trainInfo').replaceChildren(grid, legend)
+}
+
+// =======================
+// Nerd view
+// =======================
+function median(sorted) {
+  if (!sorted.length) return 0
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+function nerdStats(trains, now) {
+  const delays = trains.map(t => Math.max(0, delayOf(t)))
+  const onTime = delays.filter(d => d < LATE_THRESHOLD).length
+  const worst = trains.reduce((best, t) => (!best || delayOf(t) > delayOf(best) ? t : best), null)
+  const presences = trains.map(t => trainPresence(t, now))
+  const platforms = new Set(trains.map(platformOf).filter(Boolean))
+  return {
+    total: trains.length,
+    onTimePct: trains.length ? Math.round((onTime / trains.length) * 100) : 0,
+    onTime,
+    avgDelay: delays.length ? delays.reduce((a, b) => a + b, 0) / delays.length : 0,
+    medianDelay: median([...delays].sort((a, b) => a - b)),
+    worst: worst && delayOf(worst) > 0 ? worst : null,
+    atPlatform: presences.filter(p => p === 'at-platform').length,
+    approaching: presences.filter(p => p === 'approaching').length,
+    platformsInUse: platforms.size
+  }
+}
+
+function statTile(name, value, sub, valueClass = '') {
+  const tile = el('div', ['stat-tile'])
+  tile.append(el('div', ['stat-name'], name), el('div', ['stat-value', valueClass], value), el('div', ['stat-sub'], sub))
+  return tile
+}
+
+function nerdStatTiles(stats) {
+  const grid = el('div', ['stat-grid'])
+  grid.append(
+    statTile('on time', `${stats.onTimePct}%`, `${stats.onTime} / ${stats.total} · under ${LATE_THRESHOLD} min`, 'is-ok'),
+    statTile('avg delay', `+${stats.avgDelay.toFixed(1)}m`, `median +${stats.medianDelay}m`, 'is-slight'),
+    statTile(
+      'worst',
+      stats.worst ? `+${delayOf(stats.worst)}m` : '0m',
+      stats.worst ? `${stats.worst.numeroTreno} · ${(stats.worst.destinazione || '').toLowerCase()}` : 'no delay',
+      stats.worst ? 'is-late' : 'is-ok'
+    ),
+    statTile('at platform', String(stats.atPlatform), `${stats.approaching} approaching`, 'is-here'),
+    statTile('platforms', String(stats.platformsInUse), 'in use')
+  )
+  return grid
+}
+
+// Swimlane: one lane per platform, hollow dot = scheduled, filled dot = real time.
+function nerdTimeline(trains, now) {
+  const windowEnd = now + TIMELINE_MINUTES * 60000
+  const inWindow = trains.filter(t => {
+    const real = realDepartureMs(t)
+    return real && real <= windowEnd && real >= now - 60000
+  })
+  const lanes = Array.from(new Set(inWindow.map(t => platformOf(t) || '–'))).sort(comparePlatforms)
+
+  const panel = el('div', ['nerd-panel'])
+  const head = el('div', ['nerd-panel-head'])
+  head.append(el('span', [], 'platform x time'), el('span', ['nerd-dim'], '○ scheduled   ● real'))
+  panel.append(head)
+  if (!lanes.length) {
+    panel.append(el('p', ['nerd-dim'], 'nothing in the next hour'))
+    return panel
+  }
+
+  const LEFT = 78
+  const RIGHT = 14
+  const LANE_H = 22
+  const TOP = 18
+  const WIDTH = 640
+  const plotW = WIDTH - LEFT - RIGHT
+  const height = TOP + lanes.length * LANE_H + 22
+  const span = TIMELINE_MINUTES * 60000
+  const xOf = ms => LEFT + (Math.min(Math.max(ms - now, 0), span) / span) * plotW
+
+  const svg = svgEl('svg', { viewBox: `0 0 ${WIDTH} ${height}`, role: 'img', class: 'timeline-svg' })
+  svg.append(svgEl('title', {}, 'Platform timeline'))
+  ;[0, 15, 30, 45, 60].forEach(minute => {
+    const x = LEFT + (minute / TIMELINE_MINUTES) * plotW
+    svg.append(svgEl('line', { x1: x, y1: TOP - 4, x2: x, y2: height - 20, class: minute === 0 ? 'tl-now' : 'tl-grid' }))
+    svg.append(svgEl('text', { x, y: height - 6, class: 'tl-label', 'text-anchor': minute === 0 ? 'start' : 'middle' }, minute === 0 ? 'now' : formatTime(new Date(now + minute * 60000))))
+  })
+  lanes.forEach((lane, i) => {
+    svg.append(svgEl('text', { x: 4, y: TOP + i * LANE_H + 14, class: 'tl-label' }, `plt ${lane}`))
+  })
+  inWindow.forEach(t => {
+    const y = TOP + lanes.indexOf(platformOf(t) || '–') * LANE_H + 10
+    const real = realDepartureMs(t)
+    const sched = t.orarioPartenza
+    const cls = delayClass(delayOf(t))
+    if (delayOf(t) !== 0) svg.append(svgEl('line', { x1: xOf(sched), y1: y, x2: xOf(real), y2: y, class: `tl-link ${cls}` }))
+    const tip = `${t.numeroTreno} ${t.destinazione || ''} · plt ${platformOf(t) || '–'} · ${scheduledLabel(t)} → ${formatEpochHHMM(real)}`
+    const hollow = svgEl('circle', { cx: xOf(sched), cy: y, r: 4.5, class: 'tl-hollow' })
+    const filled = svgEl('circle', { cx: xOf(real), cy: y, r: 4.5, class: `tl-dot ${cls}` })
+    ;[hollow, filled].forEach(node => node.append(svgEl('title', {}, tip)))
+    svg.append(hollow, filled)
+  })
+  panel.append(svg)
+  return panel
+}
+
+function barRows(rows) {
+  const max = Math.max(1, ...rows.map(r => r.count))
+  const box = el('div', ['bar-rows'])
+  rows.forEach(r => {
+    const line = el('div', ['bar-row'])
+    const track = el('div', ['bar-track'])
+    const fill = el('div', ['bar-fill'])
+    fill.style.width = `${(r.count / max) * 100}%`
+    fill.style.background = r.color
+    track.append(fill)
+    line.append(el('span', ['bar-name'], r.name), track, el('span', ['bar-count'], String(r.count)))
+    box.append(line)
+  })
+  return box
+}
+
+function nerdPanel(title, content) {
+  const panel = el('div', ['nerd-panel'])
+  panel.append(el('div', ['nerd-panel-head'], title), content)
+  return panel
+}
+
+function nerdBreakdowns(trains) {
+  const buckets = [
+    { name: '0', test: d => d <= 0, color: 'var(--ok)' },
+    { name: '1-2', test: d => d >= 1 && d <= 2, color: 'var(--slight)' },
+    { name: '3-5', test: d => d >= 3 && d <= 5, color: 'var(--slight)' },
+    { name: '6-15', test: d => d >= 6 && d <= 15, color: 'var(--late)' },
+    { name: '15+', test: d => d > 15, color: 'var(--late)' }
+  ].map(b => ({ ...b, count: trains.filter(t => b.test(delayOf(t))).length }))
+
+  const destCounts = new Map()
+  trains.forEach(t => {
+    const name = (t.destinazione || label('destinationUnknown')).toLowerCase()
+    destCounts.set(name, (destCounts.get(name) || 0) + 1)
+  })
+  const topDest = Array.from(destCounts, ([name, count]) => ({ name, count, color: 'var(--here)' }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, 5)
+
+  const families = [...CATEGORY_FAMILIES, OTHER_FAMILY].map(f => ({
+    ...f,
+    count: trains.filter(t => {
+      const code = (t.categoria || '').trim().toUpperCase()
+      return f === OTHER_FAMILY
+        ? !CATEGORY_FAMILIES.some(x => x.codes.includes(code))
+        : f.codes.includes(code)
+    }).length
+  })).filter(f => f.count > 0)
+
+  const grid = el('div', ['nerd-panels'])
+  grid.append(
+    nerdPanel('delay distribution (min)', barRows(buckets)),
+    nerdPanel('top destinations', barRows(topDest)),
+    nerdPanel('by train type', barRows(families))
+  )
+  return grid
+}
+
+function nerdTable(trains, now) {
+  const table = el('div', ['nerd-table'])
+  const head = el('div', ['nerd-trow', 'nerd-thead'])
+  ;['plt', 'train', 'dest', 'sched', 'real', 'delta'].forEach(name => head.append(el('span', [], name)))
+  table.append(head)
+  trains.slice(0, NERD_TABLE_LIMIT).forEach(t => {
+    const delay = delayOf(t)
+    const presence = trainPresence(t, now)
+    const real = realLabel(t)
+    const row = el('div', ['nerd-trow'])
+    row.append(
+      el('span', [presence ? `is-${presence}` : 'nerd-dim'], platformOf(t) || '–'),
+      el('span', [], trainLabel(t)),
+      el('span', ['nerd-dest'], (t.destinazione || '—').toLowerCase()),
+      el('span', [], scheduledLabel(t)),
+      el('span', [real ? delayClass(delay) : 'nerd-dim'], real || '--'),
+      el('span', [delayClass(delay)], delay > 0 ? `+${delay}` : String(delay))
+    )
+    table.append(row)
+  })
+  return table
+}
+
+function renderNerd(trainData) {
+  const now = Date.now()
+  const terms = parseFilterTerms(groupFilterText)
+  const all = upcomingTrains(trainData, now)
+  const trains = all.filter(t => !terms.length || trainMatchesFilter(t, terms))
+  if (!trains.length) {
+    renderMessage(all.length ? 'bi-funnel' : 'bi-moon-stars', label(all.length ? 'noMatch' : 'serviceOFF'))
+    return
+  }
+  const wrap = el('div', ['nerd-wrap'])
+  const prompt = el('p', ['nerd-prompt'], `$ treno --station ${(stationName || stationID).replace(/\s+/g, '_').toUpperCase()} --view nerd`)
+  wrap.append(prompt, nerdStatTiles(nerdStats(trains, now)), nerdTimeline(trains, now), nerdBreakdowns(trains), nerdTable(trains, now))
+  $('trainInfo').replaceChildren(wrap)
+}
+
+// =======================
+// Page chrome
+// =======================
+function render(trainData) {
+  if (viewMode === 'nerd') renderNerd(trainData)
+  else renderBoard(trainData)
+}
+function rerender() {
+  if (lastUpdateData) render(lastUpdateData)
+}
+
+function updateClock() {
+  const chars = formatTime(new Date()).split('')
+  $('currentTime').replaceChildren(
+    ...chars.map(ch => (ch === ':' ? el('span', ['clock-colon'], ':') : el('span', ['clock-digit'], ch)))
+  )
 }
 
 function updateHeader() {
-  $('currentTime').textContent = formatTime(new Date())
+  updateClock()
   $('stationTitle').textContent = stationName || label('connecting')
   document.title = stationName ? `Train: ${stationName}` : 'Panel Treno'
   syncHeaderSpacerHeight()
@@ -333,6 +585,14 @@ function setLiveStatus(ok, date) {
   if (date) $('updateDate').textContent = `${label('update')} ${formatTime(date, true)}`
 }
 
+function applyView() {
+  const nerd = viewMode === 'nerd'
+  document.body.classList.toggle('view-nerd', nerd)
+  $('viewToggleLabel').textContent = label(nerd ? 'viewBoard' : 'viewNerd')
+  $('viewToggle').querySelector('i').className = `bi ${nerd ? 'bi-grid-3x2-gap' : 'bi-terminal'}`
+  syncHeaderSpacerHeight()
+}
+
 // =======================
 // Data
 // =======================
@@ -344,7 +604,7 @@ async function fetchAndDisplay() {
       lastUpdateData = data
       setLiveStatus(true, new Date())
     }
-    if (lastUpdateData) displayTrainSchedule(lastUpdateData)
+    if (lastUpdateData) render(lastUpdateData)
     else renderMessage('bi-moon-stars', label('serviceOFF'))
   } catch (err) {
     console.error('Error fetching data:', err)
@@ -356,10 +616,6 @@ async function fetchAndDisplay() {
 // =======================
 // Controls
 // =======================
-function rerender() {
-  if (lastUpdateData) displayTrainSchedule(lastUpdateData)
-}
-
 function initGroupBySelect() {
   const select = $('groupBySelect')
   GROUP_MODES.forEach(mode => {
@@ -408,6 +664,15 @@ function initFilter() {
   })
 }
 
+function initViewToggle() {
+  $('viewToggle').addEventListener('click', () => {
+    viewMode = viewMode === 'nerd' ? 'board' : 'nerd'
+    applyView()
+    syncStateToURL()
+    rerender()
+  })
+}
+
 // =======================
 // Init
 // =======================
@@ -424,12 +689,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const paramGroupBy = (getParam('groupby') || '').toLowerCase()
   if (GROUP_MODES.includes(paramGroupBy)) groupByMode = paramGroupBy
+  const paramView = (getParam('view') || '').toLowerCase()
+  if (VIEWS.includes(paramView)) viewMode = paramView
 
   const searchLink = $('text-search')
   searchLink.title = label('search')
   searchLink.setAttribute('aria-label', label('search'))
   initGroupBySelect()
   initFilter()
+  initViewToggle()
+  applyView()
   syncStateToURL()
 
   $('versionNumber').textContent = APP_VERSION
@@ -438,5 +707,5 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchAndDisplay()
 
   setInterval(fetchAndDisplay, REFRESH_REQUEST_INTERVAL)
-  setInterval(updateHeader, CLOCK_INTERVAL)
+  setInterval(() => { updateHeader(); rerender() }, CLOCK_INTERVAL)
 })

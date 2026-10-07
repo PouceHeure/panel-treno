@@ -3,8 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0a0e16" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#f2f5fb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16140f" />
     <title>Panel Treno</title>
 
     <link
@@ -18,7 +17,7 @@
       <div class="header-inner">
         <div class="title-row">
           <h1 id="stationTitle" class="station-name"></h1>
-          <span class="clock"><i class="bi bi-clock-history"></i><span id="currentTime"></span></span>
+          <span class="clock" id="currentTime" aria-label="Current time"></span>
         </div>
 
         <div id="searchLegendContainer" class="toolbar">
@@ -32,6 +31,10 @@
             </button>
             <input type="text" id="groupFilterInput" autocomplete="off" />
           </div>
+
+          <button type="button" class="pill-btn" id="viewToggle">
+            <i class="bi bi-terminal"></i><span id="viewToggleLabel"></span>
+          </button>
         </div>
       </div>
     </header>
