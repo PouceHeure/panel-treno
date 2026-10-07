@@ -297,6 +297,9 @@ body.view-nerd #groupBySelect { display: none; }
 .tl-dot.is-ok { fill: var(--ok); }
 .tl-dot.is-slight { fill: var(--slight); }
 .tl-dot.is-late { fill: var(--late); }
+.tl-avg { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.slot-bar { fill: var(--accent); opacity: 0.55; }
+.slot-bar.is-peak { opacity: 1; }
 .tl-link { stroke-width: 2; }
 .tl-link.is-ok { stroke: var(--ok); }
 .tl-link.is-slight { stroke: var(--slight); }

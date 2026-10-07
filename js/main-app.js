@@ -11,6 +11,8 @@ const VIEWS = ['board', 'nerd']
 const LOCALE = 'en-GB'
 const LATE_THRESHOLD = 5 // min: from this delay a train counts as late in the nerd stats
 const TIMELINE_MINUTES = 60
+const HORIZON_MINUTES = 180 // window of the density / scatter / busiest-platform panels
+const SLOT_MINUTES = 15
 const NERD_TABLE_LIMIT = 25
 
 const LABELS = {
@@ -452,6 +454,132 @@ function nerdTimeline(trains, now) {
   return panel
 }
 
+// Trains whose real departure falls in [now - 1 min, now + HORIZON_MINUTES].
+function trainsInHorizon(trains, now) {
+  const end = now + HORIZON_MINUTES * 60000
+  return trains.filter(t => {
+    const real = realDepartureMs(t)
+    return real && real >= now - 60000 && real <= end
+  })
+}
+
+function svgChart(height, titleText) {
+  const svg = svgEl('svg', { viewBox: `0 0 640 ${height}`, role: 'img', class: 'timeline-svg' })
+  svg.append(svgEl('title', {}, titleText))
+  return svg
+}
+
+// Delay (y) against scheduled time (x): do delays build up over the evening?
+function nerdScatter(trains, now) {
+  const points = trainsInHorizon(trains, now)
+    .filter(t => t.orarioPartenza)
+    .map(t => ({ train: t, x: t.orarioPartenza, delay: Math.max(0, delayOf(t)) }))
+    .sort((a, b) => a.x - b.x)
+
+  const panel = el('div', ['nerd-panel'])
+  const head = el('div', ['nerd-panel-head'])
+  head.append(el('span', [], 'delay vs scheduled time'), el('span', ['nerd-dim'], '- - moving average'))
+  panel.append(head)
+  if (!points.length) {
+    panel.append(el('p', ['nerd-dim'], 'nothing in the next 3 hours'))
+    return panel
+  }
+
+  const LEFT = 40
+  const RIGHT = 12
+  const TOP = 12
+  const H = 150
+  const plotH = H - TOP - 24
+  const plotW = 640 - LEFT - RIGHT
+  const span = HORIZON_MINUTES * 60000
+  const maxDelay = Math.max(20, ...points.map(p => p.delay))
+  const yMax = Math.ceil(maxDelay / 20) * 20 // multiple of 20 so the middle tick is a round number
+  const xOf = ms => LEFT + (Math.min(Math.max(ms - now, 0), span) / span) * plotW
+  const yOf = d => TOP + plotH - (Math.min(d, yMax) / yMax) * plotH
+
+  const svg = svgChart(H, 'Delay versus scheduled time')
+  for (let v = 0; v <= yMax; v += yMax / 2) {
+    svg.append(svgEl('line', { x1: LEFT, y1: yOf(v), x2: 640 - RIGHT, y2: yOf(v), class: 'tl-grid' }))
+    svg.append(svgEl('text', { x: 4, y: yOf(v) + 4, class: 'tl-label' }, `+${Math.round(v)}`))
+  }
+  ;[0, 60, 120, 180].forEach(minute => {
+    svg.append(svgEl('text', {
+      x: LEFT + (minute / HORIZON_MINUTES) * plotW,
+      y: H - 6,
+      class: 'tl-label',
+      'text-anchor': minute === 0 ? 'start' : minute === HORIZON_MINUTES ? 'end' : 'middle'
+    }, formatTime(new Date(now + minute * 60000))))
+  })
+
+  // Moving average over 5 neighbouring trains
+  const avgPath = points.map((p, i) => {
+    const win = points.slice(Math.max(0, i - 2), i + 3)
+    const avg = win.reduce((sum, q) => sum + q.delay, 0) / win.length
+    return `${i === 0 ? 'M' : 'L'}${xOf(p.x).toFixed(1)} ${yOf(avg).toFixed(1)}`
+  }).join(' ')
+  if (points.length > 2) svg.append(svgEl('path', { d: avgPath, class: 'tl-avg' }))
+
+  points.forEach(p => {
+    const dot = svgEl('circle', { cx: xOf(p.x), cy: yOf(p.delay), r: 4, class: `tl-dot ${delayClass(p.delay)}` })
+    dot.append(svgEl('title', {}, `${trainLabel(p.train)} ${p.train.destinazione || ''} · ${scheduledLabel(p.train)} · +${p.delay} min`))
+    svg.append(dot)
+  })
+  panel.append(svg)
+  return panel
+}
+
+// Departures per 15-minute slot over the horizon: when does the station get busy?
+function nerdDepartureSlots(trains, now) {
+  const slots = Array.from({ length: HORIZON_MINUTES / SLOT_MINUTES }, () => 0)
+  trainsInHorizon(trains, now).forEach(t => {
+    const index = Math.floor((realDepartureMs(t) - now) / (SLOT_MINUTES * 60000))
+    if (index >= 0 && index < slots.length) slots[index] += 1
+  })
+  const max = Math.max(...slots)
+
+  const panel = el('div', ['nerd-panel'])
+  const head = el('div', ['nerd-panel-head'])
+  const busiest = max > 0 ? slots.indexOf(max) : -1
+  head.append(
+    el('span', [], `departures per ${SLOT_MINUTES} min, next 3h`),
+    el('span', ['nerd-dim'], busiest >= 0 ? `busiest: ${formatTime(new Date(now + busiest * SLOT_MINUTES * 60000))} (${max})` : '')
+  )
+  panel.append(head)
+  if (max === 0) {
+    panel.append(el('p', ['nerd-dim'], 'nothing in the next 3 hours'))
+    return panel
+  }
+
+  const H = 118
+  const barArea = 64
+  const slotW = 640 / slots.length
+  const svg = svgChart(H, 'Departures per time slot')
+  slots.forEach((count, i) => {
+    const h = (count / max) * barArea
+    const bar = svgEl('rect', { x: i * slotW + 4, y: 22 + barArea - h, width: slotW - 8, height: Math.max(h, count ? 2 : 0), class: i === busiest ? 'slot-bar is-peak' : 'slot-bar' })
+    bar.append(svgEl('title', {}, `${formatTime(new Date(now + i * SLOT_MINUTES * 60000))}: ${count} departures`))
+    svg.append(bar)
+    if (count) svg.append(svgEl('text', { x: i * slotW + slotW / 2, y: 18 + barArea - h, class: 'tl-label', 'text-anchor': 'middle' }, String(count)))
+  })
+  ;[0, 3, 6, 9].forEach(i => {
+    svg.append(svgEl('text', { x: i * slotW + 4, y: H - 8, class: 'tl-label' }, formatTime(new Date(now + i * SLOT_MINUTES * 60000))))
+  })
+  panel.append(svg)
+  return panel
+}
+
+function nerdBusiestPlatforms(trains, now) {
+  const counts = new Map()
+  trainsInHorizon(trains, now).forEach(t => {
+    const platform = platformOf(t)
+    if (platform) counts.set(platform, (counts.get(platform) || 0) + 1)
+  })
+  const rows = Array.from(counts, ([name, count]) => ({ name: `plt ${name}`, count, color: 'var(--here)' }))
+    .sort((a, b) => b.count - a.count || comparePlatforms(a.name.slice(4), b.name.slice(4)))
+    .slice(0, 8)
+  return nerdPanel('busiest platforms, next 3h', rows.length ? barRows(rows) : el('p', ['nerd-dim'], 'no platform announced'))
+}
+
 function barRows(rows) {
   const max = Math.max(1, ...rows.map(r => r.count))
   const box = el('div', ['bar-rows'])
@@ -474,7 +602,7 @@ function nerdPanel(title, content) {
   return panel
 }
 
-function nerdBreakdowns(trains) {
+function nerdBreakdowns(trains, now) {
   const buckets = [
     { name: '0', test: d => d <= 0, color: 'var(--ok)' },
     { name: '1-2', test: d => d >= 1 && d <= 2, color: 'var(--slight)' },
@@ -506,7 +634,8 @@ function nerdBreakdowns(trains) {
   grid.append(
     nerdPanel('delay distribution (min)', barRows(buckets)),
     nerdPanel('top destinations', barRows(topDest)),
-    nerdPanel('by train type', barRows(families))
+    nerdPanel('by train type', barRows(families)),
+    nerdBusiestPlatforms(trains, now)
   )
   return grid
 }
@@ -545,7 +674,15 @@ function renderNerd(trainData) {
   }
   const wrap = el('div', ['nerd-wrap'])
   const prompt = el('p', ['nerd-prompt'], `$ treno --station ${(stationName || stationID).replace(/\s+/g, '_').toUpperCase()} --view nerd`)
-  wrap.append(prompt, nerdStatTiles(nerdStats(trains, now)), nerdTimeline(trains, now), nerdBreakdowns(trains), nerdTable(trains, now))
+  wrap.append(
+    prompt,
+    nerdStatTiles(nerdStats(trains, now)),
+    nerdTimeline(trains, now),
+    nerdScatter(trains, now),
+    nerdDepartureSlots(trains, now),
+    nerdBreakdowns(trains, now),
+    nerdTable(trains, now)
+  )
   $('trainInfo').replaceChildren(wrap)
 }
 
