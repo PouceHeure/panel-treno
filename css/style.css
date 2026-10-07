@@ -216,6 +216,7 @@ h1, p { margin: 0; }
 .train-row + .train-row { border-top: 1px solid var(--border); }
 
 .platform-tile {
+  position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -509,3 +510,24 @@ html { scrollbar-color: var(--surface-3) transparent; scrollbar-width: thin; }
   .status-pill.is-early, .delay-pill.is-early { color: #0b7a58; }
   #groupBySelect { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 16 16' fill='%235b6780'%3E%3Cpath d='M1.65 5.65a.5.5 0 0 1 .7 0L8 11.29l5.65-5.64a.5.5 0 0 1 .7.7l-6 6a.5.5 0 0 1-.7 0l-6-6a.5.5 0 0 1 0-.7z'/%3E%3C/svg%3E"); }
 }
+
+/* Train presence: tiny dot on the platform tile corner.
+   solid green + pulse = at the platform, hollow amber ring = approaching, nothing = not there yet. */
+.presence-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.presence-dot.is-at-platform {
+  background: var(--success);
+  box-shadow: 0 0 0 0 rgba(52, 214, 160, 0.6);
+  animation: pulse 2s infinite;
+}
+.presence-dot.is-approaching {
+  border: 2px solid #f5b83d;
+  background: transparent;
+}
+@media (prefers-reduced-motion: reduce) { .presence-dot.is-at-platform { animation: none; } }

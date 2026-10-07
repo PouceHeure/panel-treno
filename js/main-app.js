@@ -20,6 +20,8 @@ const LABELS = {
   platform: 'Platform',
   platformUnknown: 'Platform not announced yet',
   onTime: 'On time',
+  atPlatform: 'At the platform',
+  approaching: 'Approaching the station',
   early: 'early',
   filter: 'Filter',
   filterPlaceholder: 'Filter…',
@@ -144,6 +146,12 @@ function normalizePlatformLabel(raw) {
   const arabic = match && romanToArabic(match[1])
   return arabic ? `${arabic}${match[2]}`.trim() : trimmed
 }
+// 'at-platform' (in station), 'approaching' (running, not there yet) or null (not started).
+function trainPresence(train) {
+  if (train.inStazione) return 'at-platform'
+  if (train.circolante && !train.nonPartito) return 'approaching'
+  return null
+}
 function platformOf(train) {
   const live = train.binarioEffettivoPartenzaDescrizione
   const planned = train.binarioProgrammatoPartenzaDescrizione
@@ -242,6 +250,16 @@ function renderTrainRow(train) {
 
   const platformTile = el('div', ['platform-tile', platform.isLive ? 'is-live' : 'is-planned'], platform.label || '–')
   platformTile.title = platform.label ? `${label('platform')} ${platform.label}` : label('platformUnknown')
+
+  const presence = trainPresence(train)
+  if (presence) {
+    const dot = el('span', ['presence-dot', `is-${presence}`])
+    const text = label(presence === 'at-platform' ? 'atPlatform' : 'approaching')
+    dot.setAttribute('role', 'img')
+    dot.setAttribute('aria-label', text)
+    platformTile.title += ` · ${text}`
+    platformTile.append(dot)
+  }
 
   const topRow = el('div', ['train-top'])
   const trainBadge = el('span', ['train-badge'])
