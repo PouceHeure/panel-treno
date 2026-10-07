@@ -256,30 +256,38 @@ h1, p { margin: 0; }
   font-weight: 700;
 }
 
-.train-times { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem 0.6rem; }
+.train-times { display: flex; align-items: center; flex-wrap: wrap; gap: 0.15rem 0.6rem; }
 .time-scheduled {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  color: var(--text-muted);
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
   white-space: nowrap;
 }
-.status-pill {
+.time-live {
+  display: inline-flex;
+  align-items: center;
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.time-live .bi { font-size: 1.6rem; opacity: 0.8; margin-left: -0.2rem; }
+.time-live.is-late { color: var(--danger); }
+.time-live.is-early { color: var(--success); }
+.delay-pill {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
   padding: 0.15rem 0.6rem;
   border-radius: 999px;
   font-size: 0.78rem;
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
 }
-.status-pill strong { font-weight: 800; }
-.status-pill.is-ontime { background: rgba(91, 148, 255, 0.16); color: var(--accent); }
-.status-pill.is-late { background: var(--danger); color: #fff; }
-.status-pill.is-early { background: var(--success); color: #04261b; }
+.delay-pill.is-ontime { background: rgba(91, 148, 255, 0.16); color: var(--accent); }
+.delay-pill.is-late { background: rgba(255, 95, 118, 0.16); color: var(--danger); }
+.delay-pill.is-early { background: rgba(52, 214, 160, 0.16); color: var(--success); }
 
 /* ===============================
    Empty / error states
@@ -409,5 +417,6 @@ h1, p { margin: 0; }
 }
 @media (max-width: 380px) {
   .platform-tile { min-width: 2.6rem; font-size: 1.7rem; }
+  .time-scheduled, .time-live { font-size: 1.3rem; }
   .app-footer a { display: none; }
 }

@@ -249,19 +249,19 @@ function renderTrainRow(train) {
   topRow.append(trainBadge, el('span', ['train-dest'], train.destinazione || '—'))
 
   const timeRow = el('div', ['train-times'])
-  const scheduledEl = el('span', ['time-scheduled'])
-  scheduledEl.append(icon('bi-clock'), scheduled)
+  timeRow.append(el('span', ['time-scheduled'], scheduled))
 
-  const status = el('span', ['status-pill'])
   if (real) {
-    status.classList.add(delay > 0 ? 'is-late' : 'is-early')
-    const delayText = delay > 0 ? `+${delay} min` : `${Math.abs(delay)} min ${label('early')}`
-    status.append(icon('bi-broadcast-pin'), el('strong', [], real), ` · ${delayText}`)
+    const late = delay > 0
+    const live = el('span', ['time-live', late ? 'is-late' : 'is-early'])
+    live.append(icon('bi-arrow-right-short'), el('strong', [], real))
+    const delayText = late ? `+${delay} min` : `${Math.abs(delay)} min ${label('early')}`
+    timeRow.append(live, el('span', ['delay-pill', late ? 'is-late' : 'is-early'], delayText))
   } else {
-    status.classList.add('is-ontime')
-    status.append(icon('bi-check2-circle'), label('onTime'))
+    const ok = el('span', ['delay-pill', 'is-ontime'])
+    ok.append(icon('bi-check2-circle'), label('onTime'))
+    timeRow.append(ok)
   }
-  timeRow.append(scheduledEl, status)
 
   const details = el('div', ['train-details'])
   details.append(topRow, timeRow)
