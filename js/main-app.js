@@ -300,19 +300,22 @@ function boardRow(train, now) {
   if (platform && platform.length > 2) tile.classList.add('is-long')
 
   const sched = el('span', ['flap-time'], scheduledLabel(train))
-  const realEl = real
-    ? el('span', ['flap-time', 'flap-real', delay > 0 ? 'is-late' : 'is-early'], real)
-    : el('span', ['flap-time', 'flap-none'], '--')
+  const realEl = el('span', ['flap-realcell'])
+  if (real) {
+    const tone = delay > 0 ? 'is-late' : 'is-early'
+    realEl.append(
+      el('span', ['flap-time', tone], real),
+      el('span', ['delay-chip', tone], delay > 0 ? `+${delay} min` : `${delay} min`)
+    )
+  } else {
+    realEl.append(el('span', ['flap-time', 'flap-none'], '--'))
+  }
 
   const dest = el('span', ['flap-dest'])
   dest.append(el('span', ['flap-dest-name'], train.destinazione || '—'))
   const meta = el('span', ['flap-meta'], trainLabel(train))
   if (presence !== 'not-here') {
     meta.append(' · ', el('span', [`is-${presence}`], label(presence === 'at-platform' ? 'atPlatform' : 'approaching')))
-  }
-  if (delay !== 0) {
-    const text = delay > 0 ? `+${delay}` : `-${Math.abs(delay)}`
-    meta.append(' · ', el('span', [delay > 0 ? 'is-late' : 'is-early'], text))
   }
   dest.append(meta)
 

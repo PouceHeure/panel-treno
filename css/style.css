@@ -7,6 +7,7 @@
   --surface: #1e1b12;
   --tile: #26231a;
   --line: #2c281c;
+  --rule: #0e0c07; /* separators inside cards: darker than the chrome lines */
   --text: #f2e6b8;
   --muted: #8c8466;
   --faint: #5c5740;
@@ -25,6 +26,7 @@ body.view-nerd {
   --surface: #0e151c;
   --tile: #131c25;
   --line: #1d2a36;
+  --rule: #05080b;
   --text: #c9d6e2;
   --muted: #6b7c8d;
   --faint: #3b4a58;
@@ -209,7 +211,7 @@ body.view-nerd #groupBySelect { display: none; }
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-bottom: 2px solid var(--line);
+  border-bottom: 2px solid var(--rule);
 }
 
 .flap-row {
@@ -218,7 +220,7 @@ body.view-nerd #groupBySelect { display: none; }
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.35rem;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--rule);
 }
 .flap-title + .flap-row { border-top: none; }
 .flap-cols {
@@ -251,6 +253,16 @@ body.view-nerd #groupBySelect { display: none; }
 
 .flap-time { font-size: 1.05rem; font-weight: 700; white-space: nowrap; }
 .flap-none { color: var(--faint); font-weight: 400; }
+.flap-realcell { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.delay-chip {
+  padding: 0 0.4rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
 .flap-dest { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .flap-dest-name {
   overflow: hidden;
@@ -306,8 +318,8 @@ body.view-nerd #groupBySelect { display: none; }
   gap: 0.4rem;
   padding: 0.2rem 0;
 }
-.nerd-trow + .nerd-trow { border-top: 1px solid var(--tile); }
-.nerd-thead { padding-bottom: 0.3rem; border-bottom: 1px solid var(--line); color: var(--muted); }
+.nerd-trow + .nerd-trow { border-top: 1px solid var(--rule); }
+.nerd-thead { padding-bottom: 0.3rem; border-bottom: 1px solid var(--rule); color: var(--muted); }
 .nerd-dest { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ===============================
