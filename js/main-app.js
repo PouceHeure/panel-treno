@@ -23,6 +23,7 @@ const LABELS = {
   early: 'early',
   filter: 'Filter',
   filterPlaceholder: 'Filter…',
+  filterHint: 'Separate several values with a comma, | or "or" (e.g. torino, milano)',
   nextDepartures: 'Next departures',
   destinationUnknown: 'Unknown destination',
   categoryUnknown: 'Other',
@@ -175,8 +176,16 @@ function sortGroupKeys(mode, keys) {
     return na - nb
   })
 }
-function trainMatchesFilter(train, text) {
-  return `${train.categoria || ''} ${train.numeroTreno || ''} ${train.destinazione || ''}`.toLowerCase().includes(text)
+// "torino, milano" / "torino | milano" / "torino or milano" -> match any of the terms.
+function parseFilterTerms(text) {
+  return text.split(/\s*(?:,|\||\bor\b)\s*/i).map(t => t.trim()).filter(Boolean)
+}
+function matchesAnyTerm(haystack, terms) {
+  const h = haystack.toLowerCase()
+  return terms.some(term => h.includes(term))
+}
+function trainMatchesFilter(train, terms) {
+  return matchesAnyTerm(`${train.categoria || ''} ${train.numeroTreno || ''} ${train.destinazione || ''}`, terms)
 }
 
 // Returns [{ key, trains }] ready to render (grouped, sorted, filtered, limited).
@@ -185,17 +194,18 @@ function buildGroups(trainData) {
     .filter(t => !t.nonPartito || t.orarioPartenza)
     .sort((a, b) => (a.orarioPartenza || 0) - (b.orarioPartenza || 0))
 
+  const filterTerms = parseFilterTerms(groupFilterText)
   const groups = new Map()
   departures.forEach(train => {
-    if (groupByMode === 'train' && groupFilterText && !trainMatchesFilter(train, groupFilterText)) return
+    if (groupByMode === 'train' && filterTerms.length && !trainMatchesFilter(train, filterTerms)) return
     const key = getGroupKey(train, groupByMode)
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(train)
   })
 
   let keys = sortGroupKeys(groupByMode, Array.from(groups.keys()))
-  if (groupFilterText && groupByMode !== 'train') {
-    keys = keys.filter(key => key.toLowerCase().includes(groupFilterText))
+  if (filterTerms.length && groupByMode !== 'train') {
+    keys = keys.filter(key => matchesAnyTerm(key, filterTerms))
   }
   const limit = GROUP_ITEM_LIMIT[groupByMode] ?? 3
   return keys.map(key => ({ key, trains: groups.get(key).slice(0, limit) }))
@@ -356,6 +366,7 @@ function initFilter() {
   const input = $('groupFilterInput')
   const toggle = $('filterToggle')
   input.placeholder = label('filterPlaceholder')
+  input.title = label('filterHint')
   toggle.setAttribute('aria-label', label('filter'))
 
   const initial = getParam('groupfilter')
