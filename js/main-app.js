@@ -757,6 +757,7 @@ function initGroupBySelect() {
     groupByMode = select.value
     groupFilterText = ''
     $('groupFilterInput').value = ''
+    $('filterClear').hidden = true
     $('filterWrap').classList.remove('expanded')
     syncStateToURL()
     rerender()
@@ -771,12 +772,27 @@ function initFilter() {
   input.title = label('filterHint')
   toggle.setAttribute('aria-label', label('filter'))
 
+  const clear = $('filterClear')
+  const refreshClear = () => { clear.hidden = !input.value }
+
   const initial = getParam('groupfilter')
   if (initial) {
     input.value = initial
     groupFilterText = initial.toLowerCase()
     wrap.classList.add('expanded')
   }
+  refreshClear()
+
+  // One tap wipes the filter and brings every train back.
+  clear.addEventListener('click', () => {
+    input.value = ''
+    groupFilterText = ''
+    refreshClear()
+    wrap.classList.remove('expanded')
+    input.blur()
+    syncStateToURL()
+    rerender()
+  })
 
   toggle.addEventListener('click', () => {
     const expanding = !wrap.classList.contains('expanded')
@@ -788,6 +804,7 @@ function initFilter() {
   })
   input.addEventListener('input', () => {
     groupFilterText = input.value.trim().toLowerCase()
+    refreshClear()
     syncStateToURL()
     rerender()
   })

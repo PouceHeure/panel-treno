@@ -167,12 +167,12 @@ body.view-nerd #groupBySelect { display: none; }
   transition: max-width 0.2s ease;
 }
 .filter-wrap.expanded,
-.filter-wrap:focus-within { max-width: 230px; }
+.filter-wrap:focus-within { max-width: 260px; }
 .filter-wrap .icon-btn { border: none; background: transparent; }
 #groupFilterInput {
-  width: 170px;
+  width: 150px;
   min-width: 0;
-  padding: 0 0.8rem 0 0;
+  padding: 0 0.6rem 0 0;
   border: none;
   background: transparent;
   color: var(--text);
@@ -180,6 +180,23 @@ body.view-nerd #groupBySelect { display: none; }
   font-size: 0.85rem;
 }
 #groupFilterInput:focus { outline: none; }
+.filter-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin-right: 3px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.filter-clear[hidden] { display: none; }
 #groupFilterInput::placeholder { color: var(--muted); }
 
 /* ===============================
