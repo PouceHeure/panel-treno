@@ -1,22 +1,22 @@
 /* ===============================
    Design tokens
-   Board (split-flap) theme by default; body.view-nerd swaps the palette.
+   Board theme by default (station blue, RFI signage); body.view-nerd swaps the palette.
    =============================== */
 :root {
-  --bg: #100e0a;
-  --surface: #221f15;
-  --tile: #302b1c;
-  --line: #3a3322;
-  --rule: #0c0a06; /* separators inside cards: darker than the chrome lines */
-  --text: #fff1c9;
-  --muted: #c9bf9f;
-  --faint: #978f72;
-  --accent: #ffcf4a;
-  --ok: #7be8ae;
-  --slight: #ffcf4a;
-  --late: #ff8272;
-  --here: #3fe0a8;
-  --on-here: #04261b;
+  --bg: #07182f;
+  --surface: #0e2a52;
+  --tile: #17407a;
+  --line: #1d4a8a;
+  --rule: #061426; /* separators inside cards: darker than the chrome lines */
+  --text: #ffffff;
+  --muted: #b9cdea;
+  --faint: #7f9bc4;
+  --accent: #ffd23f;
+  --ok: #6ee7a0;
+  --slight: #ffd23f;
+  --late: #ff9b8a;
+  --here: #4ade80;
+  --on-here: #052e16;
   --radius: 10px;
   --font: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   color-scheme: dark;
