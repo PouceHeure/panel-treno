@@ -3,19 +3,19 @@
    Board (split-flap) theme by default; body.view-nerd swaps the palette.
    =============================== */
 :root {
-  --bg: #16140f;
-  --surface: #1e1b12;
-  --tile: #26231a;
-  --line: #2c281c;
-  --rule: #0e0c07; /* separators inside cards: darker than the chrome lines */
-  --text: #f2e6b8;
-  --muted: #b9af8b;
-  --faint: #8a8366;
-  --accent: #f5c542;
-  --ok: #7ee0a8;
-  --slight: #f5c542;
-  --late: #ff8b7a;
-  --here: #34d6a0;
+  --bg: #100e0a;
+  --surface: #221f15;
+  --tile: #302b1c;
+  --line: #3a3322;
+  --rule: #0c0a06; /* separators inside cards: darker than the chrome lines */
+  --text: #fff1c9;
+  --muted: #c9bf9f;
+  --faint: #978f72;
+  --accent: #ffcf4a;
+  --ok: #7be8ae;
+  --slight: #ffcf4a;
+  --late: #ff8272;
+  --here: #3fe0a8;
   --on-here: #04261b;
   --radius: 10px;
   --font: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
