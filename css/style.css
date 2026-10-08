@@ -479,6 +479,8 @@ body.view-nerd #groupBySelect { display: none; }
 .flap-row.is-cancelled .flap-time,
 .flap-row.is-cancelled .flap-dest-name,
 .nerd-trow.is-cancelled > span:not(:last-child) { text-decoration: line-through; text-decoration-thickness: 2px; }
-.flap-row.is-cancelled { opacity: 0.6; }
+.flap-row.is-cancelled > :not(.platform-tile) { opacity: 0.6; } /* the red cross tile stays at full strength */
 .nerd-trow.is-cancelled { opacity: 0.6; }
 .cancel-flag { font-weight: 700; text-transform: uppercase; }
+.platform-tile.is-cancelled { background: #d93a3a; border-color: transparent; color: #fff; }
+.platform-tile.is-cancelled .bi { font-size: 0.95em; -webkit-text-stroke: 1px currentColor; }

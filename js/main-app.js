@@ -306,6 +306,13 @@ function boardRow(train, now) {
   const tile = el('span', ['platform-tile', `is-${presence}`], platform || '–')
   tile.title = platform ? `${label('platform')} ${platform}` : label('platformUnknown')
   if (platform && platform.length > 2) tile.classList.add('is-long')
+  if (cancelled) {
+    // A red cross replaces the platform number so a cancelled train stands out at a glance.
+    tile.classList.remove('is-long')
+    tile.classList.add('is-cancelled')
+    tile.replaceChildren(icon('bi-x-lg'))
+    tile.title = label('cancelled')
+  }
 
   const sched = el('span', ['flap-time'], scheduledLabel(train))
   const realEl = el('span', ['flap-realcell'])
@@ -654,7 +661,7 @@ function nerdTable(trains, now) {
     const real = cancelled ? null : realLabel(t)
     const row = el('div', ['nerd-trow', cancelled ? 'is-cancelled' : ''])
     row.append(
-      el('span', [presence ? `is-${presence}` : 'nerd-dim'], platformOf(t) || '–'),
+      cancelled ? el('span', ['is-late'], '✕') : el('span', [presence ? `is-${presence}` : 'nerd-dim'], platformOf(t) || '–'),
       el('span', [], trainLabel(t)),
       el('span', ['nerd-dest'], (t.destinazione || '—').toLowerCase()),
       el('span', [], scheduledLabel(t)),
