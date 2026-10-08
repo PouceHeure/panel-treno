@@ -723,3 +723,9 @@ body.view-train #text-search { order: -1; }
 .recent-head { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
 .recent-clear { border: none; background: none; color: var(--muted); font: inherit; font-size: 0.8rem; cursor: pointer; text-decoration: underline; }
 .pill-btn[hidden] { display: none !important; }
+
+.tv-delay-chart.is-dense { gap: 2px; }
+.tv-delay-chart.is-dense .tv-delay-val { font-size: 0.6rem; }
+.tv-delay-chart.is-dense .tv-delay-name { overflow: visible; text-overflow: clip; }
+.tv-delay-chart.is-dense .tv-delay-col:first-child .tv-delay-name { text-align: left; width: 6rem; align-self: flex-start; }
+.tv-delay-chart.is-dense .tv-delay-col:last-child .tv-delay-name { text-align: right; width: 6rem; align-self: flex-end; }

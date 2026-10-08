@@ -1217,15 +1217,18 @@ function delayEvolution(stops) {
   const max = Math.max(1, ...points.map(p => p.delay))
   const card = el('section', ['tv-card'])
   card.append(el('h3', ['tv-section'], 'Delay along the route'))
-  const chart = el('div', ['tv-delay-chart'])
-  points.forEach(p => {
+  const dense = points.length > 8
+  const chart = el('div', ['tv-delay-chart', dense ? 'is-dense' : ''])
+  points.forEach((p, i) => {
     const col = el('div', ['tv-delay-col'])
     const bar = el('div', ['tv-delay-bar', delayClass(p.delay)])
     bar.style.height = `${Math.max(4, (p.delay / max) * 100)}%`
     bar.title = `${p.name}: ${p.delay > 0 ? '+' : ''}${p.delay} min`
     const wrap = el('div', ['tv-delay-barwrap'])
-    wrap.append(el('span', ['tv-delay-val'], p.delay > 0 ? `+${p.delay} min` : `${p.delay} min`), bar)
-    col.append(wrap, el('span', ['tv-delay-name'], p.name.toLowerCase()))
+    wrap.append(el('span', ['tv-delay-val'], dense ? String(p.delay) : p.delay > 0 ? `+${p.delay} min` : `${p.delay} min`), bar)
+    // with many stops only the first and last keep a name; the others stay in the tooltip
+    const named = !dense || i === 0 || i === points.length - 1
+    col.append(wrap, el('span', ['tv-delay-name'], named ? p.name.toLowerCase() : ''))
     chart.append(col)
   })
   card.append(chart)
