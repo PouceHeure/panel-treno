@@ -390,7 +390,7 @@ function nerdStats(trains, now) {
     medianDelay: median([...delays].sort((a, b) => a - b)),
     worst: worst && delayOf(worst) > 0 ? worst : null,
     atPlatform: presences.filter(p => p === 'at-platform').length,
-    platformsInUse: platforms.size
+    platformsAnnounced: platforms.size
   }
 }
 
@@ -412,7 +412,7 @@ function nerdStatTiles(stats) {
       stats.worst ? 'is-late' : 'is-ok'
     ),
     statTile('at platform', String(stats.atPlatform), `of ${stats.total} upcoming`, 'is-here'),
-    statTile('platforms', String(stats.platformsInUse), 'in use')
+    statTile('platforms', String(stats.platformsAnnounced), 'announced')
   )
   return grid
 }
