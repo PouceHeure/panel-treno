@@ -1209,6 +1209,34 @@ function trainStopEl(f, index, stops, detail, lastPassedIndex) {
 }
 
 // Delay at each stop already reached: is the train gaining or recovering time?
+// Many stops: one line instead of one bar each, with the peak and both ends labelled.
+function delayLine(points, max) {
+  const w = chartWidth()
+  const h = 150
+  const pad = { l: 8, r: 8, t: 22, b: 24 }
+  const x = i => pad.l + (i / (points.length - 1)) * (w - pad.l - pad.r)
+  const y = d => pad.t + (1 - Math.max(0, d) / max) * (h - pad.t - pad.b)
+  const svg = svgChart(h, 'Delay at each stop reached', w)
+  const base = y(0)
+  const line = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.delay).toFixed(1)}`).join(' ')
+  svg.append(svgEl('line', { x1: pad.l, x2: w - pad.r, y1: base, y2: base, class: 'tv-line-axis' }))
+  svg.append(svgEl('path', { d: `${line} L${x(points.length - 1).toFixed(1)},${base} L${x(0).toFixed(1)},${base} Z`, class: 'tv-line-area' }))
+  svg.append(svgEl('path', { d: line, class: 'tv-line-path' }))
+  points.forEach((p, i) => {
+    const dot = svgEl('circle', { cx: x(i), cy: y(p.delay), r: 3, class: `tv-line-dot ${delayClass(p.delay)}` })
+    dot.append(svgEl('title', {}, `${p.name}: ${p.delay > 0 ? '+' : ''}${p.delay} min`))
+    svg.append(dot)
+  })
+  const peak = points.reduce((best, p, i) => (p.delay > points[best].delay ? i : best), 0)
+  const peakAnchor = x(peak) < 30 ? 'start' : x(peak) > w - 30 ? 'end' : 'middle'
+  svg.append(svgEl('text', { x: x(peak), y: y(points[peak].delay) - 8, 'text-anchor': peakAnchor, class: 'tv-line-label' }, `+${points[peak].delay} min`))
+  const last = points.length - 1
+  if (last !== peak) svg.append(svgEl('text', { x: x(last), y: y(points[last].delay) - 8, 'text-anchor': 'end', class: 'tv-line-label' }, `${points[last].delay > 0 ? '+' : ''}${points[last].delay} min`))
+  svg.append(svgEl('text', { x: pad.l, y: h - 6, 'text-anchor': 'start', class: 'tv-line-name' }, points[0].name.toLowerCase()))
+  svg.append(svgEl('text', { x: w - pad.r, y: h - 6, 'text-anchor': 'end', class: 'tv-line-name' }, points[last].name.toLowerCase()))
+  return svg
+}
+
 function delayEvolution(stops) {
   const points = stops
     .filter(f => f.actualFermataType === 1)
@@ -1218,17 +1246,15 @@ function delayEvolution(stops) {
   const card = el('section', ['tv-card'])
   card.append(el('h3', ['tv-section'], 'Delay along the route'))
   const dense = points.length > 8
-  const chart = el('div', ['tv-delay-chart', dense ? 'is-dense' : ''])
-  points.forEach((p, i) => {
+  const chart = dense ? delayLine(points, max) : el('div', ['tv-delay-chart'])
+  if (!dense) points.forEach((p, i) => {
     const col = el('div', ['tv-delay-col'])
     const bar = el('div', ['tv-delay-bar', delayClass(p.delay)])
     bar.style.height = `${Math.max(4, (p.delay / max) * 100)}%`
     bar.title = `${p.name}: ${p.delay > 0 ? '+' : ''}${p.delay} min`
     const wrap = el('div', ['tv-delay-barwrap'])
     wrap.append(el('span', ['tv-delay-val'], dense ? String(p.delay) : p.delay > 0 ? `+${p.delay} min` : `${p.delay} min`), bar)
-    // with many stops only the first and last keep a name; the others stay in the tooltip
-    const named = !dense || i === 0 || i === points.length - 1
-    col.append(wrap, el('span', ['tv-delay-name'], named ? p.name.toLowerCase() : ''))
+    col.append(wrap, el('span', ['tv-delay-name'], p.name.toLowerCase()))
     chart.append(col)
   })
   card.append(chart)
@@ -1238,7 +1264,7 @@ function delayEvolution(stops) {
   const trend = change >= 2 ? `Lost ${change} min since ${points[0].name.toLowerCase()}`
     : change <= -2 ? `Recovered ${-change} min since ${points[0].name.toLowerCase()}`
     : 'Delay is steady'
-  card.append(el('p', ['tv-trend', change >= 2 ? 'is-late' : change <= -2 ? 'is-early' : ''], `${trend} · one bar per stop reached`))
+  card.append(el('p', ['tv-trend', change >= 2 ? 'is-late' : change <= -2 ? 'is-early' : ''], `${trend} · one ${dense ? 'point' : 'bar'} per stop reached`))
   return card
 }
 

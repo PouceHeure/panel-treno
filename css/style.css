@@ -724,8 +724,11 @@ body.view-train #text-search { order: -1; }
 .recent-clear { border: none; background: none; color: var(--muted); font: inherit; font-size: 0.8rem; cursor: pointer; text-decoration: underline; }
 .pill-btn[hidden] { display: none !important; }
 
-.tv-delay-chart.is-dense { gap: 2px; }
-.tv-delay-chart.is-dense .tv-delay-val { font-size: 0.6rem; }
-.tv-delay-chart.is-dense .tv-delay-name { overflow: visible; text-overflow: clip; }
-.tv-delay-chart.is-dense .tv-delay-col:first-child .tv-delay-name { text-align: left; width: 6rem; align-self: flex-start; }
-.tv-delay-chart.is-dense .tv-delay-col:last-child .tv-delay-name { text-align: right; width: 6rem; align-self: flex-end; }
+.tv-line-axis { stroke: var(--line); stroke-width: 1; }
+.tv-line-area { fill: var(--late); opacity: 0.18; }
+.tv-line-path { fill: none; stroke: var(--late); stroke-width: 2; stroke-linejoin: round; }
+.tv-line-dot { fill: var(--late); }
+.tv-line-dot.is-slight { fill: var(--accent); }
+.tv-line-dot.is-ok { fill: var(--ok); }
+.tv-line-label { fill: var(--text, #fff); font-size: 11px; font-weight: 700; }
+.tv-line-name { fill: var(--muted); font-size: 10px; text-transform: capitalize; }
