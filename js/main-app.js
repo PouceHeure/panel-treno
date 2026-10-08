@@ -83,7 +83,7 @@ const OTHER_FAMILY = { name: 'other', color: '#6b6757' }
 // =======================
 // State
 // =======================
-let stationID = 'S01700' // Default station: Milano Centrale
+let stationID = ''
 let stationName = null
 let lastUpdateData = null
 let groupByMode = 'platform'
@@ -1341,6 +1341,8 @@ async function loadTrainPage() {
   }
   trainDetail = data
   renderTrainPage(data)
+  const category = (data.categoria || data.categoriaDescrizione || '').trim()
+  rememberRecent(trainRecent(trainRef.number, trainRef.from, trainRef.date, `${`${category} ${data.numeroTreno}`.trim()} · ${data.destinazione || ''}`))
 }
 
 async function shareTrain() {
@@ -1377,7 +1379,7 @@ function initTrainPage() {
     $('trainBackLabel').textContent = params.get('stationName') || 'Board'
   } else {
     back.href = 'search.html'
-    $('trainBackLabel').textContent = 'Stations'
+    $('trainBackLabel').textContent = 'Home'
   }
   $('trainShare').hidden = false
   $('trainShare').addEventListener('click', shareTrain)
@@ -1410,8 +1412,14 @@ document.addEventListener('DOMContentLoaded', () => {
     initTrainPage()
     return
   }
-  stationID = getParam('stationID') || stationID
+  // The search page is the home of the site: without a station there is nothing to show here.
+  if (!getParam('stationID')) {
+    window.location.replace('search.html')
+    return
+  }
+  stationID = getParam('stationID')
   stationName = getParam('stationName') || stationName
+  if (stationName) rememberRecent(stationRecent(stationID, stationName)) // a bare id has no readable label
 
   if ((getParam('hidebar') || '').toLowerCase() === 'true') {
     $('searchLegendContainer').style.display = 'none'

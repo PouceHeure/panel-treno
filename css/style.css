@@ -698,3 +698,25 @@ body.view-train .toolbar { justify-content: flex-start; gap: 0.5rem; }
 .tv-trend { margin: 0.6rem 0 0; font-size: 0.8rem; color: var(--muted); }
 .tv-stop.is-next .tv-dot { border-color: var(--accent); }
 .tv-stop.is-next .tv-name { color: var(--text); }
+
+/* Home / search page: Stations and Trains tabs, recent items */
+.search-tabs { display: flex; gap: 0.4rem; margin-bottom: 0.9rem; }
+.search-tab {
+  flex: 1;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--tile);
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.search-tab.is-active { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--tile)); }
+.result-hint { color: var(--muted); text-align: center; }
+.result-item strong .bi { color: var(--accent); margin-right: 0.15rem; }
+.result-item small { text-transform: none; }
+.recent { margin-top: 1.4rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.recent[hidden] { display: none; }
+.recent-head { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.recent-clear { border: none; background: none; color: var(--muted); font: inherit; font-size: 0.8rem; cursor: pointer; text-decoration: underline; }
