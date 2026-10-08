@@ -32,7 +32,6 @@ const LABELS = {
   trackedAgo: 'tracked',
   routeLoading: 'Loading route…',
   routeError: 'Could not load the route',
-  routeHere: 'here',
   routeTitle: 'Route',
   estimateHint: 'Estimate: scheduled time + reported delay. Delays are rounded to the minute, so it can be off by about 1 min.',
   noDelayHint: 'No delay reported: same as the scheduled time',
@@ -397,7 +396,7 @@ function routeStopEl(stop, delay) {
   node.append(
     times,
     el('span', ['route-dot']),
-    el('span', ['route-name'], stop.isHere ? `${stop.name} · ${label('routeHere')}` : stop.name),
+    el('span', ['route-name'], stop.name),
     el('span', ['route-plt'], stop.platform ? `${label('platform').toLowerCase()} ${stop.platform}` : '')
   )
   return node
