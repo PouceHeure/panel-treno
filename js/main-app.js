@@ -992,6 +992,7 @@ function applyView() {
   const nerd = viewMode === 'nerd'
   document.body.classList.toggle('view-nerd', nerd)
   $('viewToggleLabel').textContent = label(nerd ? 'viewBoard' : 'viewNerd')
+  $('viewToggle').setAttribute('aria-label', label(nerd ? 'viewBoard' : 'viewNerd'))
   $('viewToggle').querySelector('i').className = `bi ${nerd ? 'bi-grid-3x2-gap' : 'bi-terminal'}`
   syncHeaderSpacerHeight()
 }

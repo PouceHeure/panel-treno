@@ -82,15 +82,15 @@ h1, p { margin: 0; }
   margin-inline: auto;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.55rem;
+  align-items: stretch;
+  gap: 0.6rem;
 }
 .title-row {
-  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+  min-width: 0;
 }
 .station-name {
   min-width: 0;
@@ -115,9 +115,8 @@ h1, p { margin: 0; }
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
   gap: 0.45rem;
+  min-width: 0;
 }
 .icon-btn,
 .pill-btn,
@@ -142,10 +141,12 @@ h1, p { margin: 0; }
   flex-shrink: 0;
   padding: 0;
 }
-.pill-btn { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0 0.9rem; }
+.pill-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; padding: 0 0.9rem; flex-shrink: 0; white-space: nowrap; }
 
 #groupBySelect {
-  max-width: 190px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 220px;
   padding: 0 1.9rem 0 0.9rem;
   color: var(--text);
   appearance: none;
@@ -157,6 +158,8 @@ h1, p { margin: 0; }
 body.view-nerd #groupBySelect { display: none; }
 
 .filter-wrap {
+  flex: 0 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   max-width: 34px;
@@ -559,3 +562,30 @@ body.view-nerd #groupBySelect { display: none; }
 .route-stop.is-passed .route-dot { background: var(--faint); border-color: var(--faint); }
 .route-stop.is-passed .route-name,
 .route-stop.is-passed .route-time > :first-child { color: var(--muted); }
+
+/* ===============================
+   Header layouts
+   wide: one row (title + clock on the left, controls on the right)
+   narrow: two rows, the controls fill the width on one line
+   =============================== */
+@media (min-width: 860px) {
+  .header-inner { flex-direction: row; align-items: center; justify-content: space-between; gap: 1.5rem; }
+  .title-row { justify-content: flex-start; gap: 1rem; }
+  .toolbar { justify-content: flex-end; }
+  #groupBySelect { flex: 0 0 auto; }
+}
+@media (max-width: 859px) {
+  .toolbar { width: 100%; }
+  /* while the filter is open it gets the room, the grouping select shrinks */
+  .toolbar:has(.filter-wrap.expanded) #groupBySelect { flex: 0 1 7.5rem; }
+  .filter-wrap.expanded, .filter-wrap:focus-within { flex: 1 1 auto; max-width: none; }
+}
+@media (max-width: 520px) {
+  .app-header { padding-inline: 0.75rem; }
+  .station-name { font-size: 1.05rem; }
+  .clock-digit, .clock-colon { font-size: 1.05rem; }
+  .clock-digit { padding: 2px 5px; }
+  /* the view switch keeps only its icon so the controls fit on one line */
+  .pill-btn { width: 34px; padding: 0; }
+  #viewToggleLabel { display: none; }
+}
