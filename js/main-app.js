@@ -1223,7 +1223,9 @@ function delayEvolution(stops) {
     const bar = el('div', ['tv-delay-bar', delayClass(p.delay)])
     bar.style.height = `${Math.max(4, (p.delay / max) * 100)}%`
     bar.title = `${p.name}: ${p.delay > 0 ? '+' : ''}${p.delay} min`
-    col.append(el('span', ['tv-delay-val'], p.delay > 0 ? `+${p.delay}` : String(p.delay)), bar)
+    const wrap = el('div', ['tv-delay-barwrap'])
+    wrap.append(el('span', ['tv-delay-val'], p.delay > 0 ? `+${p.delay} min` : `${p.delay} min`), bar)
+    col.append(wrap, el('span', ['tv-delay-name'], p.name.toLowerCase()))
     chart.append(col)
   })
   card.append(chart)
