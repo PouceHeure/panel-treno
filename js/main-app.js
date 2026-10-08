@@ -42,7 +42,7 @@ const LABELS = {
   groupByDestination: 'By destination',
   groupByCategory: 'By train type',
   groupByTrain: 'By next departures',
-  viewNerd: 'nerd mode',
+  viewNerd: 'nerdz',
   viewBoard: 'board'
 }
 const GROUP_LABEL_KEYS = {
