@@ -1264,7 +1264,7 @@ function delayEvolution(stops) {
   const trend = change >= 2 ? `Lost ${change} min since ${points[0].name.toLowerCase()}`
     : change <= -2 ? `Recovered ${-change} min since ${points[0].name.toLowerCase()}`
     : 'Delay is steady'
-  card.append(el('p', ['tv-trend', change >= 2 ? 'is-late' : change <= -2 ? 'is-early' : ''], `${trend} · one ${dense ? 'point' : 'bar'} per stop reached`))
+  card.append(el('p', ['tv-trend', change >= 2 ? 'is-late' : change <= -2 ? 'is-early' : ''], trend))
   return card
 }
 
