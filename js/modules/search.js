@@ -10,9 +10,17 @@ const LABELS = {
   placeholderStation: 'e.g. Milano Centrale',
   placeholderTrain: 'Train number, e.g. 9431',
   recent: 'Recent',
+  major: 'Major stations',
   clear: 'Clear',
   trainHint: 'Type the full train number (REG, FR, IC… prefixes are ignored).'
 }
+
+const MAJOR_STATIONS = [
+  ['MILANO CENTRALE', 'S01700'],
+  ['GENOVA PIAZZA PRINCIPE', 'S04700'],
+  ['TORINO PORTA NUOVA', 'S00219'],
+  ['ROMA TERMINI', 'S08409']
+]
 
 let mode = 'station' // 'station' | 'train'
 let latestRequest = 0
@@ -101,6 +109,7 @@ async function doSearch(e) {
   // Typing a train number on the Stations tab switches to Trains by itself.
   if (mode === 'station' && trainNumberFrom(keyword) && /\d{2,}/.test(keyword)) setMode('train')
   $('recent').hidden = true
+  $('major').hidden = true
   const requestId = ++latestRequest
   try {
     if (mode === 'train') await searchTrains(keyword, requestId)
@@ -113,9 +122,20 @@ async function doSearch(e) {
 }
 
 // With an empty field the page shows what was opened recently.
+function renderMajor() {
+  const head = document.createElement('div')
+  head.className = 'recent-head'
+  const title = document.createElement('span')
+  title.textContent = LABELS.major
+  head.append(title)
+  $('major').replaceChildren(head, ...MAJOR_STATIONS.map(([name, id]) =>
+    resultLink(recentHref(stationRecent(id, name)), name, 'station', 'bi-building')))
+}
+
 function renderEmpty() {
   latestRequest++
   $('results').replaceChildren()
+  $('major').hidden = false
   const recent = $('recent')
   const list = loadRecent()
   recent.hidden = list.length === 0
@@ -151,5 +171,6 @@ document.addEventListener('DOMContentLoaded', () => {
   form.addEventListener('input', debounce(doSearch, TIME_BETWEEN_REQ_ACCEPTABLE))
   form.addEventListener('submit', doSearch)
 
+  renderMajor()
   setMode('station')
 })
