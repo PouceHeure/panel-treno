@@ -626,7 +626,7 @@ function nerdPanel(title, content) {
   return panel
 }
 
-function nerdBreakdowns(trains, now) {
+function nerdDelayDistribution(trains) {
   const buckets = [
     { name: '0', test: d => d <= 0, color: 'var(--ok)' },
     { name: '1-2', test: d => d >= 1 && d <= 2, color: 'var(--slight)' },
@@ -634,7 +634,10 @@ function nerdBreakdowns(trains, now) {
     { name: '6-15', test: d => d >= 6 && d <= 15, color: 'var(--late)' },
     { name: '15+', test: d => d > 15, color: 'var(--late)' }
   ].map(b => ({ ...b, count: trains.filter(t => b.test(delayOf(t))).length }))
+  return nerdPanel('delay distribution (min)', barRows(buckets))
+}
 
+function nerdBreakdowns(trains) {
   const destCounts = new Map()
   trains.forEach(t => {
     const name = (t.destinazione || label('destinationUnknown')).toLowerCase()
@@ -656,11 +659,70 @@ function nerdBreakdowns(trains, now) {
 
   const grid = el('div', ['nerd-panels'])
   grid.append(
-    nerdPanel('delay distribution (min)', barRows(buckets)),
     nerdPanel('top destinations', barRows(topDest)),
     nerdPanel('by train type', barRows(families))
   )
   return grid
+}
+
+// Histogram of the current delays (1-minute bins) with the normal curve fitted to them.
+function nerdDelayGaussian(trains) {
+  const delays = trains.map(delayOf)
+  const n = delays.length
+  const mean = delays.reduce((a, b) => a + b, 0) / n
+  const sd = Math.sqrt(delays.reduce((a, d) => a + (d - mean) ** 2, 0) / n)
+  const sigma = Math.max(sd, 0.5) // a perfectly punctual station would otherwise give an infinite spike
+
+  const lo = Math.min(-3, Math.floor(mean - 3 * sigma))
+  const hi = Math.max(8, Math.ceil(mean + 3 * sigma))
+  const bins = Array.from({ length: hi - lo + 1 }, () => 0)
+  delays.forEach(d => { bins[Math.min(Math.max(Math.round(d), lo), hi) - lo] += 1 }) // outliers pile up in the end bins
+  const density = bins.map(c => c / n)
+  const pdf = x => Math.exp(-((x - mean) ** 2) / (2 * sigma * sigma)) / (sigma * Math.sqrt(2 * Math.PI))
+  const yMax = Math.max(...density, pdf(mean))
+
+  const panel = el('div', ['nerd-panel'])
+  const head = el('div', ['nerd-panel-head'])
+  head.append(
+    el('span', [], 'delay bell curve (normal fit)'),
+    el('span', ['nerd-dim'], `mean ${mean >= 0 ? '+' : ''}${mean.toFixed(1)} min · σ ${sd.toFixed(1)}`)
+  )
+  panel.append(head)
+
+  const LEFT = 8
+  const RIGHT = 8
+  const TOP = 10
+  const H = 150
+  const W = chartWidth()
+  const plotW = W - LEFT - RIGHT
+  const plotH = H - TOP - 26
+  const xOf = v => LEFT + ((v - lo + 0.5) / (hi - lo + 1)) * plotW
+  const yOf = d => TOP + plotH - (d / yMax) * plotH
+  const svg = svgChart(H, 'Delay distribution with fitted normal curve', W)
+
+  const binW = plotW / (hi - lo + 1)
+  bins.forEach((count, i) => {
+    if (!count) return
+    const bar = svgEl('rect', { x: LEFT + i * binW + 1, y: yOf(density[i]), width: Math.max(binW - 2, 1), height: TOP + plotH - yOf(density[i]), class: 'slot-bar' })
+    bar.append(svgEl('title', {}, `${lo + i} min: ${count} train${count > 1 ? 's' : ''}`))
+    svg.append(bar)
+  })
+
+  const steps = 80
+  const curve = Array.from({ length: steps + 1 }, (_, i) => {
+    const v = lo - 0.5 + (i / steps) * (hi - lo + 1)
+    return `${i === 0 ? 'M' : 'L'}${(LEFT + ((v - lo + 0.5) / (hi - lo + 1)) * plotW).toFixed(1)} ${yOf(pdf(v)).toFixed(1)}`
+  }).join(' ')
+  svg.append(svgEl('path', { d: curve, class: 'tl-avg' }))
+  svg.append(svgEl('line', { x1: xOf(mean), y1: TOP, x2: xOf(mean), y2: TOP + plotH, class: 'tl-now' }))
+
+  const tickStep = Math.max(1, Math.ceil((hi - lo) / 6 / 5) * 5)
+  for (let v = Math.ceil(lo / tickStep) * tickStep; v <= hi; v += tickStep) {
+    svg.append(svgEl('text', { x: xOf(v), y: H - 6, class: 'tl-label', 'text-anchor': 'middle' }, v > 0 ? `+${v}` : String(v)))
+  }
+  panel.append(svg)
+  panel.append(el('p', ['nerd-dim', 'nerd-note'], 'Delays are rarely normal (most trains are on time, a few are very late), so read the curve as a rough guide. Bars: real trains. Dashed line: mean.'))
+  return panel
 }
 
 function nerdTable(trains, now) {
@@ -704,8 +766,10 @@ function renderNerd(trainData) {
     nerdStatTiles(nerdStats(running, now)),
     nerdTimeline(running, now),
     nerdScatter(running, now),
+    nerdDelayDistribution(running),
     nerdPlatformDistribution(running, now),
-    nerdBreakdowns(running, now),
+    nerdBreakdowns(running),
+    nerdDelayGaussian(running),
     nerdTable(trains, now)
   )
   $('trainInfo').replaceChildren(wrap)

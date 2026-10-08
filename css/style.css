@@ -315,6 +315,7 @@ body.view-nerd #groupBySelect { display: none; }
 .tl-dot.is-ok { fill: var(--ok); }
 .tl-dot.is-slight { fill: var(--slight); }
 .tl-dot.is-late { fill: var(--late); }
+.tl-avg { fill: none; stroke: var(--accent); stroke-width: 2; }
 .slot-bar { fill: var(--accent); opacity: 0.55; }
 .slot-bar.is-peak { opacity: 1; }
 .tl-link { stroke-width: 2; }
