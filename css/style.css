@@ -482,5 +482,5 @@ body.view-nerd #groupBySelect { display: none; }
 .flap-row.is-cancelled > :not(.platform-tile) { opacity: 0.6; } /* the red cross tile stays at full strength */
 .nerd-trow.is-cancelled { opacity: 0.6; }
 .cancel-flag { font-weight: 700; text-transform: uppercase; }
-.platform-tile.is-cancelled { background: #d93a3a; border-color: transparent; color: #fff; }
+.platform-tile.is-cancelled { background: #b4434f; border-color: transparent; color: #fff; }
 .platform-tile.is-cancelled .bi { font-size: 0.95em; -webkit-text-stroke: 1px currentColor; }
