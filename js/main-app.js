@@ -1475,7 +1475,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   // The search page is the home of the site: without a station there is nothing to show here.
   if (!getParam('stationID')) {
-    window.location.replace('search.html')
+    window.location.replace('home.html')
     return
   }
   stationID = getParam('stationID')

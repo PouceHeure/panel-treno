@@ -9,7 +9,7 @@ The app uses a ViaggiaTreno station code (e.g. `S01700` for Milano Centrale).
 
 ### Automatic Solution: Search Page
 
-Use `search.html` to find a station by name and get a direct link.
+Use `home.html` to find a station by name and get a direct link.
 
 ### Manual Solution
 
@@ -23,7 +23,7 @@ Use `search.html` to find a station by name and get a direct link.
 ```
 
 - default ID: `S01700` (Milano Centrale)
-- find an ID: use `search.html`, or look it up on
+- find an ID: use `home.html`, or look it up on
   [ViaggiaTreno](http://www.viaggiatreno.it)'s `autocompletaStazione` endpoint.
 
 ## Station Example List
