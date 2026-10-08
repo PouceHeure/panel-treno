@@ -33,7 +33,7 @@ const LABELS = {
   routeLoading: 'Loading route…',
   routeError: 'Could not load the route',
   routeHere: 'here',
-  routeTitle: 'Route to the terminus',
+  routeTitle: 'Route',
   estimateHint: 'Estimate: scheduled time + reported delay. Delays are rounded to the minute, so it can be off by about 1 min.',
   noDelayHint: 'No delay reported: same as the scheduled time',
   legend: '~ estimated real time (±1 min, delays are rounded) · dimmed time: no delay reported',
@@ -329,15 +329,14 @@ function trackedAgeLabel(train, now = Date.now()) {
   return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}`
 }
 
-// Stops from the current station to the terminus, with scheduled/real times and platform.
+// The route: the stops from the current station to the terminus (the origin is deliberately left out).
 function routeStopsFrom(detail) {
   const all = detail.fermate || []
-  const start = Math.max(0, all.findIndex(f => f.id === stationID))
+  const hereIdx = all.findIndex(f => f.id === stationID)
+  const start = Math.max(0, hereIdx)
   const cancelledIds = new Set((detail.fermateSoppresse || []).map(s => s.id))
-  return all.slice(start).map((f, i, list) => {
-    const isHere = i === 0 && all[start] && all[start].id === stationID
-    const isEnd = i === list.length - 1
-    const useDeparture = isHere
+
+  const stopFrom = (f, { useDeparture, isHere = false, isEnd = false }) => {
     const schedMs = (useDeparture ? f.partenza_teorica : f.arrivo_teorico) || f.programmata
     const realMs = useDeparture ? f.partenzaReale : f.arrivoReale
     const platform = useDeparture
@@ -346,6 +345,7 @@ function routeStopsFrom(detail) {
     const diffMin = schedMs && realMs ? Math.round((realMs - schedMs) / 60000) : 0
     return {
       name: f.stazione,
+      schedMs,
       sched: formatEpochHHMM(schedMs),
       real: realMs && diffMin !== 0 ? formatEpochHHMM(realMs) : null,
       diffMin,
@@ -355,7 +355,14 @@ function routeStopsFrom(detail) {
       isEnd,
       cancelled: cancelledIds.has(f.id)
     }
+  }
+
+  const stops = []
+  all.slice(start).forEach((f, i, list) => {
+    const isHere = i === 0 && hereIdx >= 0
+    stops.push(stopFrom(f, { useDeparture: isHere || (start === 0 && i === 0), isHere, isEnd: i === list.length - 1 }))
   })
+  return stops
 }
 
 async function loadRoute(train) {
@@ -373,12 +380,20 @@ async function loadRoute(train) {
   rerender()
 }
 
-function routeStopEl(stop) {
+function routeStopEl(stop, delay) {
   const kinds = [stop.isHere ? 'is-here' : '', stop.isEnd ? 'is-end' : '', stop.passed ? 'is-passed' : '', stop.cancelled ? 'is-cancelled' : '']
   const node = el('div', ['route-stop', ...kinds])
+
+  // The delay at the current station carries over to the next stops: scheduled time + delay, marked "~".
+  let real = stop.real
+  let tone = stop.diffMin > 0 ? 'is-late' : 'is-early'
+  if (!real && delay > 0 && stop.schedMs && !stop.passed) {
+    real = `~${formatEpochHHMM(stop.schedMs + delay * 60000)}`
+    tone = 'is-late'
+  }
   const times = el('span', ['route-time'])
   times.append(el('span', [], stop.sched || '--'))
-  if (stop.real) times.append(el('span', [stop.diffMin > 0 ? 'is-late' : 'is-early'], stop.real))
+  if (real) times.append(el('span', [tone], real))
   node.append(
     times,
     el('span', ['route-dot']),
@@ -398,7 +413,7 @@ function routePanel(train) {
 
   if (entry && entry.status === 'ok') {
     const line = el('div', ['route-line'])
-    entry.stops.forEach(stop => line.append(routeStopEl(stop)))
+    entry.stops.forEach(stop => line.append(routeStopEl(stop, delayOf(train))))
     panel.append(line)
   } else if (entry && entry.status === 'error') {
     panel.append(el('p', ['route-note', 'is-late'], `${label('routeError')}: ${entry.message}`))

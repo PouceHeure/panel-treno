@@ -555,24 +555,7 @@ body.view-nerd #groupBySelect { display: none; }
 .route-stop.is-cancelled .route-name,
 .route-stop.is-cancelled .route-time > :first-child { text-decoration: line-through; opacity: 0.6; }
 
-@media (max-width: 640px) {
-  .route-line { flex-direction: column; overflow: visible; padding-bottom: 0; }
-  .route-stop {
-    flex: none;
-    grid-template-columns: 3.7rem 18px minmax(0, 1fr);
-    grid-template-rows: auto auto;
-    grid-template-areas: "time dot name" "time dot plt";
-    justify-items: start;
-    text-align: left;
-    column-gap: 0.6rem;
-    padding-bottom: 0.85rem;
-  }
-  .route-stop::before { left: calc(3.7rem + 0.6rem + 7.5px); right: auto; top: 0; bottom: 0; width: 3px; height: auto; }
-  .route-stop.is-here::before { left: calc(3.7rem + 0.6rem + 7.5px); top: 9px; background: linear-gradient(180deg, var(--accent), var(--faint)); }
-  .route-stop.is-end::before { right: auto; bottom: auto; height: 9px; }
-  .route-time { grid-area: time; align-self: start; align-items: flex-end; width: 100%; padding-bottom: 0; }
-  .route-dot { grid-area: dot; align-self: start; margin-top: 2px; }
-  .route-stop.is-end .route-dot { margin-top: 0; }
-  .route-name { grid-area: name; margin-top: 0; padding-inline: 0; }
-  .route-plt { grid-area: plt; }
-}
+/* passed stops */
+.route-stop.is-passed .route-dot { background: var(--faint); border-color: var(--faint); }
+.route-stop.is-passed .route-name,
+.route-stop.is-passed .route-time > :first-child { color: var(--muted); }
