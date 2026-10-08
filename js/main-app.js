@@ -1378,9 +1378,11 @@ function initTrainPage() {
     back.href = `index.html?${stationParams}`
     $('trainBackLabel').textContent = params.get('stationName') || 'Board'
   } else {
-    back.href = 'search.html'
-    $('trainBackLabel').textContent = 'Home'
+    // no station to go back to: the Home icon is enough
+    back.hidden = true
   }
+  $('text-search').title = label('search')
+  $('text-search').setAttribute('aria-label', label('search'))
   $('trainShare').hidden = false
   $('trainShare').addEventListener('click', shareTrain)
   $('trainShareLabel').textContent = label('share')

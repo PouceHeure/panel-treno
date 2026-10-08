@@ -616,7 +616,6 @@ body.view-nerd #groupBySelect { display: none; }
 /* ===============================
    Train page (view=train)
    =============================== */
-body.view-train #text-search,
 body.view-train #groupBySelect,
 body.view-train #filterWrap,
 body.view-train #viewToggle { display: none; }
@@ -684,6 +683,7 @@ body.view-train .pill-btn { width: auto; padding: 0 0.85rem; min-width: 0; }
 body.view-train #trainBack { max-width: 11rem; }
 body.view-train #trainBackLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.view-train .toolbar { justify-content: flex-start; gap: 0.5rem; }
+body.view-train #text-search { order: -1; }
 .tv-head .train-badge { font-size: 0.95rem; padding: 0.2rem 0.75rem; }
 
 /* more train page info: progress, delay chart, next stop */
