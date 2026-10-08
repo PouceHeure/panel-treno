@@ -652,30 +652,30 @@ a.pill-btn { text-decoration: none; }
 .tv-banner { margin: 0.9rem 0 0; padding: 0.5rem 0.75rem; border-radius: 8px; background: var(--tile); font-weight: 700; }
 .tv-section { margin: 0 0 0.8rem; color: var(--accent); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em; }
 
-/* vertical metro line, one row per stop */
+/* vertical metro line, one row per stop: dot | station | arrival | departure */
+.tv-columns, .tv-stop { display: grid; grid-template-columns: 22px minmax(0, 1fr) 4.6rem 4.6rem; column-gap: 0.6rem; }
+.tv-columns { margin-bottom: 0.4rem; color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.tv-cell-head { text-align: right; }
 .tv-line { display: flex; flex-direction: column; }
-.tv-stop { position: relative; display: grid; grid-template-columns: 6.2rem 22px minmax(0, 1fr); column-gap: 0.7rem; padding-bottom: 1rem; }
-.tv-stop::before { content: ""; position: absolute; left: calc(6.2rem + 0.7rem + 9.5px); top: 0; bottom: 0; width: 3px; background: var(--faint); }
+.tv-stop { position: relative; align-items: start; padding-bottom: 1.1rem; }
+.tv-stop::before { content: ""; position: absolute; left: 9.5px; top: 0; bottom: 0; width: 3px; background: var(--faint); }
 .tv-stop.is-start::before { top: 11px; }
 .tv-stop.is-end::before { bottom: auto; height: 11px; }
 .tv-stop.is-passed::before { background: var(--accent); }
-.tv-times { display: flex; flex-direction: column; align-items: flex-end; gap: 0.15rem; font-size: 0.78rem; line-height: 1.25; }
-.tv-time-line { display: inline-flex; align-items: baseline; gap: 0.35rem; }
-.tv-time-tag { color: var(--muted); font-size: 0.65rem; text-transform: uppercase; }
-.tv-time-line strong { font-size: 0.9rem; }
-.tv-dot { position: relative; z-index: 1; width: 16px; height: 16px; margin: 2px 0 0 3px; border-radius: 50%; background: var(--surface); border: 3px solid var(--faint); }
+.tv-cell { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.tv-cell strong { font-size: 0.95rem; }
+.tv-dot { grid-column: 1; position: relative; z-index: 1; width: 16px; height: 16px; margin: 2px 0 0 3px; border-radius: 50%; background: var(--surface); border: 3px solid var(--faint); }
 .tv-stop.is-passed .tv-dot { background: var(--accent); border-color: var(--accent); }
 .tv-stop.is-last-seen .tv-dot { width: 20px; height: 20px; margin: 0 0 0 1px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
 .tv-stop.is-end .tv-dot { border-radius: 4px; background: var(--text); border-color: var(--text); }
-.tv-info { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.tv-info { grid-column: 2; display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
 .tv-name { font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
 .tv-stop.is-passed .tv-name { color: var(--muted); }
 .tv-stop.is-last-seen .tv-name { color: var(--accent); }
 .tv-meta { color: var(--muted); font-size: 0.75rem; }
-.tv-stop.is-cancelled .tv-name, .tv-stop.is-cancelled .tv-times strong { text-decoration: line-through; opacity: 0.6; }
+.tv-stop.is-cancelled .tv-name, .tv-stop.is-cancelled .tv-cell strong { text-decoration: line-through; opacity: 0.6; }
 @media (max-width: 520px) {
-  .tv-stop { grid-template-columns: 5.4rem 22px minmax(0, 1fr); column-gap: 0.55rem; }
-  .tv-stop::before { left: calc(5.4rem + 0.55rem + 9.5px); }
+  .tv-columns, .tv-stop { grid-template-columns: 22px minmax(0, 1fr) 3.9rem 3.9rem; column-gap: 0.45rem; }
   .tv-route { font-size: 1.1rem; }
 }
 
@@ -685,3 +685,16 @@ body.view-train #trainBack { max-width: 11rem; }
 body.view-train #trainBackLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.view-train .toolbar { justify-content: flex-start; gap: 0.5rem; }
 .tv-head .train-badge { font-size: 0.95rem; padding: 0.2rem 0.75rem; }
+
+/* more train page info: progress, delay chart, next stop */
+.tv-progress { margin-top: 0.9rem; }
+.tv-progress-track { height: 8px; border-radius: 4px; background: var(--tile); overflow: hidden; }
+.tv-progress-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+.tv-progress-label { display: block; margin-top: 0.35rem; color: var(--muted); font-size: 0.78rem; }
+.tv-delay-chart { display: flex; align-items: flex-end; gap: 6px; height: 110px; padding-top: 1.1rem; }
+.tv-delay-col { flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 3px; }
+.tv-delay-val { font-size: 0.7rem; color: var(--muted); }
+.tv-delay-bar { width: 100%; max-width: 38px; border-radius: 3px 3px 0 0; background: currentColor; min-height: 4px; }
+.tv-trend { margin: 0.6rem 0 0; font-size: 0.8rem; color: var(--muted); }
+.tv-stop.is-next .tv-dot { border-color: var(--accent); }
+.tv-stop.is-next .tv-name { color: var(--text); }

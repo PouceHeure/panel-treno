@@ -1147,18 +1147,26 @@ function chip(text, tone = '') {
   return el('span', ['tv-chip', tone], text)
 }
 
-// One time cell: scheduled, then the real (or estimated "~") time when it differs.
-function tvTimeLine(tag, schedMs, realMs, delayNow, passed) {
-  if (!schedMs) return null
-  const line = el('span', ['tv-time-line'])
-  line.append(el('span', ['tv-time-tag'], tag), el('strong', [], formatEpochHHMM(schedMs)))
+// One time cell: the scheduled time, with the real (or estimated "~") time under it when it differs.
+function tvTimeCell(schedMs, realMs, delayNow, passed) {
+  const cell = el('span', ['tv-cell'])
+  if (!schedMs) return cell
+  cell.append(el('strong', [], formatEpochHHMM(schedMs)))
   const diff = realMs ? Math.round((realMs - schedMs) / 60000) : 0
   if (realMs && diff !== 0) {
-    line.append(el('span', [diff > 0 ? 'is-late' : 'is-early'], formatEpochHHMM(realMs)))
+    cell.append(el('span', [diff > 0 ? 'is-late' : 'is-early'], formatEpochHHMM(realMs)))
   } else if (!realMs && !passed && delayNow > 0) {
-    line.append(el('span', ['is-late'], `~${formatEpochHHMM(schedMs + delayNow * 60000)}`))
+    cell.append(el('span', ['is-late'], `~${formatEpochHHMM(schedMs + delayNow * 60000)}`))
   }
-  return line
+  return cell
+}
+
+// "in 2h07", "in 12 min" until a moment in the future.
+function untilLabel(ms, now = Date.now()) {
+  const minutes = Math.round((ms - now) / 60000)
+  if (minutes <= 0) return 'now'
+  if (minutes < 60) return `in ${minutes} min`
+  return `in ${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}`
 }
 
 function trainStopEl(f, index, stops, detail, lastPassedIndex) {
@@ -1167,29 +1175,66 @@ function trainStopEl(f, index, stops, detail, lastPassedIndex) {
   const cancelledIds = new Set((detail.fermateSoppresse || []).map(s => s.id))
   const isFirst = index === 0
   const isLast = index === stops.length - 1
-  const kinds = [passed ? 'is-passed' : '', index === lastPassedIndex ? 'is-last-seen' : '', isFirst ? 'is-start' : '', isLast ? 'is-end' : '', cancelledIds.has(f.id) ? 'is-cancelled' : '']
+  const kinds = [passed ? 'is-passed' : '', index === lastPassedIndex ? 'is-last-seen' : '', index === lastPassedIndex + 1 ? 'is-next' : '', isFirst ? 'is-start' : '', isLast ? 'is-end' : '', cancelledIds.has(f.id) ? 'is-cancelled' : '']
   const node = el('div', ['tv-stop', ...kinds])
 
-  const times = el('div', ['tv-times'])
-  const arr = isFirst ? null : tvTimeLine('arr', f.arrivo_teorico || f.programmata, f.arrivoReale, delayNow, passed)
-  const dep = isLast ? null : tvTimeLine('dep', f.partenza_teorica || f.programmata, f.partenzaReale, delayNow, passed)
-  ;[arr, dep].forEach(line => line && times.append(line))
+  const arrSched = f.arrivo_teorico || f.programmata
+  const depSched = f.partenza_teorica || f.programmata
+  const arrCell = isFirst ? el('span', ['tv-cell']) : tvTimeCell(arrSched, f.arrivoReale, delayNow, passed)
+  const depCell = isLast ? el('span', ['tv-cell']) : tvTimeCell(depSched, f.partenzaReale, delayNow, passed)
 
   const info = el('div', ['tv-info'])
   info.append(el('span', ['tv-name'], f.stazione))
   const meta = el('span', ['tv-meta'])
-  const platform = normalizePlatformLabel(
-    f.binarioEffettivoArrivoDescrizione || f.binarioProgrammatoArrivoDescrizione ||
-    f.binarioEffettivoPartenzaDescrizione || f.binarioProgrammatoPartenzaDescrizione
-  )
+  const actualPlatform = normalizePlatformLabel(f.binarioEffettivoArrivoDescrizione || f.binarioEffettivoPartenzaDescrizione)
+  const plannedPlatform = normalizePlatformLabel(f.binarioProgrammatoArrivoDescrizione || f.binarioProgrammatoPartenzaDescrizione)
+  const platform = actualPlatform || plannedPlatform
   if (platform) meta.append(`${label('platform').toLowerCase()} ${platform}`)
+  if (actualPlatform && plannedPlatform && actualPlatform !== plannedPlatform) {
+    meta.append(el('span', ['is-slight'], ` (was ${plannedPlatform})`))
+  }
+  const dwell = arrSched && depSched && !isFirst && !isLast ? Math.round((depSched - arrSched) / 60000) : 0
+  if (dwell > 0) meta.append(` · stops ${dwell} min`)
   const stopDelay = Math.max(f.ritardoArrivo || 0, f.ritardoPartenza || 0)
   if (passed && stopDelay > 0) meta.append(el('span', ['is-late'], ` · +${stopDelay} min`))
   if (index === lastPassedIndex) meta.append(el('span', ['is-here'], ' · last stop reached'))
+  if (index === lastPassedIndex + 1 && !passed && !detail.arrivato) {
+    const eta = (arrSched || 0) + delayNow * 60000
+    if (eta) meta.append(el('span', ['is-here'], ` · next, ${untilLabel(eta)}`))
+  }
   info.append(meta)
 
-  node.append(times, el('span', ['tv-dot']), info)
+  node.append(el('span', ['tv-dot']), info, arrCell, depCell)
   return node
+}
+
+// Delay at each stop already reached: is the train gaining or recovering time?
+function delayEvolution(stops) {
+  const points = stops
+    .filter(f => f.actualFermataType === 1)
+    .map(f => ({ name: f.stazione, delay: Math.max(f.ritardoArrivo || 0, f.ritardoPartenza || 0) }))
+  if (points.length < 2) return null
+  const max = Math.max(1, ...points.map(p => p.delay))
+  const card = el('section', ['tv-card'])
+  card.append(el('h3', ['tv-section'], 'Delay along the route'))
+  const chart = el('div', ['tv-delay-chart'])
+  points.forEach(p => {
+    const col = el('div', ['tv-delay-col'])
+    const bar = el('div', ['tv-delay-bar', delayClass(p.delay)])
+    bar.style.height = `${Math.max(4, (p.delay / max) * 100)}%`
+    bar.title = `${p.name}: ${p.delay > 0 ? '+' : ''}${p.delay} min`
+    col.append(el('span', ['tv-delay-val'], p.delay > 0 ? `+${p.delay}` : String(p.delay)), bar)
+    chart.append(col)
+  })
+  card.append(chart)
+  const first = points[0].delay
+  const last = points[points.length - 1].delay
+  const change = last - first
+  const trend = change >= 2 ? `Lost ${change} min since ${points[0].name.toLowerCase()}`
+    : change <= -2 ? `Recovered ${-change} min since ${points[0].name.toLowerCase()}`
+    : 'Delay is steady'
+  card.append(el('p', ['tv-trend', change >= 2 ? 'is-late' : change <= -2 ? 'is-early' : ''], `${trend} · one bar per stop reached`))
+  return card
 }
 
 function renderTrainPage(d) {
@@ -1197,6 +1242,11 @@ function renderTrainPage(d) {
   const category = (d.categoria || d.categoriaDescrizione || '').trim()
   const status = trainStatus(d)
   const delay = d.ritardo || 0
+  const now = Date.now()
+  const stops = d.fermate || []
+  const lastPassed = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
+  const arrivalSched = d.orarioArrivoZero || d.orarioArrivo
+  const departSched = d.orarioPartenzaZero || d.orarioPartenza
 
   const summary = el('section', ['tv-card'])
   const head = el('div', ['tv-head'])
@@ -1209,6 +1259,19 @@ function renderTrainPage(d) {
   route.append(el('span', [], d.origine || '—'), icon('bi-arrow-right'), el('span', [], d.destinazione || '—'))
   summary.append(route)
 
+  // How far along the journey the train is (by stops reached).
+  if (stops.length > 1 && d.provvedimento !== 1) {
+    const reached = stops.filter(f => f.actualFermataType === 1).length
+    const pct = d.arrivato ? 100 : Math.round((reached / stops.length) * 100)
+    const progress = el('div', ['tv-progress'])
+    const track = el('div', ['tv-progress-track'])
+    const fill = el('div', ['tv-progress-fill'])
+    fill.style.width = `${pct}%`
+    track.append(fill)
+    progress.append(track, el('span', ['tv-progress-label'], `${d.arrivato ? stops.length : reached} of ${stops.length} stops reached`))
+    summary.append(progress)
+  }
+
   const facts = el('dl', ['tv-facts'])
   const addFact = (name, value, tone = '') => {
     if (!value) return
@@ -1216,14 +1279,24 @@ function renderTrainPage(d) {
     wrap.append(el('dt', [], name), el('dd', [tone], value))
     facts.append(wrap)
   }
+  const eta = arrivalSched && delay > 0 && !d.arrivato ? ` → ~${formatEpochHHMM(arrivalSched + delay * 60000)}` : ''
   addFact('date', d.dataPartenzaTrenoAsDate)
-  addFact('departs', formatEpochHHMM(d.orarioPartenzaZero || d.orarioPartenza))
-  addFact('arrives', formatEpochHHMM(d.orarioArrivoZero || d.orarioArrivo))
-  addFact('duration', durationLabel(d.orarioPartenzaZero || d.orarioPartenza, d.orarioArrivoZero || d.orarioArrivo))
+  addFact('departs', formatEpochHHMM(departSched))
+  addFact('arrives', arrivalSched ? `${formatEpochHHMM(arrivalSched)}${eta}` : null, eta ? 'is-late' : '')
+  addFact('duration', durationLabel(departSched, arrivalSched))
+  if (arrivalSched && !d.arrivato && d.provvedimento !== 1 && !d.nonPartito) addFact('arrival', untilLabel(arrivalSched + Math.max(delay, 0) * 60000, now))
+  const next = stops[lastPassed + 1]
+  if (next && !d.arrivato && !d.nonPartito && d.provvedimento !== 1) {
+    const nextEta = (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
+    addFact('next stop', `${next.stazione} · ${formatEpochHHMM(nextEta)} (${untilLabel(nextEta, now)})`)
+  }
   if (d.oraUltimoRilevamento) {
     const age = trackedAgeLabel({ ultimoRilev: d.oraUltimoRilevamento, circolante: true })
     addFact('last seen', `${d.stazioneUltimoRilevamento || '—'} · ${formatEpochHHMM(d.oraUltimoRilevamento)}${age ? ` (${age} ago)` : ''}`)
   }
+  addFact('data updated', lastSuccessTime ? formatTime(lastSuccessTime, true) : null)
+  const coaches = Array.isArray(d.descOrientamento) ? d.descOrientamento[1] : null
+  addFact('coaches', coaches)
   addFact('delay reason', d.motivoRitardoPrevalente)
   addFact('rolling stock', d.materiale_label)
   addFact('type', d.compTipologiaTreno)
@@ -1231,10 +1304,14 @@ function renderTrainPage(d) {
   if (d.subTitle) summary.append(el('p', ['tv-banner', status.tone], d.subTitle))
   root.append(summary)
 
-  const stops = d.fermate || []
-  const lastPassed = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
+  const evolution = delayEvolution(stops)
+  if (evolution) root.append(evolution)
+
   const routeCard = el('section', ['tv-card'])
   routeCard.append(el('h3', ['tv-section'], `Route · ${stops.length} stops`))
+  const columns = el('div', ['tv-columns'])
+  columns.append(el('span'), el('span', [], 'station'), el('span', ['tv-cell-head'], 'arr'), el('span', ['tv-cell-head'], 'dep'))
+  routeCard.append(columns)
   const line = el('div', ['tv-line'])
   stops.forEach((f, i) => line.append(trainStopEl(f, i, stops, d, lastPassed)))
   routeCard.append(line)
