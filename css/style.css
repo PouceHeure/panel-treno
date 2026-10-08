@@ -733,3 +733,13 @@ body.view-train #text-search { order: -1; }
 .req-cell.is-ok { background: var(--ok); opacity: 1; }
 .req-cell.is-partial { background: var(--accent); opacity: 1; }
 .req-cell.is-fail { background: var(--late); opacity: 1; }
+
+/* Home link: icon only on phones, except on the train page where the labels have room */
+@media (max-width: 520px) { body:not(.view-train) #homeLabel { display: none; } }
+a.pill-btn i { margin-right: 0.35rem; }
+body:not(.view-train) #text-search i { margin-right: 0.35rem; }
+@media (max-width: 520px) { body:not(.view-train) #text-search i { margin-right: 0; } }
+
+/* every stop of a train opens that station's departures */
+a.tv-name { color: inherit; text-decoration: none; }
+a.tv-name:hover { text-decoration: underline dotted; text-underline-offset: 3px; }

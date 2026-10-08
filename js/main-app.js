@@ -1217,7 +1217,12 @@ function trainStopEl(f, index, stops, detail, lastPassedIndex) {
   const depCell = isLast ? el('span', ['tv-cell']) : tvTimeCell(depSched, f.partenzaReale, delayNow, passed)
 
   const info = el('div', ['tv-info'])
-  info.append(el('span', ['tv-name'], f.stazione))
+  const stationLink = el('a', ['tv-name'], f.stazione)
+  if (f.id) {
+    stationLink.href = `index.html?${new URLSearchParams({ stationID: f.id, stationName: f.stazione })}`
+    stationLink.title = `Departures at ${f.stazione}`
+  }
+  info.append(stationLink)
   const meta = el('span', ['tv-meta'])
   const actualPlatform = normalizePlatformLabel(f.binarioEffettivoArrivoDescrizione || f.binarioEffettivoPartenzaDescrizione)
   const plannedPlatform = normalizePlatformLabel(f.binarioProgrammatoArrivoDescrizione || f.binarioProgrammatoPartenzaDescrizione)
@@ -1434,8 +1439,8 @@ function initTrainPage() {
     // no station to go back to: the Home icon is enough
     back.hidden = true
   }
-  $('text-search').title = label('search')
-  $('text-search').setAttribute('aria-label', label('search'))
+  $('text-search').title = 'Home: search a station or a train'
+  $('text-search').setAttribute('aria-label', 'Home')
   $('trainShare').hidden = false
   $('trainShare').addEventListener('click', shareTrain)
   $('trainShareLabel').textContent = label('share')
@@ -1487,8 +1492,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (VIEWS.includes(paramView)) viewMode = paramView
 
   const searchLink = $('text-search')
-  searchLink.title = label('search')
-  searchLink.setAttribute('aria-label', label('search'))
+  searchLink.title = 'Home: search a station or a train'
+  searchLink.setAttribute('aria-label', 'Home')
   initGroupBySelect()
   initFilter()
   initViewToggle()
