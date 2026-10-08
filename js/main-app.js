@@ -29,6 +29,7 @@ const LABELS = {
   now: 'now',
   filter: 'Filter',
   filterPlaceholder: 'Filter…',
+  cancelled: 'cancelled',
   filterHint: 'Separate several values with a comma, | or "or" (e.g. torino, milano)',
   nextDepartures: 'Next departures',
   destinationUnknown: 'Unknown destination',
@@ -121,6 +122,10 @@ function formatTime(date, withSeconds = false) {
 function formatEpochHHMM(epochMs) {
   return epochMs ? formatTime(new Date(epochMs)) : null
 }
+// provvedimento 1 = "Treno cancellato" (checked against the andamentoTreno subTitle).
+function isCancelled(train) {
+  return train.provvedimento === 1
+}
 function delayOf(train) {
   return typeof train.ritardo === 'number' ? train.ritardo : 0
 }
@@ -139,6 +144,7 @@ function trainLabel(train) {
 
 // Minutes until the real departure, as a short label ("now", "9 min", "1h05").
 function countdownLabel(train, now = Date.now()) {
+  if (isCancelled(train)) return ''
   if (trainPresence(train, now) === 'at-platform') return label('now')
   const real = realDepartureMs(train)
   if (!real) return ''
@@ -193,6 +199,7 @@ function comparePlatforms(a, b) {
 // departure time is already past is never reported as present. Nothing else is
 // claimed: the API does not say how close a running train is.
 function trainPresence(train, now = Date.now()) {
+  if (isCancelled(train)) return null
   const real = realDepartureMs(train)
   if (real && real < now) return null
   return train.inStazione ? 'at-platform' : null
@@ -291,9 +298,10 @@ function boardRow(train, now) {
   const delay = delayOf(train)
   const presence = trainPresence(train, now) || 'not-here'
   const platform = platformOf(train)
-  const real = realLabel(train)
+  const cancelled = isCancelled(train)
+  const real = cancelled ? null : realLabel(train)
 
-  const row = el('div', ['flap-row', `is-${presence}`])
+  const row = el('div', ['flap-row', `is-${presence}`, cancelled ? 'is-cancelled' : ''])
 
   const tile = el('span', ['platform-tile', `is-${presence}`], platform || '–')
   tile.title = platform ? `${label('platform')} ${platform}` : label('platformUnknown')
@@ -314,7 +322,9 @@ function boardRow(train, now) {
   const dest = el('span', ['flap-dest'])
   dest.append(el('span', ['flap-dest-name'], train.destinazione || '—'))
   const meta = el('span', ['flap-meta'], trainLabel(train))
-  if (presence === 'at-platform') {
+  if (cancelled) {
+    meta.append(' · ', el('span', ['is-late', 'cancel-flag'], label('cancelled')))
+  } else if (presence === 'at-platform') {
     meta.append(' · ', el('span', ['is-at-platform'], label('atPlatform')))
   }
   dest.append(meta)
@@ -640,15 +650,16 @@ function nerdTable(trains, now) {
   trains.slice(0, NERD_TABLE_LIMIT).forEach(t => {
     const delay = delayOf(t)
     const presence = trainPresence(t, now)
-    const real = realLabel(t)
-    const row = el('div', ['nerd-trow'])
+    const cancelled = isCancelled(t)
+    const real = cancelled ? null : realLabel(t)
+    const row = el('div', ['nerd-trow', cancelled ? 'is-cancelled' : ''])
     row.append(
       el('span', [presence ? `is-${presence}` : 'nerd-dim'], platformOf(t) || '–'),
       el('span', [], trainLabel(t)),
       el('span', ['nerd-dest'], (t.destinazione || '—').toLowerCase()),
       el('span', [], scheduledLabel(t)),
       el('span', [real ? delayClass(delay) : 'nerd-dim'], real || '--'),
-      el('span', [delayClass(delay)], delay > 0 ? `+${delay}` : String(delay))
+      cancelled ? el('span', ['is-late'], 'canc.') : el('span', [delayClass(delay)], delay > 0 ? `+${delay}` : String(delay))
     )
     table.append(row)
   })
@@ -666,13 +677,14 @@ function renderNerd(trainData) {
   }
   const wrap = el('div', ['nerd-wrap'])
   const prompt = el('p', ['nerd-prompt'], `$ treno --station ${(stationName || stationID).replace(/\s+/g, '_').toUpperCase()} --view nerd`)
+  const running = trains.filter(t => !isCancelled(t)) // cancelled trains must not skew the stats
   wrap.append(
     prompt,
-    nerdStatTiles(nerdStats(trains, now)),
-    nerdTimeline(trains, now),
-    nerdScatter(trains, now),
-    nerdDepartureSlots(trains, now),
-    nerdBreakdowns(trains, now),
+    nerdStatTiles(nerdStats(running, now)),
+    nerdTimeline(running, now),
+    nerdScatter(running, now),
+    nerdDepartureSlots(running, now),
+    nerdBreakdowns(running, now),
     nerdTable(trains, now)
   )
   $('trainInfo').replaceChildren(wrap)

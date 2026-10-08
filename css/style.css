@@ -474,3 +474,11 @@ body.view-nerd #groupBySelect { display: none; }
   .app-footer a { display: none; }
   .flap-row { grid-template-columns: 1.8rem 3rem 3.4rem minmax(0, 1fr) 3rem; }
 }
+
+/* Cancelled trains: struck through and dimmed, never counted as running */
+.flap-row.is-cancelled .flap-time,
+.flap-row.is-cancelled .flap-dest-name,
+.nerd-trow.is-cancelled > span:not(:last-child) { text-decoration: line-through; text-decoration-thickness: 2px; }
+.flap-row.is-cancelled { opacity: 0.6; }
+.nerd-trow.is-cancelled { opacity: 0.6; }
+.cancel-flag { font-weight: 700; text-transform: uppercase; }
