@@ -612,3 +612,76 @@ body.view-nerd #groupBySelect { display: none; }
   .pill-btn { width: 34px; padding: 0; }
   #viewToggleLabel { display: none; }
 }
+
+/* ===============================
+   Train page (view=train)
+   =============================== */
+body.view-train #text-search,
+body.view-train #groupBySelect,
+body.view-train #filterWrap,
+body.view-train #viewToggle { display: none; }
+.pill-btn.is-done { color: var(--ok); border-color: var(--ok); }
+a.pill-btn { text-decoration: none; }
+
+.route-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--tile);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+.route-open:hover { border-color: var(--faint); text-decoration: none; }
+
+.tv-wrap { max-width: 760px; margin-inline: auto; display: flex; flex-direction: column; gap: 1rem; }
+.tv-card { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 1rem; }
+.tv-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.tv-chip { padding: 0.15rem 0.65rem; border-radius: 999px; background: var(--tile); font-size: 0.8rem; font-weight: 700; }
+.tv-chip.is-muted { color: var(--muted); }
+.tv-route { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin: 0.8rem 0 0.2rem; font-size: 1.25rem; font-weight: 700; text-transform: uppercase; }
+.tv-route .bi { color: var(--accent); }
+.tv-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.6rem 1rem; margin: 0.9rem 0 0; }
+.tv-fact dt { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.tv-fact dd { margin: 0.1rem 0 0; font-weight: 700; overflow-wrap: anywhere; }
+.tv-banner { margin: 0.9rem 0 0; padding: 0.5rem 0.75rem; border-radius: 8px; background: var(--tile); font-weight: 700; }
+.tv-section { margin: 0 0 0.8rem; color: var(--accent); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* vertical metro line, one row per stop */
+.tv-line { display: flex; flex-direction: column; }
+.tv-stop { position: relative; display: grid; grid-template-columns: 6.2rem 22px minmax(0, 1fr); column-gap: 0.7rem; padding-bottom: 1rem; }
+.tv-stop::before { content: ""; position: absolute; left: calc(6.2rem + 0.7rem + 9.5px); top: 0; bottom: 0; width: 3px; background: var(--faint); }
+.tv-stop.is-start::before { top: 11px; }
+.tv-stop.is-end::before { bottom: auto; height: 11px; }
+.tv-stop.is-passed::before { background: var(--accent); }
+.tv-times { display: flex; flex-direction: column; align-items: flex-end; gap: 0.15rem; font-size: 0.78rem; line-height: 1.25; }
+.tv-time-line { display: inline-flex; align-items: baseline; gap: 0.35rem; }
+.tv-time-tag { color: var(--muted); font-size: 0.65rem; text-transform: uppercase; }
+.tv-time-line strong { font-size: 0.9rem; }
+.tv-dot { position: relative; z-index: 1; width: 16px; height: 16px; margin: 2px 0 0 3px; border-radius: 50%; background: var(--surface); border: 3px solid var(--faint); }
+.tv-stop.is-passed .tv-dot { background: var(--accent); border-color: var(--accent); }
+.tv-stop.is-last-seen .tv-dot { width: 20px; height: 20px; margin: 0 0 0 1px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
+.tv-stop.is-end .tv-dot { border-radius: 4px; background: var(--text); border-color: var(--text); }
+.tv-info { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.tv-name { font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+.tv-stop.is-passed .tv-name { color: var(--muted); }
+.tv-stop.is-last-seen .tv-name { color: var(--accent); }
+.tv-meta { color: var(--muted); font-size: 0.75rem; }
+.tv-stop.is-cancelled .tv-name, .tv-stop.is-cancelled .tv-times strong { text-decoration: line-through; opacity: 0.6; }
+@media (max-width: 520px) {
+  .tv-stop { grid-template-columns: 5.4rem 22px minmax(0, 1fr); column-gap: 0.55rem; }
+  .tv-stop::before { left: calc(5.4rem + 0.55rem + 9.5px); }
+  .tv-route { font-size: 1.1rem; }
+}
+
+/* On the train page the back and share buttons keep their labels, even on phones */
+body.view-train .pill-btn { width: auto; padding: 0 0.85rem; min-width: 0; }
+body.view-train #trainBack { max-width: 11rem; }
+body.view-train #trainBackLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.view-train .toolbar { justify-content: flex-start; gap: 0.5rem; }
+.tv-head .train-badge { font-size: 0.95rem; padding: 0.2rem 0.75rem; }

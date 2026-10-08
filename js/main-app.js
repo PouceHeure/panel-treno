@@ -30,6 +30,15 @@ const LABELS = {
   filterPlaceholder: 'Filter…',
   cancelled: 'cancelled',
   trackedAgo: 'tracked',
+  openTrain: 'Open train page',
+  share: 'Share',
+  linkCopied: 'Link copied',
+  trainNotFound: 'Train not found',
+  statusNotDeparted: 'Not departed yet',
+  statusRunning: 'Running',
+  statusArrived: 'Arrived',
+  statusCancelled: 'Cancelled',
+  statusDiverted: 'Diverted',
   routeLoading: 'Loading route…',
   routeError: 'Could not load the route',
   routeTitle: 'Route',
@@ -290,6 +299,9 @@ function buildGroups(trainData) {
 // =======================
 // Board view
 // =======================
+// What the Retry button reloads: the departures board, or the train page.
+let retryLoad = () => fetchAndDisplay()
+
 function renderMessage(iconName, text, withRetry = false, detail = '') {
   const box = el('div', ['state-box'])
   box.append(icon(iconName), el('p', [], text))
@@ -299,7 +311,7 @@ function renderMessage(iconName, text, withRetry = false, detail = '') {
     btn.type = 'button'
     btn.addEventListener('click', () => {
       renderMessage('bi-hourglass-split', label('connecting'))
-      fetchAndDisplay()
+      retryLoad()
     })
     box.append(btn)
   }
@@ -403,8 +415,20 @@ function routeStopEl(stop, delay) {
 }
 
 // A metro-line diagram: horizontal on wide screens, vertical on phones (pure CSS).
+function trainPageUrl(train) {
+  const params = new URLSearchParams({ view: 'train', train: train.numeroTreno, from: train.codOrigine, date: train.dataPartenzaTreno })
+  if (stationID) params.set('stationID', stationID)
+  if (stationName) params.set('stationName', stationName)
+  return `${window.location.pathname}?${params}`
+}
+
 function routePanel(train) {
   const panel = el('div', ['route-panel'])
+  const open = el('a', ['route-open'])
+  open.href = trainPageUrl(train)
+  open.append(icon('bi-box-arrow-up-right'), label('openTrain'))
+  open.addEventListener('click', e => e.stopPropagation())
+  panel.append(open)
   const entry = routeCache.get(trainKey(train))
   const age = entry && entry.at ? Date.now() - entry.at : Infinity
   const stale = !entry || (entry.status === 'ok' && age > ROUTE_REFRESH_MS) || (entry.status === 'error' && age > ROUTE_RETRY_MS)
@@ -1001,18 +1025,20 @@ function applyView() {
 // =======================
 async function fetchAndDisplay() {
   const url = `http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/partenze/${stationID}/${encodeURIComponent(nowAsViaggiaTrenoDate())}`
+  let data
   try {
-    const data = await fetchViaProxy(url)
-    lastSuccessTime = new Date()
-    setRequestStatus(true)
-    if (Array.isArray(data) && data.length > 0) lastUpdateData = data
-    if (lastUpdateData) render(lastUpdateData)
-    else renderMessage('bi-moon-stars', label('serviceOFF'))
+    data = await fetchViaProxy(url)
   } catch (err) {
     console.error('Error fetching data:', err)
     setRequestStatus(false)
     if (!lastUpdateData) renderMessage('bi-wifi-off', label('loadError'), true, describeProxyReport(lastProxyReport))
+    return
   }
+  lastSuccessTime = new Date()
+  setRequestStatus(true)
+  if (Array.isArray(data) && data.length > 0) lastUpdateData = data
+  if (lastUpdateData) render(lastUpdateData)
+  else renderMessage('bi-moon-stars', label('serviceOFF'))
 }
 
 // =======================
@@ -1093,12 +1119,220 @@ function initViewToggle() {
 }
 
 // =======================
+// Train page (view=train): everything about one train, shareable by link
+// =======================
+let trainRef = null // { number, from, date }
+let trainDetail = null
+
+function canonicalTrainUrl() {
+  const params = new URLSearchParams({ view: 'train', train: trainRef.number, from: trainRef.from, date: trainRef.date })
+  return `${window.location.origin}${window.location.pathname}?${params}`
+}
+
+function trainStatus(d) {
+  if (d.provvedimento === 1) return { key: 'statusCancelled', tone: 'is-late' }
+  if (d.arrivato) return { key: 'statusArrived', tone: 'is-ok' }
+  if (d.nonPartito) return { key: 'statusNotDeparted', tone: 'is-muted' }
+  if (d.provvedimento === 3) return { key: 'statusDiverted', tone: 'is-slight' }
+  return { key: 'statusRunning', tone: 'is-here' }
+}
+
+function durationLabel(fromMs, toMs) {
+  if (!fromMs || !toMs || toMs <= fromMs) return null
+  const minutes = Math.round((toMs - fromMs) / 60000)
+  return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}`
+}
+
+function chip(text, tone = '') {
+  return el('span', ['tv-chip', tone], text)
+}
+
+// One time cell: scheduled, then the real (or estimated "~") time when it differs.
+function tvTimeLine(tag, schedMs, realMs, delayNow, passed) {
+  if (!schedMs) return null
+  const line = el('span', ['tv-time-line'])
+  line.append(el('span', ['tv-time-tag'], tag), el('strong', [], formatEpochHHMM(schedMs)))
+  const diff = realMs ? Math.round((realMs - schedMs) / 60000) : 0
+  if (realMs && diff !== 0) {
+    line.append(el('span', [diff > 0 ? 'is-late' : 'is-early'], formatEpochHHMM(realMs)))
+  } else if (!realMs && !passed && delayNow > 0) {
+    line.append(el('span', ['is-late'], `~${formatEpochHHMM(schedMs + delayNow * 60000)}`))
+  }
+  return line
+}
+
+function trainStopEl(f, index, stops, detail, lastPassedIndex) {
+  const passed = f.actualFermataType === 1
+  const delayNow = detail.ritardo || 0
+  const cancelledIds = new Set((detail.fermateSoppresse || []).map(s => s.id))
+  const isFirst = index === 0
+  const isLast = index === stops.length - 1
+  const kinds = [passed ? 'is-passed' : '', index === lastPassedIndex ? 'is-last-seen' : '', isFirst ? 'is-start' : '', isLast ? 'is-end' : '', cancelledIds.has(f.id) ? 'is-cancelled' : '']
+  const node = el('div', ['tv-stop', ...kinds])
+
+  const times = el('div', ['tv-times'])
+  const arr = isFirst ? null : tvTimeLine('arr', f.arrivo_teorico || f.programmata, f.arrivoReale, delayNow, passed)
+  const dep = isLast ? null : tvTimeLine('dep', f.partenza_teorica || f.programmata, f.partenzaReale, delayNow, passed)
+  ;[arr, dep].forEach(line => line && times.append(line))
+
+  const info = el('div', ['tv-info'])
+  info.append(el('span', ['tv-name'], f.stazione))
+  const meta = el('span', ['tv-meta'])
+  const platform = normalizePlatformLabel(
+    f.binarioEffettivoArrivoDescrizione || f.binarioProgrammatoArrivoDescrizione ||
+    f.binarioEffettivoPartenzaDescrizione || f.binarioProgrammatoPartenzaDescrizione
+  )
+  if (platform) meta.append(`${label('platform').toLowerCase()} ${platform}`)
+  const stopDelay = Math.max(f.ritardoArrivo || 0, f.ritardoPartenza || 0)
+  if (passed && stopDelay > 0) meta.append(el('span', ['is-late'], ` · +${stopDelay} min`))
+  if (index === lastPassedIndex) meta.append(el('span', ['is-here'], ' · last stop reached'))
+  info.append(meta)
+
+  node.append(times, el('span', ['tv-dot']), info)
+  return node
+}
+
+function renderTrainPage(d) {
+  const root = el('div', ['tv-wrap'])
+  const category = (d.categoria || d.categoriaDescrizione || '').trim()
+  const status = trainStatus(d)
+  const delay = d.ritardo || 0
+
+  const summary = el('section', ['tv-card'])
+  const head = el('div', ['tv-head'])
+  head.append(el('span', ['train-badge'], `${category} ${d.numeroTreno}`.trim()))
+  head.append(chip(label(status.key), status.tone))
+  if (d.provvedimento !== 1 && delay !== 0) head.append(chip(delay > 0 ? `+${delay} min` : `${delay} min`, delay > 0 ? 'is-late' : 'is-early'))
+  summary.append(head)
+
+  const route = el('h2', ['tv-route'])
+  route.append(el('span', [], d.origine || '—'), icon('bi-arrow-right'), el('span', [], d.destinazione || '—'))
+  summary.append(route)
+
+  const facts = el('dl', ['tv-facts'])
+  const addFact = (name, value, tone = '') => {
+    if (!value) return
+    const wrap = el('div', ['tv-fact'])
+    wrap.append(el('dt', [], name), el('dd', [tone], value))
+    facts.append(wrap)
+  }
+  addFact('date', d.dataPartenzaTrenoAsDate)
+  addFact('departs', formatEpochHHMM(d.orarioPartenzaZero || d.orarioPartenza))
+  addFact('arrives', formatEpochHHMM(d.orarioArrivoZero || d.orarioArrivo))
+  addFact('duration', durationLabel(d.orarioPartenzaZero || d.orarioPartenza, d.orarioArrivoZero || d.orarioArrivo))
+  if (d.oraUltimoRilevamento) {
+    const age = trackedAgeLabel({ ultimoRilev: d.oraUltimoRilevamento, circolante: true })
+    addFact('last seen', `${d.stazioneUltimoRilevamento || '—'} · ${formatEpochHHMM(d.oraUltimoRilevamento)}${age ? ` (${age} ago)` : ''}`)
+  }
+  addFact('delay reason', d.motivoRitardoPrevalente)
+  addFact('rolling stock', d.materiale_label)
+  addFact('type', d.compTipologiaTreno)
+  summary.append(facts)
+  if (d.subTitle) summary.append(el('p', ['tv-banner', status.tone], d.subTitle))
+  root.append(summary)
+
+  const stops = d.fermate || []
+  const lastPassed = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
+  const routeCard = el('section', ['tv-card'])
+  routeCard.append(el('h3', ['tv-section'], `Route · ${stops.length} stops`))
+  const line = el('div', ['tv-line'])
+  stops.forEach((f, i) => line.append(trainStopEl(f, i, stops, d, lastPassed)))
+  routeCard.append(line)
+  root.append(routeCard)
+
+  $('trainInfo').replaceChildren(root)
+  document.title = `Train: ${category} ${d.numeroTreno}`.trim()
+  $('stationTitle').textContent = `${category} ${d.numeroTreno}`.trim()
+}
+
+async function loadTrainPage() {
+  const url = `http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/andamentoTreno/${trainRef.from}/${trainRef.number}/${trainRef.date}`
+  let data
+  try {
+    data = await fetchViaProxy(url)
+  } catch (err) {
+    console.error('Error fetching train:', err)
+    setRequestStatus(false)
+    if (!trainDetail) renderMessage('bi-wifi-off', label('loadError'), true, describeProxyReport(lastProxyReport))
+    return
+  }
+  lastSuccessTime = new Date()
+  setRequestStatus(true)
+  if (!data || !Array.isArray(data.fermate) || !data.fermate.length) {
+    if (!trainDetail) renderMessage('bi-question-circle', label('trainNotFound'), false, 'This train has no data (it may be too old or the link is wrong).')
+    return
+  }
+  trainDetail = data
+  renderTrainPage(data)
+}
+
+async function shareTrain() {
+  const url = canonicalTrainUrl()
+  const title = document.title
+  const button = $('trainShare')
+  const labelEl = $('trainShareLabel')
+  if (navigator.share) {
+    try { await navigator.share({ title, text: title, url }) } catch { /* the user closed the share sheet */ }
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(url)
+    labelEl.textContent = label('linkCopied')
+    button.classList.add('is-done')
+    setTimeout(() => { labelEl.textContent = label('share'); button.classList.remove('is-done') }, 2000)
+  } catch {
+    window.prompt('Copy this link', url)
+  }
+}
+
+function initTrainPage() {
+  document.body.classList.add('view-train')
+  const params = new URLSearchParams(window.location.search)
+  trainRef = { number: params.get('train'), from: params.get('from'), date: params.get('date') }
+
+  const back = $('trainBack')
+  back.hidden = false
+  const boardId = params.get('stationID')
+  if (boardId) {
+    const stationParams = new URLSearchParams({ stationID: boardId })
+    if (params.get('stationName')) stationParams.set('stationName', params.get('stationName'))
+    back.href = `index.html?${stationParams}`
+    $('trainBackLabel').textContent = params.get('stationName') || 'Board'
+  } else {
+    back.href = 'search.html'
+    $('trainBackLabel').textContent = 'Stations'
+  }
+  $('trainShare').hidden = false
+  $('trainShare').addEventListener('click', shareTrain)
+  $('trainShareLabel').textContent = label('share')
+  retryLoad = loadTrainPage
+
+  $('stationTitle').textContent = trainRef.number ? `Train ${trainRef.number}` : label('trainNotFound')
+  $('versionNumber').textContent = APP_VERSION
+  syncHeaderSpacerHeight()
+  if (!trainRef.number || !trainRef.from || !trainRef.date) {
+    renderMessage('bi-question-circle', label('trainNotFound'), false, 'The link is incomplete.')
+    return
+  }
+  $('statusLabel').textContent = label('connecting')
+  renderMessage('bi-hourglass-split', label('connecting'))
+  loadTrainPage()
+  setInterval(loadTrainPage, REFRESH_REQUEST_INTERVAL)
+  setInterval(updateClock, CLOCK_INTERVAL)
+  updateClock()
+}
+
+// =======================
 // Init
 // =======================
 window.addEventListener('pageshow', e => { if (e.persisted) window.location.reload() })
 window.addEventListener('resize', syncHeaderSpacerHeight)
 
 document.addEventListener('DOMContentLoaded', () => {
+  if ((getParam('view') || '').toLowerCase() === 'train') {
+    initTrainPage()
+    return
+  }
   stationID = getParam('stationID') || stationID
   stationName = getParam('stationName') || stationName
 
