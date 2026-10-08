@@ -29,6 +29,11 @@ const LABELS = {
   filter: 'Filter',
   filterPlaceholder: 'Filter…',
   cancelled: 'cancelled',
+  estimateHint: 'Estimate: scheduled time + reported delay. Delays are rounded to the minute, so it can be off by about 1 min.',
+  noDelayHint: 'No delay reported: same as the scheduled time',
+  legend: '~ estimated real time (±1 min, delays are rounded) · dimmed time: no delay reported',
+  connected: 'Connected',
+  requestFailed: 'Request failed',
   filterHint: 'Separate several values with a comma, | or "or" (e.g. torino, milano)',
   nextDepartures: 'Next departures',
   destinationUnknown: 'Unknown destination',
@@ -177,9 +182,12 @@ function romanToArabic(str) {
 function normalizePlatformLabel(raw) {
   if (!raw) return null
   const trimmed = raw.trim()
-  const match = trimmed.match(/^([MDCLXVI]+)(.*)$/i)
+  // Only I, V and X: platform numbers are small, and letters like "C" or "D" are sector letters, not 100 or 500.
+  const match = trimmed.match(/^([IVX]+)(\b.*)?$/i)
   const arabic = match && romanToArabic(match[1])
-  return arabic ? `${arabic}${match[2]}`.trim() : trimmed
+  const label = arabic && arabic <= 39 ? `${arabic}${match[2] || ''}`.trim() : trimmed
+  // Some stations suffix a sector letter ("6 C" at Genova Sampierdarena): keep only the number.
+  return label.replace(/^(\d+)\s*[A-Za-z]$/, '$1')
 }
 function platformOf(train) {
   return normalizePlatformLabel(train.binarioEffettivoPartenzaDescrizione || train.binarioProgrammatoPartenzaDescrizione)
@@ -278,9 +286,10 @@ function buildGroups(trainData) {
 // =======================
 // Board view
 // =======================
-function renderMessage(iconName, text, withRetry = false) {
+function renderMessage(iconName, text, withRetry = false, detail = '') {
   const box = el('div', ['state-box'])
   box.append(icon(iconName), el('p', [], text))
+  if (detail) box.append(el('p', ['state-detail'], detail))
   if (withRetry) {
     const btn = el('button', ['btn-retry'], 'Retry')
     btn.type = 'button'
@@ -317,12 +326,16 @@ function boardRow(train, now) {
   const realEl = el('span', ['flap-realcell'])
   if (real) {
     const tone = delay > 0 ? 'is-late' : 'is-early'
-    realEl.append(
-      el('span', ['flap-time', tone], real),
-      el('span', ['delay-chip', tone], delay > 0 ? `+${delay} min` : `${delay} min`)
-    )
-  } else {
+    const estimate = el('span', ['flap-time', tone], `~${real}`)
+    estimate.title = label('estimateHint')
+    realEl.append(estimate, el('span', ['delay-chip', tone], delay > 0 ? `+${delay} min` : `${delay} min`))
+  } else if (cancelled) {
     realEl.append(el('span', ['flap-time', 'flap-none'], '--'))
+  } else {
+    // No delay reported: the real time is the scheduled one, shown dimmed.
+    const same = el('span', ['flap-time', 'flap-none'], scheduledLabel(train))
+    same.title = label('noDelayHint')
+    realEl.append(same)
   }
 
   const dest = el('span', ['flap-dest'])
@@ -362,7 +375,7 @@ function renderBoard(trainData) {
   const now = Date.now()
   const grid = el('div', ['card-grid', groupByMode === 'train' ? 'is-single' : 'is-multi'])
   groups.forEach(group => grid.append(boardSection(group, now)))
-  const legend = el('p', ['board-legend'], '-- : on time, or no live data yet')
+  const legend = el('p', ['board-legend'], label('legend'))
   $('trainInfo').replaceChildren(grid, legend)
 }
 
@@ -740,7 +753,7 @@ function nerdTable(trains, now) {
       el('span', [], trainLabel(t)),
       el('span', ['nerd-dest'], (t.destinazione || '—').toLowerCase()),
       el('span', [], scheduledLabel(t)),
-      el('span', [real ? delayClass(delay) : 'nerd-dim'], real || '--'),
+      el('span', [real ? delayClass(delay) : 'nerd-dim'], real ? `~${real}` : cancelled ? '--' : scheduledLabel(t)),
       cancelled ? el('span', ['is-late'], 'canc.') : el('span', [delayClass(delay)], delay > 0 ? `+${delay}` : String(delay))
     )
     table.append(row)
@@ -805,9 +818,32 @@ function syncHeaderSpacerHeight() {
   $('headerSpacer').style.height = `${document.querySelector('.app-header').offsetHeight}px`
 }
 
-function setLiveStatus(ok, date) {
-  $('liveDot').classList.toggle('is-offline', !ok)
-  if (date) $('updateDate').textContent = `${label('update')} ${formatTime(date, true)}`
+// Footer status: "Connected" when the last request worked, "Request failed" with the reason otherwise.
+let lastSuccessTime = null
+function setRequestStatus(ok) {
+  const report = lastProxyReport
+  const failedRelays = report ? report.attempts.filter(a => !a.ok) : []
+  const dot = $('liveDot')
+  dot.classList.remove('is-pending')
+  dot.classList.toggle('is-offline', !ok)
+
+  const statusLabel = $('statusLabel')
+  statusLabel.textContent = label(ok ? 'connected' : 'requestFailed')
+  statusLabel.className = ok ? 'is-ok' : 'is-late'
+
+  let when = ''
+  let detail = ''
+  if (ok) {
+    when = ` · ${label('update')} ${formatTime(lastSuccessTime, true)}`
+    detail = `via ${report.via}`
+    if (failedRelays.length) detail += ` · ${failedRelays.length} relay${failedRelays.length > 1 ? 's' : ''} failed first`
+  } else {
+    when = lastSuccessTime ? ` · last data ${formatTime(lastSuccessTime, true)}` : ''
+    detail = describeProxyReport(report) || 'unknown error'
+  }
+  $('updateDate').textContent = when
+  $('statusDetail').textContent = detail
+  $('footerStatus').title = report ? report.attempts.map(a => `${a.name}: ${a.detail}`).join('\n') : ''
 }
 
 function applyView() {
@@ -825,16 +861,15 @@ async function fetchAndDisplay() {
   const url = `http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/partenze/${stationID}/${encodeURIComponent(nowAsViaggiaTrenoDate())}`
   try {
     const data = await fetchViaProxy(url)
-    if (Array.isArray(data) && data.length > 0) {
-      lastUpdateData = data
-      setLiveStatus(true, new Date())
-    }
+    lastSuccessTime = new Date()
+    setRequestStatus(true)
+    if (Array.isArray(data) && data.length > 0) lastUpdateData = data
     if (lastUpdateData) render(lastUpdateData)
     else renderMessage('bi-moon-stars', label('serviceOFF'))
   } catch (err) {
     console.error('Error fetching data:', err)
-    setLiveStatus(false)
-    if (!lastUpdateData) renderMessage('bi-wifi-off', label('loadError'), true)
+    setRequestStatus(false)
+    if (!lastUpdateData) renderMessage('bi-wifi-off', label('loadError'), true, describeProxyReport(lastProxyReport))
   }
 }
 
@@ -944,6 +979,7 @@ document.addEventListener('DOMContentLoaded', () => {
   syncStateToURL()
 
   $('versionNumber').textContent = APP_VERSION
+  $('statusLabel').textContent = label('connecting')
   renderMessage('bi-hourglass-split', label('connecting'))
   updateHeader()
   fetchAndDisplay()

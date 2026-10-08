@@ -51,7 +51,13 @@
     <main id="trainInfo" class="board"></main>
 
     <footer class="app-footer">
-      <span class="footer-item"><span class="live-dot" id="liveDot"></span><span id="updateDate"></span></span>
+      <span class="footer-status" id="footerStatus">
+        <span class="live-dot is-pending" id="liveDot"></span>
+        <span class="status-text">
+          <span><strong id="statusLabel"></strong><span id="updateDate"></span></span>
+          <span class="status-detail" id="statusDetail"></span>
+        </span>
+      </span>
       <a href="http://www.viaggiatreno.it" target="_blank" rel="noopener">ViaggiaTreno (RFI)</a>
       <span class="footer-item">v<span id="versionNumber"></span></span>
     </footer>
