@@ -5,7 +5,7 @@
       <stop offset="1" stop-color="#0b2a5c"/>
     </linearGradient>
   </defs>
-  <circle cx="256" cy="256" r="256" fill="url(#bg)"/>
+  <rect width="512" height="512" fill="url(#bg)"/>
 
   <!-- train front -->
   <path fill="#fff" d="M150 118h104c36 0 62 26 62 62v206a28 28 0 0 1-28 28H116a28 28 0 0 1-28-28V180c0-36 26-62 62-62z" transform="translate(4 0)"/>
