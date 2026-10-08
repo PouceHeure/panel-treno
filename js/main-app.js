@@ -1245,18 +1245,7 @@ function delayEvolution(stops) {
   const max = Math.max(1, ...points.map(p => p.delay))
   const card = el('section', ['tv-card'])
   card.append(el('h3', ['tv-section'], 'Delay along the route'))
-  const dense = points.length > 8
-  const chart = dense ? delayLine(points, max) : el('div', ['tv-delay-chart'])
-  if (!dense) points.forEach((p, i) => {
-    const col = el('div', ['tv-delay-col'])
-    const bar = el('div', ['tv-delay-bar', delayClass(p.delay)])
-    bar.style.height = `${Math.max(4, (p.delay / max) * 100)}%`
-    bar.title = `${p.name}: ${p.delay > 0 ? '+' : ''}${p.delay} min`
-    const wrap = el('div', ['tv-delay-barwrap'])
-    wrap.append(el('span', ['tv-delay-val'], dense ? String(p.delay) : p.delay > 0 ? `+${p.delay} min` : `${p.delay} min`), bar)
-    col.append(wrap, el('span', ['tv-delay-name'], p.name.toLowerCase()))
-    chart.append(col)
-  })
+  const chart = delayLine(points, max)
   card.append(chart)
   const first = points[0].delay
   const last = points[points.length - 1].delay
