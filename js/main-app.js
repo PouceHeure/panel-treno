@@ -985,6 +985,36 @@ function syncHeaderSpacerHeight() {
 
 // Footer status: "Connected" when the last request worked, "Request failed" with the reason otherwise.
 let lastSuccessTime = null
+// Last requests as a ROS-monitor style strip: green ok, yellow ok after a relay failed, red failed.
+const REQUEST_LOG_KEY = 'panelTreno.requests'
+const REQUEST_LOG_SIZE = 24
+
+function loadRequestLog() {
+  try {
+    const list = JSON.parse(localStorage.getItem(REQUEST_LOG_KEY))
+    return Array.isArray(list) ? list.slice(-REQUEST_LOG_SIZE) : []
+  } catch { return [] }
+}
+
+function recordRequest(state, note) {
+  const log = loadRequestLog()
+  log.push({ state, at: Date.now(), note })
+  try { localStorage.setItem(REQUEST_LOG_KEY, JSON.stringify(log.slice(-REQUEST_LOG_SIZE))) } catch {}
+  renderRequestStrip(log.slice(-REQUEST_LOG_SIZE))
+}
+
+function renderRequestStrip(log = loadRequestLog()) {
+  const strip = $('requestStrip')
+  if (!strip) return
+  const cells = Array.from({ length: REQUEST_LOG_SIZE }, (_, i) => {
+    const entry = log[log.length - REQUEST_LOG_SIZE + i]
+    const cell = el('span', ['req-cell', entry ? `is-${entry.state}` : ''])
+    if (entry) cell.title = `${formatTime(new Date(entry.at), true)} · ${entry.note}`
+    return cell
+  })
+  strip.replaceChildren(...cells)
+}
+
 function setRequestStatus(ok) {
   const report = lastProxyReport
   const failedRelays = report ? report.attempts.filter(a => !a.ok) : []
@@ -1009,6 +1039,9 @@ function setRequestStatus(ok) {
   $('updateDate').textContent = when
   $('statusDetail').textContent = detail
   $('footerStatus').title = report ? report.attempts.map(a => `${a.name}: ${a.detail}`).join('\n') : ''
+  if (!ok) recordRequest('fail', describeProxyReport(report) || 'failed')
+  else if (failedRelays.length) recordRequest('partial', `via ${report.via}, ${failedRelays.length} relay failed first`)
+  else recordRequest('ok', `via ${report.via}`)
 }
 
 function applyView() {
@@ -1339,7 +1372,7 @@ function renderTrainPage(d) {
 
   $('trainInfo').replaceChildren(root)
   document.title = `Train: ${category} ${d.numeroTreno}`.trim()
-  $('stationTitle').textContent = `${category} ${d.numeroTreno}`.trim()
+  $('stationTitle').textContent = `${category || 'Train'} ${d.numeroTreno}`.trim()
 }
 
 async function loadTrainPage() {
@@ -1430,6 +1463,7 @@ window.addEventListener('pageshow', e => { if (e.persisted) window.location.relo
 window.addEventListener('resize', syncHeaderSpacerHeight)
 
 document.addEventListener('DOMContentLoaded', () => {
+  renderRequestStrip()
   if ((getParam('view') || '').toLowerCase() === 'train') {
     initTrainPage()
     return
