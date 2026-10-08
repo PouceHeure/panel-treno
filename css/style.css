@@ -565,26 +565,49 @@ body.view-nerd #groupBySelect { display: none; }
 
 /* ===============================
    Header layouts
-   wide: one row (title + clock on the left, controls on the right)
-   narrow: two rows, the controls fill the width on one line
+   >= 860px: one row, name + big clock on the left, controls on the right
+   600-859px: two rows, the clock is one big block spanning both rows
+   < 600px: two rows, a larger clock next to the name (the controls need the full width)
    =============================== */
+.clock-digit, .clock-colon { font-size: 1.9rem; line-height: 1.15; }
+.clock-digit { padding: 2px 7px; }
+
 @media (min-width: 860px) {
   .header-inner { flex-direction: row; align-items: center; justify-content: space-between; gap: 1.5rem; }
-  .title-row { justify-content: flex-start; gap: 1rem; }
+  .title-row { justify-content: flex-start; gap: 1.25rem; }
   .toolbar { justify-content: flex-end; }
   #groupBySelect { flex: 0 0 auto; }
 }
 @media (max-width: 859px) {
-  .toolbar { width: 100%; }
+  .header-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title clock" "toolbar toolbar";
+    column-gap: 0.75rem;
+    row-gap: 0.6rem;
+    align-items: center;
+  }
+  .title-row { display: contents }
+  .station-name { grid-area: title; }
+  .clock { grid-area: clock; }
+  .toolbar { grid-area: toolbar; width: 100%; }
   /* while the filter is open it gets the room, the grouping select shrinks */
   .toolbar:has(.filter-wrap.expanded) #groupBySelect { flex: 0 1 7.5rem; }
   .filter-wrap.expanded, .filter-wrap:focus-within { flex: 1 1 auto; max-width: none; }
 }
+@media (min-width: 600px) and (max-width: 859px) {
+  .header-inner { grid-template-areas: "title clock" "toolbar clock"; }
+  .clock { align-self: stretch; align-items: stretch; gap: 4px; }
+  .clock-digit, .clock-colon { display: flex; align-items: center; font-size: 2.6rem; }
+  .clock-digit { padding: 0 9px; border-radius: 5px; }
+}
+@media (max-width: 599px) {
+  .clock-digit, .clock-colon { font-size: 1.55rem; }
+  .clock-digit { padding: 2px 6px; }
+}
 @media (max-width: 520px) {
   .app-header { padding-inline: 0.75rem; }
   .station-name { font-size: 1.05rem; }
-  .clock-digit, .clock-colon { font-size: 1.05rem; }
-  .clock-digit { padding: 2px 5px; }
   /* the view switch keeps only its icon so the controls fit on one line */
   .pill-btn { width: 34px; padding: 0; }
   #viewToggleLabel { display: none; }
