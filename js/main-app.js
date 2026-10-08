@@ -29,6 +29,11 @@ const LABELS = {
   filter: 'Filter',
   filterPlaceholder: 'Filter…',
   cancelled: 'cancelled',
+  trackedAgo: 'tracked',
+  routeLoading: 'Loading route…',
+  routeError: 'Could not load the route',
+  routeHere: 'here',
+  routeTitle: 'Route to the terminus',
   estimateHint: 'Estimate: scheduled time + reported delay. Delays are rounded to the minute, so it can be off by about 1 min.',
   noDelayHint: 'No delay reported: same as the scheduled time',
   legend: '~ estimated real time (±1 min, delays are rounded) · dimmed time: no delay reported',
@@ -302,6 +307,114 @@ function renderMessage(iconName, text, withRetry = false, detail = '') {
   $('trainInfo').replaceChildren(box)
 }
 
+// =======================
+// Tracking age + route (tap a train)
+// =======================
+const ROUTE_REFRESH_MS = 60 * 1000
+const ROUTE_RETRY_MS = 30 * 1000
+const routeCache = new Map() // key -> { status: 'ok' | 'error', at, stops | message, pending }
+const expandedTrains = new Set()
+
+function trainKey(train) {
+  return `${train.numeroTreno}-${train.dataPartenzaTreno}`
+}
+
+// "12 s", "3 min", "1h05": how long ago the train was last seen by the tracking system.
+function trackedAgeLabel(train, now = Date.now()) {
+  if (!train.ultimoRilev || !train.circolante) return null
+  const seconds = Math.max(0, Math.round((now - train.ultimoRilev) / 1000))
+  if (seconds < 60) return `${seconds} s`
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes} min`
+  return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}`
+}
+
+// Stops from the current station to the terminus, with scheduled/real times and platform.
+function routeStopsFrom(detail) {
+  const all = detail.fermate || []
+  const start = Math.max(0, all.findIndex(f => f.id === stationID))
+  const cancelledIds = new Set((detail.fermateSoppresse || []).map(s => s.id))
+  return all.slice(start).map((f, i, list) => {
+    const isHere = i === 0 && all[start] && all[start].id === stationID
+    const isEnd = i === list.length - 1
+    const useDeparture = isHere
+    const schedMs = (useDeparture ? f.partenza_teorica : f.arrivo_teorico) || f.programmata
+    const realMs = useDeparture ? f.partenzaReale : f.arrivoReale
+    const platform = useDeparture
+      ? f.binarioEffettivoPartenzaDescrizione || f.binarioProgrammatoPartenzaDescrizione
+      : f.binarioEffettivoArrivoDescrizione || f.binarioProgrammatoArrivoDescrizione
+    const diffMin = schedMs && realMs ? Math.round((realMs - schedMs) / 60000) : 0
+    return {
+      name: f.stazione,
+      sched: formatEpochHHMM(schedMs),
+      real: realMs && diffMin !== 0 ? formatEpochHHMM(realMs) : null,
+      diffMin,
+      passed: f.actualFermataType === 1 && !isHere,
+      platform: normalizePlatformLabel(platform),
+      isHere,
+      isEnd,
+      cancelled: cancelledIds.has(f.id)
+    }
+  })
+}
+
+async function loadRoute(train) {
+  const key = trainKey(train)
+  const entry = routeCache.get(key) || {}
+  if (entry.pending) return
+  routeCache.set(key, { ...entry, pending: true })
+  try {
+    const url = `http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/andamentoTreno/${train.codOrigine}/${train.numeroTreno}/${train.dataPartenzaTreno}`
+    const detail = await fetchViaProxy(url)
+    routeCache.set(key, { status: 'ok', at: Date.now(), stops: routeStopsFrom(detail) })
+  } catch (err) {
+    routeCache.set(key, { ...entry, status: 'error', at: Date.now(), message: err.message, pending: false })
+  }
+  rerender()
+}
+
+function routeStopEl(stop) {
+  const kinds = [stop.isHere ? 'is-here' : '', stop.isEnd ? 'is-end' : '', stop.passed ? 'is-passed' : '', stop.cancelled ? 'is-cancelled' : '']
+  const node = el('div', ['route-stop', ...kinds])
+  const times = el('span', ['route-time'])
+  times.append(el('span', [], stop.sched || '--'))
+  if (stop.real) times.append(el('span', [stop.diffMin > 0 ? 'is-late' : 'is-early'], stop.real))
+  node.append(
+    times,
+    el('span', ['route-dot']),
+    el('span', ['route-name'], stop.isHere ? `${stop.name} · ${label('routeHere')}` : stop.name),
+    el('span', ['route-plt'], stop.platform ? `${label('platform').toLowerCase()} ${stop.platform}` : '')
+  )
+  return node
+}
+
+// A metro-line diagram: horizontal on wide screens, vertical on phones (pure CSS).
+function routePanel(train) {
+  const panel = el('div', ['route-panel'])
+  const entry = routeCache.get(trainKey(train))
+  const age = entry && entry.at ? Date.now() - entry.at : Infinity
+  const stale = !entry || (entry.status === 'ok' && age > ROUTE_REFRESH_MS) || (entry.status === 'error' && age > ROUTE_RETRY_MS)
+  if (stale) loadRoute(train)
+
+  if (entry && entry.status === 'ok') {
+    const line = el('div', ['route-line'])
+    entry.stops.forEach(stop => line.append(routeStopEl(stop)))
+    panel.append(line)
+  } else if (entry && entry.status === 'error') {
+    panel.append(el('p', ['route-note', 'is-late'], `${label('routeError')}: ${entry.message}`))
+  } else {
+    panel.append(el('p', ['route-note'], label('routeLoading')))
+  }
+  return panel
+}
+
+function toggleRoute(train) {
+  const key = trainKey(train)
+  if (expandedTrains.has(key)) expandedTrains.delete(key)
+  else expandedTrains.add(key)
+  rerender()
+}
+
 function boardRow(train, now) {
   const delay = delayOf(train)
   const presence = trainPresence(train, now) || 'not-here'
@@ -309,7 +422,13 @@ function boardRow(train, now) {
   const cancelled = isCancelled(train)
   const real = cancelled ? null : realLabel(train)
 
-  const row = el('div', ['flap-row', `is-${presence}`, cancelled ? 'is-cancelled' : ''])
+  const expanded = expandedTrains.has(trainKey(train))
+  const row = el('div', ['flap-row', `is-${presence}`, cancelled ? 'is-cancelled' : '', 'is-clickable', expanded ? 'is-expanded' : ''])
+  row.setAttribute('role', 'button')
+  row.setAttribute('tabindex', '0')
+  row.setAttribute('aria-expanded', String(expanded))
+  row.addEventListener('click', () => toggleRoute(train))
+  row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRoute(train) } })
 
   const tile = el('span', ['platform-tile', `is-${presence}`], platform || '–')
   tile.title = platform ? `${label('platform')} ${platform}` : label('platformUnknown')
@@ -346,6 +465,11 @@ function boardRow(train, now) {
   } else if (presence === 'at-platform') {
     meta.append(' · ', el('span', ['is-at-platform'], label('atPlatform')))
   }
+  const tracked = cancelled ? null : trackedAgeLabel(train, now)
+  if (tracked) {
+    const stale = (now - train.ultimoRilev) > 10 * 60000
+    meta.append(' · ', el('span', [stale ? 'is-slight' : ''], `${label('trackedAgo')} ${tracked} ago`))
+  }
   dest.append(meta)
 
   const countdown = el('span', ['flap-countdown'], countdownLabel(train, now))
@@ -361,7 +485,10 @@ function boardSection(group, now) {
   const cols = el('div', ['flap-row', 'flap-cols'])
   ;['plt', 'sched', 'real', 'to', 'in'].forEach(name => cols.append(el('span', [], name)))
   section.append(title, cols)
-  group.trains.forEach(train => section.append(boardRow(train, now)))
+  group.trains.forEach(train => {
+    section.append(boardRow(train, now))
+    if (expandedTrains.has(trainKey(train))) section.append(routePanel(train))
+  })
   return section
 }
 

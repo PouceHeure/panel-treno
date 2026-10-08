@@ -493,3 +493,86 @@ body.view-nerd #groupBySelect { display: none; }
 .cancel-flag { font-weight: 700; text-transform: uppercase; }
 .platform-tile.is-cancelled { background: #b4434f; border-color: transparent; color: #fff; }
 .platform-tile.is-cancelled .bi { font-size: 0.95em; -webkit-text-stroke: 1px currentColor; }
+
+/* ===============================
+   Tap a train: route as a metro line
+   (horizontal on wide screens, vertical on phones)
+   =============================== */
+.flap-row.is-clickable { cursor: pointer; }
+.flap-row.is-clickable:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.flap-row.is-expanded { background: color-mix(in srgb, var(--accent) 10%, transparent); border-radius: 6px; }
+
+.route-panel {
+  margin: 0 0.1rem 0.4rem;
+  padding: 0.7rem 0.5rem 0.6rem;
+  border-top: 1px solid var(--rule);
+  border-radius: 0 0 8px 8px;
+  background: color-mix(in srgb, var(--bg) 40%, transparent);
+}
+.route-note { margin: 0; color: var(--muted); font-size: 0.8rem; text-align: center; padding: 0.4rem; }
+
+.route-line { display: flex; overflow-x: auto; padding-bottom: 0.4rem; scrollbar-width: thin; }
+.route-stop {
+  position: relative;
+  flex: 0 0 104px;
+  display: grid;
+  grid-template-rows: 2.3rem 18px auto auto;
+  justify-items: center;
+  text-align: center;
+  font-size: 0.78rem;
+}
+.route-stop::before { /* the line, through the dot */
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(2.3rem + 7.5px);
+  height: 3px;
+  background: var(--faint);
+}
+.route-stop.is-here::before { left: 50%; background: linear-gradient(90deg, var(--accent), var(--faint)); }
+.route-stop.is-end::before { right: 50%; }
+.route-stop.is-here.is-end::before { display: none; }
+
+.route-time { align-self: end; display: flex; flex-direction: column; align-items: center; line-height: 1.2; padding-bottom: 3px; }
+.route-time > :first-child { font-weight: 700; color: var(--text); }
+.route-time > :nth-child(2) { font-weight: 700; font-size: 0.74rem; }
+.route-dot {
+  position: relative;
+  z-index: 1;
+  align-self: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 3px solid var(--faint);
+}
+.route-stop.is-here .route-dot { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); }
+.route-stop.is-end .route-dot { width: 17px; height: 17px; margin-top: -2px; border-radius: 4px; border-color: var(--text); background: var(--text); }
+.route-name { margin-top: 0.35rem; padding-inline: 0.2rem; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.route-stop.is-here .route-name { color: var(--accent); }
+.route-plt { color: var(--muted); font-size: 0.7rem; }
+.route-stop.is-cancelled .route-name,
+.route-stop.is-cancelled .route-time > :first-child { text-decoration: line-through; opacity: 0.6; }
+
+@media (max-width: 640px) {
+  .route-line { flex-direction: column; overflow: visible; padding-bottom: 0; }
+  .route-stop {
+    flex: none;
+    grid-template-columns: 3.7rem 18px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    grid-template-areas: "time dot name" "time dot plt";
+    justify-items: start;
+    text-align: left;
+    column-gap: 0.6rem;
+    padding-bottom: 0.85rem;
+  }
+  .route-stop::before { left: calc(3.7rem + 0.6rem + 7.5px); right: auto; top: 0; bottom: 0; width: 3px; height: auto; }
+  .route-stop.is-here::before { left: calc(3.7rem + 0.6rem + 7.5px); top: 9px; background: linear-gradient(180deg, var(--accent), var(--faint)); }
+  .route-stop.is-end::before { right: auto; bottom: auto; height: 9px; }
+  .route-time { grid-area: time; align-self: start; align-items: flex-end; width: 100%; padding-bottom: 0; }
+  .route-dot { grid-area: dot; align-self: start; margin-top: 2px; }
+  .route-stop.is-end .route-dot { margin-top: 0; }
+  .route-name { grid-area: name; margin-top: 0; padding-inline: 0; }
+  .route-plt { grid-area: plt; }
+}
