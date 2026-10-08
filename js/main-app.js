@@ -721,7 +721,6 @@ function nerdDelayGaussian(trains) {
     svg.append(svgEl('text', { x: xOf(v), y: H - 6, class: 'tl-label', 'text-anchor': 'middle' }, v > 0 ? `+${v}` : String(v)))
   }
   panel.append(svg)
-  panel.append(el('p', ['nerd-dim', 'nerd-note'], 'Delays are rarely normal (most trains are on time, a few are very late), so read the curve as a rough guide. Bars: real trains. Dashed line: mean.'))
   return panel
 }
 
@@ -767,9 +766,9 @@ function renderNerd(trainData) {
     nerdTimeline(running, now),
     nerdScatter(running, now),
     nerdDelayDistribution(running),
+    nerdDelayGaussian(running),
     nerdPlatformDistribution(running, now),
     nerdBreakdowns(running),
-    nerdDelayGaussian(running),
     nerdTable(trains, now)
   )
   $('trainInfo').replaceChildren(wrap)
