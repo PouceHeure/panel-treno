@@ -720,3 +720,4 @@ body.view-train #text-search { order: -1; }
 .recent[hidden] { display: none; }
 .recent-head { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
 .recent-clear { border: none; background: none; color: var(--muted); font: inherit; font-size: 0.8rem; cursor: pointer; text-decoration: underline; }
+.pill-btn[hidden] { display: none !important; }

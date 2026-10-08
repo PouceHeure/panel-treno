@@ -2,7 +2,7 @@
 // Constants
 // =======================
 const APP_VERSION = '2.0.0'
-const REFRESH_REQUEST_INTERVAL = 30 * 1000 // ms
+const REFRESH_REQUEST_INTERVAL = 20 * 1000 // ms
 const CLOCK_INTERVAL = 10 * 1000 // ms
 const TRAIN_MODE_KEY = 'ALL'
 const GROUP_MODES = ['platform', 'destination', 'category', 'train']
