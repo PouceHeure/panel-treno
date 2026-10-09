@@ -284,8 +284,11 @@ body.view-nerd #groupBySelect { display: none; }
 .flap-dest { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .flap-dest-name {
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  line-height: 1.2;
   font-size: 0.9rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -743,3 +746,11 @@ body:not(.view-train) #text-search i { margin-right: 0.35rem; }
 /* every stop of a train opens that station's departures */
 a.tv-name { color: inherit; text-decoration: none; }
 a.tv-name:hover { text-decoration: underline dotted; text-underline-offset: 3px; }
+
+/* home: major stations as a compact grid, recents below */
+.major-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+.major-grid .result-item { padding: 0.7rem 0.8rem; font-size: 0.85rem; line-height: 1.25; justify-content: flex-start; }
+.result-item small:empty { display: none; }
+
+/* an odd last stat tile fills the row on phones instead of sitting alone */
+@media (max-width: 520px) { .stat-grid > .stat-tile:last-child:nth-child(odd) { grid-column: 1 / -1; } }

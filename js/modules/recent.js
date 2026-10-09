@@ -27,7 +27,7 @@ function stationRecent(id, name) {
   return { key: `s:${id}`, type: 'station', id, name: name || id }
 }
 function trainRecent(number, from, date, name) {
-  return { key: `t:${number}-${date}`, type: 'train', number, from, date, name }
+  return { key: `t:${number}`, type: 'train', number, from, date, name }
 }
 
 function recentHref(entry) {

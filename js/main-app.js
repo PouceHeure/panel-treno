@@ -973,7 +973,7 @@ function updateClock() {
 function updateHeader() {
   updateClock()
   $('stationTitle').textContent = stationName || label('connecting')
-  document.title = stationName ? `Train: ${stationName}` : 'Panel Treno'
+  document.title = stationName ? `${stationName} · Panel Treno` : 'Panel Treno'
   syncHeaderSpacerHeight()
 }
 
@@ -1376,7 +1376,7 @@ function renderTrainPage(d) {
   root.append(routeCard)
 
   $('trainInfo').replaceChildren(root)
-  document.title = `Train: ${category} ${d.numeroTreno}`.trim()
+  document.title = `${category || 'Train'} ${d.numeroTreno} · Panel Treno`
   $('stationTitle').textContent = `${category || 'Train'} ${d.numeroTreno}`.trim()
 }
 

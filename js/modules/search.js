@@ -128,8 +128,11 @@ function renderMajor() {
   const title = document.createElement('span')
   title.textContent = LABELS.major
   head.append(title)
-  $('major').replaceChildren(head, ...MAJOR_STATIONS.map(([name, id]) =>
-    resultLink(recentHref(stationRecent(id, name)), name, 'station', 'bi-building')))
+  const grid = document.createElement('div')
+  grid.className = 'major-grid'
+  grid.append(...MAJOR_STATIONS.map(([name, id]) =>
+    resultLink(recentHref(stationRecent(id, name)), name, '', 'bi-building')))
+  $('major').replaceChildren(head, grid)
 }
 
 function renderEmpty() {
@@ -155,7 +158,7 @@ function renderEmpty() {
   const items = list.map(e => resultLink(
     recentHref(e),
     e.name,
-    e.type === 'train' ? 'train' : 'station',
+    '',
     e.type === 'train' ? 'bi-train-front' : 'bi-geo-alt'
   ))
   recent.replaceChildren(head, ...items)
