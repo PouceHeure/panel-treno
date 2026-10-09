@@ -1466,6 +1466,8 @@ function initTrainPage() {
 // =======================
 window.addEventListener('pageshow', e => { if (e.persisted) window.location.reload() })
 window.addEventListener('resize', syncHeaderSpacerHeight)
+// the header can change height by itself (title or labels wrapping once the data is loaded)
+new ResizeObserver(syncHeaderSpacerHeight).observe(document.querySelector('.app-header'))
 
 document.addEventListener('DOMContentLoaded', () => {
   renderRequestStrip()
