@@ -3,6 +3,7 @@
 // =======================
 const APP_VERSION = '2.0.0'
 const REFRESH_REQUEST_INTERVAL = 20 * 1000 // ms
+const TRACKING_REFRESH_INTERVAL = 8 * 1000 // ms: the Tracking views refresh faster, for one train only
 const CLOCK_INTERVAL = 10 * 1000 // ms
 const TRAIN_MODE_KEY = 'ALL'
 const GROUP_MODES = ['platform', 'destination', 'category', 'train']
@@ -30,7 +31,7 @@ const LABELS = {
   filterPlaceholder: 'Filter…',
   cancelled: 'cancelled',
   trackedAgo: 'tracked',
-  openTrain: 'Open train page',
+  openTrain: 'Details',
   share: 'Share',
   linkCopied: 'Link copied',
   trainNotFound: 'Train not found',
@@ -454,11 +455,16 @@ function trainPageUrl(train) {
 
 function routePanel(train) {
   const panel = el('div', ['route-panel'])
-  const open = el('a', ['route-open'])
-  open.href = trainPageUrl(train)
-  open.append(icon('bi-box-arrow-up-right'), label('openTrain'))
-  open.addEventListener('click', e => e.stopPropagation())
-  panel.append(open)
+  // two ways in: the details page, or straight to the live Tracking view
+  const actions = el('div', ['route-actions'])
+  ;[['Details', 'bi-list-ul', trainPageUrl(train)], ['Tracking', 'bi-broadcast', `${trainPageUrl(train)}&track=1`]].forEach(([text, iconName, href]) => {
+    const link = el('a', ['route-open'])
+    link.href = href
+    link.append(icon(iconName), text)
+    link.addEventListener('click', e => e.stopPropagation())
+    actions.append(link)
+  })
+  panel.append(actions)
   const entry = routeCache.get(trainKey(train))
   const age = entry && entry.at ? Date.now() - entry.at : Infinity
   const stale = !entry || (entry.status === 'ok' && age > ROUTE_REFRESH_MS) || (entry.status === 'error' && age > ROUTE_RETRY_MS)
@@ -1526,6 +1532,8 @@ function positionEl(position, now, lastSeenMs, here, next, delay) {
 const trackHist = { key: null, ticks: [], fetches: [] }
 let trackRfi = null // { delay, stationId }: what the RFI board says about this train, when asked
 let nerdTrack = false
+let trackRfiCount = 0
+let trackWin = '10' // minutes shown by the position plot: '10', '30' or 'all'
 const TRACK_TICK_MS = 5000
 const TRACK_KEEP = 360
 
@@ -1556,7 +1564,7 @@ function recordTick() {
   const s = trackCoord(trainDetail, trackingModel(trainDetail, now))
   if (s === null) return
   trackHist.ticks.push({ t: now, s })
-  if (trackHist.ticks.length > TRACK_KEEP) trackHist.ticks.shift()
+  if (trackHist.ticks.length > TRACK_KEEP * 2) trackHist.ticks.shift() // about an hour of samples
   if (trackingMode && nerdTrack) renderTrackNerd(trainDetail)
 }
 
@@ -1574,14 +1582,13 @@ function recordFetch(prev, data) {
 }
 
 async function fetchTrackRfi(boardId) {
-  trackRfi = null
   if (!boardId) return
   try {
     const ids = await loadRfiIds()
     if (!ids[boardId]) return
     const rows = await fetchRfiRows(ids[boardId], false)
     const row = rows.find(r => r.number === String(trainRef.number))
-    if (row) trackRfi = { delay: row.delay, stationId: boardId }
+    trackRfi = row ? { delay: row.delay, stationId: boardId } : null
   } catch { /* RFI is a bonus series */ }
 }
 
@@ -1595,18 +1602,37 @@ function nerdTrackChart(d) {
   const sNow = trackCoord(d, model)
   const panel = el('div', ['nerd-panel'])
   const head = el('div', ['nerd-panel-head'])
-  head.append(el('span', [], 'position vs time'), el('span', [], 'stations x clock'))
+  const winSwitch = el('div', ['tk-zoom', 'is-small'])
+  ;[['10', '10 min'], ['30', '30 min'], ['all', 'All']].forEach(([key, text]) => {
+    const b = el('button', ['tk-zoom-btn', trackWin === key ? 'is-active' : ''], text)
+    b.type = 'button'
+    b.addEventListener('click', () => { trackWin = key; renderTrackNerd(trainDetail) })
+    winSwitch.append(b)
+  })
+  head.append(el('span', [], 'position vs time'), winSwitch)
   panel.append(head)
   if (sNow === null) {
     panel.append(el('p', ['nerd-dim'], 'no position to plot yet'))
     return panel
   }
-  const samples = trackHist.ticks.concat(trackHist.fetches.map(f => ({ t: f.t, s: f.s })))
+  const winMs = trackWin === 'all' ? null : Number(trackWin) * 60000
+  const samples = trackHist.ticks.concat(trackHist.fetches.map(f => ({ t: f.t, s: f.s }))).filter(x => !winMs || x.t >= now - winMs * 0.7)
   const all = samples.map(x => x.s).concat([sNow])
-  let lo = Math.max(0, Math.floor(Math.min(...all)) - 1)
-  let hi = Math.min(stops.length - 1, Math.ceil(Math.max(...all)) + 2)
-  while (hi - lo < 4 && (lo > 0 || hi < stops.length - 1)) { if (hi < stops.length - 1) hi++; if (hi - lo < 4 && lo > 0) lo-- }
-  if (hi - lo > 13) lo = hi - 13
+  let lo
+  let hi
+  if (winMs) {
+    // zoomed: the stations around the train, a few minutes either side of now
+    const here = Math.floor(sNow)
+    const pad = trackWin === '30' ? 1 : 0
+    lo = Math.max(0, here - 1 - pad)
+    hi = Math.min(stops.length - 1, here + 2 + pad)
+  } else {
+    lo = Math.max(0, Math.floor(Math.min(...all)) - 1)
+    hi = Math.min(stops.length - 1, Math.ceil(Math.max(...all)) + 2)
+    while (hi - lo < 4 && (lo > 0 || hi < stops.length - 1)) { if (hi < stops.length - 1) hi++; if (hi - lo < 4 && lo > 0) lo-- }
+    if (hi - lo > 13) lo = hi - 13
+  }
+  while (hi - lo < 2 && (lo > 0 || hi < stops.length - 1)) { if (hi < stops.length - 1) hi++; else lo-- }
   const rows = stops.slice(lo, hi + 1)
   const extra = Math.max(d.ritardo || 0, 0) * 60000
   const arrOf = f => f.arrivo_teorico || f.programmata
@@ -1615,12 +1641,12 @@ function nerdTrackChart(d) {
   // the window follows the log: from the first sample to a little after the next stop (at least 20 minutes)
   const firstT = samples.length ? Math.min(...samples.map(x => x.t)) : now
   const nextStop = stops[Math.min(stops.length - 1, Math.floor(sNow) + 1)]
-  const tMin = firstT - 2 * 60000
-  const tMax = Math.max(now + 3 * 60000, arrOf(nextStop) + extra + 2 * 60000, tMin + 20 * 60000)
+  const tMin = winMs ? now - winMs * 0.7 : firstT - 2 * 60000
+  const tMax = winMs ? now + winMs * 0.3 : Math.max(now + 3 * 60000, arrOf(nextStop) + extra + 2 * 60000, tMin + 20 * 60000)
   const LEFT = 112
   const RIGHT = 12
   const TOP = 10
-  const ROW = 24
+  const ROW = winMs ? 46 : 24
   const plotH = (rows.length - 1) * ROW
   const H = TOP + plotH + 26
   const W = chartWidth()
@@ -1635,7 +1661,7 @@ function nerdTrackChart(d) {
     svg.append(svgEl('text', { x: 4, y: y + 4, class: 'tl-label' }, clipName(f.stazione)))
   })
   const span = tMax - tMin
-  const step = span <= 40 * 60000 ? 5 * 60000 : span <= 90 * 60000 ? 10 * 60000 : span <= 240 * 60000 ? 30 * 60000 : 60 * 60000
+  const step = span <= 12 * 60000 ? 2 * 60000 : span <= 40 * 60000 ? 5 * 60000 : span <= 90 * 60000 ? 10 * 60000 : span <= 240 * 60000 ? 30 * 60000 : 60 * 60000
   for (let t = Math.ceil(tMin / step) * step; t < tMax; t += step) {
     svg.append(svgEl('line', { x1: xOf(t), y1: TOP, x2: xOf(t), y2: TOP + plotH, class: 'tl-vgrid' }))
     svg.append(svgEl('text', { x: xOf(t), y: H - 8, class: 'tl-label', 'text-anchor': 'middle' }, formatTime(new Date(t))))
@@ -1698,9 +1724,10 @@ function nerdTrackDelay() {
   const head = el('div', ['nerd-panel-head'])
   head.append(el('span', [], 'delay vs time'), el('span', [], 'minutes'))
   panel.append(head)
-  const f = trackHist.fetches
+  const winMs = trackWin === 'all' ? null : Number(trackWin) * 60000
+  const f = trackHist.fetches.filter(x => !winMs || x.t >= Date.now() - winMs * 0.7)
   if (f.length < 2) {
-    panel.append(el('p', ['nerd-dim'], 'needs two refreshes (about 40 s) to draw a curve'))
+    panel.append(el('p', ['nerd-dim'], 'needs two refreshes (about 16 s) to draw a curve'))
     return panel
   }
   const LEFT = 40
@@ -1791,6 +1818,7 @@ async function setNerdTrack(on) {
 // Tracking view: a live position, timetable-driven and corrected by the data
 // =======================
 let trackingMode = false
+const trainRefreshMs = () => (trackingMode ? TRACKING_REFRESH_INTERVAL : REFRESH_REQUEST_INTERVAL)
 let trackZoom = 'normal' // 'close' = 2 stops each side, spaced by travel time; 'normal' = a window; 'all' = every stop
 let trainFetchedAt = 0
 const live = { raf: 0, data: null, segKey: null, shown: 0, lastTs: 0, els: null, correction: null }
@@ -2008,7 +2036,7 @@ function tickTracking(ts) {
     els.trust.className = `tk-trust track-${rel.tier}`
   }
   const age = Math.round((now - trainFetchedAt) / 1000)
-  const nextIn = Math.max(0, Math.round(REFRESH_REQUEST_INTERVAL / 1000 - age))
+  const nextIn = Math.max(0, Math.round(trainRefreshMs() / 1000 - age))
   const c = live.correction
   els.sync.textContent = `Data refreshed ${age} s ago · next in ${nextIn} s${c && now - c.at < 15000 && Math.abs(c.pct) >= 2 ? ` · re-synced ${c.pct > 0 ? '+' : ''}${c.pct}% of the segment` : ''}`
 
@@ -2144,7 +2172,8 @@ async function loadTrainPage() {
     return
   }
   const previous = trainDetail
-  if (nerdTrack) await fetchTrackRfi(new URLSearchParams(window.location.search).get('stationID'))
+  // RFI is a slower, heavier request: ask it on the first refresh and then every fourth one
+  if (nerdTrack && trackRfiCount++ % 4 === 0) await fetchTrackRfi(new URLSearchParams(window.location.search).get('stationID'))
   trainDetail = data
   trainFetchedAt = Date.now()
   recordFetch(previous, data)
@@ -2242,7 +2271,9 @@ function initTrainPage() {
   $('statusLabel').textContent = label('connecting')
   renderMessage('bi-hourglass-split', label('connecting'))
   loadTrainPage()
-  setInterval(loadTrainPage, REFRESH_REQUEST_INTERVAL)
+  // each refresh is awaited before the next is scheduled, so a slow relay never stacks requests
+  const loop = () => setTimeout(async () => { await loadTrainPage(); loop() }, trainRefreshMs())
+  loop()
   setInterval(updateClock, CLOCK_INTERVAL)
   updateClock()
 }

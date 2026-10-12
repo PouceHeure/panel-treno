@@ -917,3 +917,8 @@ body.view-train .source-switch { display: none; }
 .k-pass { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
 .k-rfi { width: 9px; height: 9px; background: #7cc7ff; transform: rotate(45deg); }
 .k-rfi-line { width: 16px; height: 2px; background: #7cc7ff; }
+
+.tk-zoom.is-small { height: 24px; }
+.tk-zoom.is-small .tk-zoom-btn { padding: 0 0.55rem; font-size: 0.7rem; }
+
+.route-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
