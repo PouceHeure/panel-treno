@@ -1666,18 +1666,34 @@ function nerdTrackChart(d) {
   const LEFT = 116
   const RIGHT = 12
   const TOP = 14
-  const ROW = winMs ? 46 : 24
-  const plotH = (rows.length - 1) * ROW
+  // the vertical axis follows the scheduled travel time between stations (dwell times left out)
+  const cum = [0]
+  stops.forEach((st, i) => { if (i) cum[i] = cum[i - 1] + Math.max(0.5, (arrOf(st) - depOf(stops[i - 1])) / 60000) })
+  const minAt = v => {
+    const c = Math.min(Math.max(v, 0), stops.length - 1)
+    const i = Math.floor(c)
+    const j = Math.min(stops.length - 1, i + 1)
+    return cum[i] + (c - i) * (cum[j] - cum[i])
+  }
+  const totalMin = Math.max(1, minAt(hi) - minAt(lo))
+  let minGap = Infinity
+  for (let i = lo; i < hi; i++) minGap = Math.min(minGap, cum[i + 1] - cum[i])
+  const pxPerMin = Math.min(380 / totalMin, Math.max(24 / Math.max(minGap, 0.5), (winMs ? 190 : 150) / totalMin))
+  const plotH = pxPerMin * totalMin
+  const yAt = v => TOP + pxPerMin * (minAt(v) - minAt(lo))
   const H = TOP + plotH + 26
   const W = chartWidth()
   const plotW = W - LEFT - RIGHT
   const xOf = ms => LEFT + ((ms - tMin) / (tMax - tMin)) * plotW
-  const yOf = s => TOP + (Math.min(Math.max(s, lo), hi) - lo) * ROW
+  const yOf = v => yAt(Math.min(Math.max(v, lo), hi))
 
   const svg = svgChart(H, 'Estimated and corrected train position against time', W)
+  let lastLabelY = -Infinity
   rows.forEach((f, i) => {
-    const y = TOP + i * ROW
+    const y = yAt(lo + i)
     svg.append(svgEl('line', { x1: LEFT, y1: y, x2: W - RIGHT, y2: y, class: 'tl-grid' }))
+    if (y - lastLabelY < 22) return // too close to the previous name: the line stays, the label is skipped
+    lastLabelY = y
     // station names wrap on two lines instead of being cut: "genova piazza / principe"
     const lines = wrapLabel(f.stazione, 16)
     const label = svgEl('text', { x: 4, y: lines.length > 1 ? y - 1 : y + 4, class: 'tl-label' })
@@ -1686,7 +1702,8 @@ function nerdTrackChart(d) {
     svg.append(label)
   })
   const span = tMax - tMin
-  const step = span <= 6.5 * 60000 ? 60000 : span <= 12 * 60000 ? 2 * 60000 : span <= 40 * 60000 ? 5 * 60000 : span <= 90 * 60000 ? 10 * 60000 : span <= 240 * 60000 ? 30 * 60000 : 60 * 60000
+  // the smallest round step that keeps the clock labels about 44px apart
+  const step = ([1, 2, 5, 10, 15, 30, 60, 120].find(m => (m * 60000 / span) * plotW >= 44) || 120) * 60000
   for (let t = Math.ceil(tMin / step) * step; t < tMax; t += step) {
     svg.append(svgEl('line', { x1: xOf(t), y1: TOP, x2: xOf(t), y2: TOP + plotH, class: 'tl-vgrid' }))
     svg.append(svgEl('text', { x: xOf(t), y: H - 8, class: 'tl-label', 'text-anchor': 'middle' }, formatTime(new Date(t))))
@@ -1703,15 +1720,15 @@ function nerdTrackChart(d) {
   svg.append(plot)
   const path = (pts, cls) => plot.append(svgEl('polyline', { points: pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '), class: cls }))
   // timetable alone
-  path(rows.flatMap((f, i) => [[xOf(arrOf(f)), TOP + i * ROW], [xOf(depOf(f)), TOP + i * ROW]]), 'tk-plot-sched')
+  path(rows.flatMap((f, i) => [[xOf(arrOf(f)), yAt(lo + i)], [xOf(depOf(f)), yAt(lo + i)]]), 'tk-plot-sched')
   // what the current delay predicts for the stops ahead
   const idxHere = stops.indexOf(model.here)
   const ahead = rows.map((f, i) => ({ f, i, idx: lo + i })).filter(r => r.idx > idxHere)
-  path([[xOf(now), yOf(sNow)]].concat(ahead.flatMap(r => [[xOf(arrOf(r.f) + extra), TOP + r.i * ROW], [xOf(depOf(r.f) + extra), TOP + r.i * ROW]])), 'tk-plot-pred')
+  path([[xOf(now), yOf(sNow)]].concat(ahead.flatMap(r => [[xOf(arrOf(r.f) + extra), yAt(lo + r.i)], [xOf(depOf(r.f) + extra), yAt(lo + r.i)]])), 'tk-plot-pred')
   // the filter's confidence: +-2 sigma around the estimate, from the departure and on to the expected arrival
   if (model.kind === 'between' && model.kal) {
     const hereI = stops.indexOf(model.here)
-    const yBand = v => TOP + (hereI + Math.min(1, Math.max(0, v)) - lo) * ROW
+    const yBand = v => yAt(hereI + Math.min(1, Math.max(0, v)))
     const run = kalmanRun(d, model.here, model.next, model.since, now, 5000)
     const pts = run.samples.concat(kalmanForecast(run, now, Math.max(model.eta, now) + 60000))
     const upper = pts.map(x => [xOf(x.t), yBand(x.p + 2 * x.sigma)])
@@ -1733,7 +1750,7 @@ function nerdTrackChart(d) {
   })
   // what really happened, rebuilt from the recorded times: arrival and departure at each stop,
   // joined by straight lines (linear in time between two stops)
-  const yRaw = s => TOP + (s - lo) * ROW
+  const yRaw = yAt
   const real = []
   stops.forEach((f, i) => {
     if (f.arrivoReale) real.push({ t: f.arrivoReale, s: i, kind: 'arr', f })
@@ -1752,7 +1769,7 @@ function nerdTrackChart(d) {
     const j = stops.findIndex(f => f.id === trackRfi.stationId)
     if (j >= lo && j <= hi) {
       const x = xOf(depOf(stops[j]) + trackRfi.delay * 60000)
-      const y = TOP + (j - lo) * ROW
+      const y = yAt(j)
       const mark = svgEl('path', { d: `M${x},${y - 6} L${x + 6},${y} L${x},${y + 6} L${x - 6},${y} Z`, class: 'tk-plot-rfi' })
       mark.append(svgEl('title', {}, `RFI: ${stops[j].stazione} at ${formatEpochHHMM(depOf(stops[j]) + trackRfi.delay * 60000)} (${trackRfi.delay > 0 ? '+' : ''}${trackRfi.delay} min)`))
       plot.append(mark)
