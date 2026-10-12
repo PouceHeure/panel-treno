@@ -341,6 +341,35 @@ function trackedAgeLabel(train, now = Date.now()) {
   return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}`
 }
 
+// How far to trust a position: the older the last detection, the less the delay and "in station" can be believed.
+const TRACK_TIERS = [
+  { maxMin: 2, tier: 'good', text: 'reliable' },
+  { maxMin: 10, tier: 'ok', text: 'less reliable' },
+  { maxMin: 30, tier: 'poor', text: 'not great' },
+  { maxMin: Infinity, tier: 'bad', text: 'unreliable' }
+]
+function trackReliability(lastSeenMs, now = Date.now()) {
+  const minutes = (now - lastSeenMs) / 60000
+  return TRACK_TIERS.find(t => minutes < t.maxMin)
+}
+
+// Where a train is right now, read from the times recorded at its last stops:
+// arrived and not left = in the station; left and not arrived at the next one = between the two.
+function trainPosition(d, stops, lastPassed, delay, now = Date.now()) {
+  if (d.provvedimento === 1 || d.nonPartito || d.arrivato || lastPassed < 0) return null
+  const here = stops[lastPassed]
+  const next = stops[lastPassed + 1]
+  if (!here || !next) return null
+  if (here.partenzaReale) {
+    const eta = (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
+    const span = eta - here.partenzaReale
+    const progress = span > 0 ? Math.min(1, Math.max(0, (now - here.partenzaReale) / span)) : null
+    return { kind: 'between', from: here.stazione, to: next.stazione, since: here.partenzaReale, progress }
+  }
+  if (here.arrivoReale) return { kind: 'station', at: here.stazione, since: here.arrivoReale }
+  return null
+}
+
 // The route: the stops from the current station to the terminus (the origin is deliberately left out).
 function routeStopsFrom(detail) {
   const all = detail.fermate || []
@@ -561,8 +590,10 @@ function boardRow(train, now) {
   }
   const tracked = cancelled ? null : trackedAgeLabel(train, now)
   if (tracked) {
-    const stale = (now - train.ultimoRilev) > 10 * 60000
-    meta.append(' · ', el('span', [stale ? 'is-slight' : ''], `${label('trackedAgo')} ${tracked} ago`))
+    const rel = trackReliability(train.ultimoRilev, now)
+    const seen = el('span', [`track-${rel.tier}`], `${label('trackedAgo')} ${tracked} ago`)
+    seen.title = `Last detection ${tracked} ago: ${rel.text}`
+    meta.append(' · ', seen)
   }
   dest.append(meta)
 
@@ -584,6 +615,18 @@ function boardSection(group, now) {
     if (!train.rfiOnly && expandedTrains.has(trainKey(train))) section.append(routePanel(train))
   })
   return section
+}
+
+// Colour key for "tracked X ago": the more recent the last detection, the more the row can be trusted.
+function trackKey() {
+  const row = el('p', ['bar-key'])
+  const item = (tier, text) => {
+    const node = el('span', ['bar-key-item'])
+    node.append(el('span', [`key-dot`, `track-dot-${tier}`]), text)
+    return node
+  }
+  row.append(el('span', ['bar-key-item', 'is-title'], 'last seen'), item('good', '< 2 min'), item('ok', '< 10'), item('poor', '< 30'), item('bad', '30+'))
+  return row
 }
 
 function renderBoard(trainData) {
@@ -613,9 +656,9 @@ function renderBoard(trainData) {
       key(el('span', ['key-swatch', 'is-slight']), `< ${LATE_THRESHOLD} min`),
       key(el('span', ['key-swatch', 'is-late']), `${LATE_THRESHOLD} min+`)
     )
-    return $('trainInfo').replaceChildren(grid, bar, legend)
+    return $('trainInfo').replaceChildren(grid, bar, trackKey(), legend)
   }
-  $('trainInfo').replaceChildren(grid, legend)
+  $('trainInfo').replaceChildren(grid, trackKey(), legend)
 }
 
 // =======================
@@ -1428,6 +1471,34 @@ function delayEvolution(stops) {
   return card
 }
 
+function positionEl(position, now, lastSeenMs) {
+  const box = el('div', ['tv-position'])
+  const rel = lastSeenMs ? trackReliability(lastSeenMs, now) : null
+  box.title = `Read from the times recorded at the last stops${rel ? `; last detection: ${rel.text}` : ''}`
+  const ago = ms => {
+    const m = Math.max(0, Math.round((now - ms) / 60000))
+    return m < 1 ? '<1 min' : m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`
+  }
+  if (position.kind === 'station') {
+    const line = el('p', ['tv-position-text'])
+    line.append(icon('bi-geo-alt-fill'), el('strong', [], ' In station '), `${position.at} · arrived ${ago(position.since)} ago`)
+    box.append(line)
+  } else {
+    const line = el('p', ['tv-position-text'])
+    line.append(icon('bi-arrow-right-circle-fill'), el('strong', [], ' Between stations '), `· left ${position.from} ${ago(position.since)} ago`)
+    box.append(line)
+    const bar = el('div', ['tv-position-bar'])
+    const pct = position.progress === null ? 50 : Math.round(position.progress * 100)
+    const dot = el('span', ['tv-position-dot'])
+    dot.style.left = `${pct}%`
+    bar.append(dot)
+    const ends = el('div', ['tv-position-ends'])
+    ends.append(el('span', [], position.from.toLowerCase()), el('span', [], position.to.toLowerCase()))
+    box.append(bar, ends)
+  }
+  return box
+}
+
 function renderTrainPage(d) {
   const root = el('div', ['tv-wrap'])
   const category = (d.categoria || d.categoriaDescrizione || '').trim()
@@ -1463,6 +1534,9 @@ function renderTrainPage(d) {
     summary.append(progress)
   }
 
+  const position = trainPosition(d, stops, lastPassed, delay, now)
+  if (position) summary.append(positionEl(position, now, d.oraUltimoRilevamento))
+
   const facts = el('dl', ['tv-facts'])
   const addFact = (name, value, tone = '') => {
     if (!value) return
@@ -1483,7 +1557,8 @@ function renderTrainPage(d) {
   }
   if (d.oraUltimoRilevamento) {
     const age = trackedAgeLabel({ ultimoRilev: d.oraUltimoRilevamento, circolante: true })
-    addFact('last seen', `${d.stazioneUltimoRilevamento || '—'} · ${formatEpochHHMM(d.oraUltimoRilevamento)}${age ? ` (${age} ago)` : ''}`)
+    const rel = trackReliability(d.oraUltimoRilevamento, now)
+    addFact('last seen', `${d.stazioneUltimoRilevamento || '—'} · ${formatEpochHHMM(d.oraUltimoRilevamento)}${age ? ` (${age} ago · ${rel.text})` : ''}`, d.arrivato ? '' : `track-${rel.tier}`)
   }
   addFact('data updated', lastSuccessTime ? formatTime(lastSuccessTime, true) : null)
   const coaches = Array.isArray(d.descOrientamento) ? d.descOrientamento[1] : null
