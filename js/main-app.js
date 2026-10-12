@@ -1490,8 +1490,7 @@ async function shareTrain() {
 }
 
 // The official RFI board exists for most stations: when this one has an id, show the Mix / Viaggia / RFI switch.
-// ---- Compare: ViaggiaTreno and RFI side by side, train by train ----
-const PLATFORM_NONE = '–'
+// ---- Compare: the times of ViaggiaTreno and RFI side by side, train by train ----
 function compareRows(trains, rfiRows) {
   const vtByNumber = new Map(trains.map(t => [String(t.numeroTreno), t]))
   // RFI only lists the next departures: do not call a later ViaggiaTreno train "missing" from RFI
@@ -1499,51 +1498,60 @@ function compareRows(trains, rfiRows) {
   const rows = rfiRows.map(r => {
     const t = vtByNumber.get(r.number)
     vtByNumber.delete(r.number)
+    const sort = rfiTimeMs(r.time) || 0
     return {
-      number: r.number, place: r.place, sort: rfiTimeMs(r.time) || 0, time: r.time,
-      vt: t ? { platform: platformOf(t) || PLATFORM_NONE, delay: delayOf(t), here: trainPresence(t) === 'at-platform', cancelled: isCancelled(t) } : null,
-      rfi: { platform: r.platform || PLATFORM_NONE, delay: r.delay, here: r.departing }
+      number: r.number, place: r.place, sort, time: r.time,
+      vt: t ? { delay: delayOf(t), cancelled: isCancelled(t) } : null,
+      rfi: { delay: r.delay }
     }
   })
   upcomingTrains([...vtByNumber.values()]).filter(t => (realDepartureMs(t) || 0) <= horizon).forEach(t => {
     rows.push({
       number: String(t.numeroTreno), place: t.destinazione || '—', sort: t.orarioPartenza || 0, time: scheduledLabel(t),
-      vt: { platform: platformOf(t) || PLATFORM_NONE, delay: delayOf(t), here: trainPresence(t) === 'at-platform', cancelled: isCancelled(t) },
-      rfi: null
+      vt: { delay: delayOf(t), cancelled: isCancelled(t) }, rfi: null
     })
   })
   return rows.sort((a, b) => a.sort - b.sort)
 }
 
-function compareCell(side, mismatchPlatform, mismatchDelay) {
+// the departure time a source implies: scheduled time + its delay
+function compareCell(side, time, disagree) {
   const cell = el('span', ['cmp-cell'])
   if (!side) {
     cell.append(el('span', ['cmp-missing'], 'not listed'))
     return cell
   }
-  const tile = el('span', ['platform-tile', side.here ? 'is-at-platform' : 'is-not-here', mismatchPlatform ? 'is-mismatch' : ''], side.platform)
-  if (side.platform.length > 2) tile.classList.add('is-long')
-  const delay = el('span', ['cmp-delay', side.delay > 0 ? 'is-late' : '', mismatchDelay ? 'is-mismatch' : ''], side.cancelled ? 'cancelled' : side.delay ? `${side.delay > 0 ? '+' : ''}${side.delay}` : 'on time')
-  cell.append(tile, delay)
+  if (side.cancelled) {
+    cell.append(el('span', ['cmp-delay', 'is-late'], 'cancelled'))
+    return cell
+  }
+  const ms = rfiTimeMs(time)
+  const real = ms ? formatEpochHHMM(ms + side.delay * 60000) : time
+  const tone = side.delay > 0 ? 'is-late' : side.delay < 0 ? 'is-early' : 'flap-none'
+  cell.append(
+    el('span', ['flap-time', tone, disagree ? 'is-mismatch' : ''], real),
+    el('span', ['cmp-delay', side.delay > 0 ? 'is-late' : ''], side.delay ? `${side.delay > 0 ? '+' : ''}${side.delay} min` : 'no delay')
+  )
   return cell
 }
 
 function renderCompare(trainData, rfiRows) {
   if (!rfiRows) return renderMessage('bi-question-circle', 'RFI is not available for this station right now.', true)
   const rows = compareRows(trainData, rfiRows)
-  const both = rows.filter(r => r.vt && r.rfi)
-  const platformKnown = both.filter(r => r.vt.platform !== PLATFORM_NONE && r.rfi.platform !== PLATFORM_NONE)
-  const platformSame = platformKnown.filter(r => r.vt.platform === r.rfi.platform)
-  const delaySame = both.filter(r => Math.abs(r.vt.delay - r.rfi.delay) < 2)
-  const vtLacksPlatform = both.filter(r => r.vt.platform === PLATFORM_NONE && r.rfi.platform !== PLATFORM_NONE)
+  const both = rows.filter(r => r.vt && r.rfi && !r.vt.cancelled)
+  const diff = r => r.vt.delay - r.rfi.delay // > 0: Viaggia reports more delay than RFI
+  const agree = both.filter(r => Math.abs(diff(r)) < 2)
+  const viaggiaMore = both.filter(r => diff(r) >= 2)
+  const rfiMore = both.filter(r => diff(r) <= -2)
+  const meanGap = both.length ? both.reduce((sum, r) => sum + diff(r), 0) / both.length : 0
   const pct = (n, d) => (d ? `${Math.round((n / d) * 100)}%` : '–')
 
   const tiles = el('div', ['cmp-tiles'])
   ;[
-    [pct(platformSame.length, platformKnown.length), 'same platform', `${platformSame.length} of ${platformKnown.length} trains`],
-    [pct(delaySame.length, both.length), 'delay within 1 min', `${delaySame.length} of ${both.length} trains`],
-    [String(vtLacksPlatform.length), 'platform only on RFI', 'Viaggia had none'],
-    [String(rows.length - both.length), 'listed by one only', 'next departures']
+    [pct(agree.length, both.length), 'within 1 min', `${agree.length} of ${both.length} trains`],
+    [String(viaggiaMore.length), 'Viaggia later', 'by 2 min or more'],
+    [String(rfiMore.length), 'RFI later', 'by 2 min or more'],
+    [`${meanGap > 0 ? '+' : ''}${meanGap.toFixed(1)}`, 'mean gap (min)', 'Viaggia minus RFI']
   ].forEach(([value, name, sub]) => {
     const tile = el('div', ['cmp-tile'])
     tile.append(el('span', ['cmp-tile-name'], name), el('span', ['cmp-tile-value'], value), el('span', ['cmp-tile-sub'], sub))
@@ -1552,23 +1560,24 @@ function renderCompare(trainData, rfiRows) {
 
   const card = el('section', ['flap-card', 'cmp-card'])
   const title = el('header', ['flap-title'])
-  title.append(icon('bi-layout-split'), el('span', [], 'Viaggia vs RFI'))
+  title.append(icon('bi-clock-history'), el('span', [], 'Viaggia vs RFI · times'))
   const cols = el('div', ['cmp-row', 'cmp-cols'])
   ;['sched', 'train', 'viaggia', 'rfi'].forEach(name => cols.append(el('span', [], name)))
   card.append(title, cols)
   rows.forEach(r => {
-    const samePlatform = r.vt && r.rfi && r.vt.platform === r.rfi.platform
-    const sameDelay = r.vt && r.rfi && Math.abs(r.vt.delay - r.rfi.delay) < 2
-    const mismatchPlatform = r.vt && r.rfi && !samePlatform
-    const mismatchDelay = r.vt && r.rfi && !sameDelay
-    const row = el('div', ['cmp-row', mismatchPlatform || mismatchDelay || !r.vt || !r.rfi ? 'has-diff' : ''])
+    const comparable = r.vt && r.rfi && !r.vt.cancelled
+    const gap = comparable ? diff(r) : 0
+    const disagree = comparable && Math.abs(gap) >= 2
+    const row = el('div', ['cmp-row', disagree || !r.vt || !r.rfi ? 'has-diff' : ''])
     const who = el('span', ['flap-dest'])
-    who.append(el('span', ['flap-dest-name'], r.place), el('span', ['flap-meta'], r.number))
-    row.append(el('span', ['flap-time'], r.time), who, compareCell(r.vt, mismatchPlatform, mismatchDelay), compareCell(r.rfi, mismatchPlatform, mismatchDelay))
+    const meta = el('span', ['flap-meta'], r.number)
+    if (disagree) meta.append(' · ', el('span', ['is-late'], `${Math.abs(gap)} min apart`))
+    who.append(el('span', ['flap-dest-name'], r.place), meta)
+    row.append(el('span', ['flap-time'], r.time), who, compareCell(r.vt, r.time, disagree), compareCell(r.rfi, r.time, disagree))
     card.append(row)
   })
   const wrap = el('div', ['cmp-wrap'])
-  wrap.append(tiles, card, el('p', ['cmp-note'], 'Highlighted: the two sources disagree on the platform or by 2 min or more on the delay. Viaggia rounds delays to the minute.'))
+  wrap.append(tiles, card, el('p', ['cmp-note'], 'Real time = scheduled time + the delay each source reports. Highlighted: 2 min or more apart (Viaggia rounds delays to the minute).'))
   $('trainInfo').replaceChildren(wrap)
 }
 

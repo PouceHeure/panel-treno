@@ -49,17 +49,30 @@ function sourceHref(source, stationID, stationName) {
   const params = new URLSearchParams({ stationID })
   if (stationName) params.set('stationName', stationName)
   if (source === 'mix' || source === 'compare') params.set('source', source)
+  if (source === 'global') params.set('source', 'mix') // Global opens on the merged view
   return `${source === 'rfi' ? 'rfi.html' : 'index.html'}?${params}`
 }
 
-// Fills <nav id="sourceSwitch">: three links, the active one highlighted.
-function initSourceSwitch(active, stationID, stationName) {
-  const nav = document.getElementById('sourceSwitch')
+// Fills a switch: its links point to the other views, the active one is highlighted.
+function fillSwitch(nav, active, stationID, stationName) {
   nav.querySelectorAll('a').forEach(a => {
     const source = a.dataset.source
     a.href = sourceHref(source, stationID, stationName)
     a.classList.toggle('is-active', source === active)
     if (source === active) a.setAttribute('aria-current', 'page')
+    else a.removeAttribute('aria-current')
   })
-  nav.hidden = false
+}
+
+// <nav id="sourceSwitch"> = Viaggia / RFI / Global. Global has its own sub-switch (Merged / Compare)
+// in <div id="subBar"> when that page has one.
+function initSourceSwitch(active, stationID, stationName) {
+  const main = document.getElementById('sourceSwitch')
+  fillSwitch(main, active === 'mix' || active === 'compare' ? 'global' : active, stationID, stationName)
+  main.hidden = false
+  const subBar = document.getElementById('subBar')
+  if (subBar) {
+    fillSwitch(document.getElementById('globalSwitch'), active, stationID, stationName)
+    subBar.hidden = !(active === 'mix' || active === 'compare')
+  }
 }
