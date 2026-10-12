@@ -1621,6 +1621,22 @@ function nerdTrackChart(d) {
   const now = Date.now()
   const model = trackingModel(d, now)
   const sNow = trackCoord(d, model)
+  // what really happened (arrival and departure times at each stop) and where the train was at any instant
+  const real = []
+  stops.forEach((st, i) => {
+    if (st.arrivoReale) real.push({ t: st.arrivoReale, s: i, kind: 'arr', f: st })
+    if (st.partenzaReale) real.push({ t: st.partenzaReale, s: i, kind: 'dep', f: st })
+  })
+  real.sort((x, y) => x.t - y.t)
+  const histPts = trackHist.ticks.concat(trackHist.fetches.map(x => ({ t: x.t, s: x.s }))).sort((x, y) => x.t - y.t)
+  const posAt = t => {
+    if (real.length && t <= real[0].t) return real[0].s
+    for (let i = 1; i < real.length; i++) {
+      if (t <= real[i].t) return real[i - 1].s + ((t - real[i - 1].t) / Math.max(1, real[i].t - real[i - 1].t)) * (real[i].s - real[i - 1].s)
+    }
+    const before = histPts.filter(x => x.t <= t)
+    return before.length ? before[before.length - 1].s : sNow
+  }
   const panel = el('div', ['nerd-panel'])
   const head = el('div', ['nerd-panel-head'])
   const winSwitch = el('div', ['tk-zoom', 'is-small'])
@@ -1644,7 +1660,9 @@ function nerdTrackChart(d) {
   let hi
   if (winMs) {
     // zoomed: the stations around the train, a few minutes either side of now
-    const here = Math.floor(sNow)
+    // the stations follow the visible time: centred on where the train was in the middle of the window
+    const sCenter = trackPan.ms === 0 ? sNow : posAt(winStart + winMs / 2)
+    const here = Math.min(stops.length - 1, Math.max(0, Math.floor(sCenter)))
     const pad = trackWin === '30' ? 1 : 0
     lo = Math.max(0, here - 1 - pad)
     hi = Math.min(stops.length - 1, here + 2 + pad)
@@ -1757,12 +1775,6 @@ function nerdTrackChart(d) {
   // what really happened, rebuilt from the recorded times: arrival and departure at each stop,
   // joined by straight lines (linear in time between two stops)
   const yRaw = yAt
-  const real = []
-  stops.forEach((f, i) => {
-    if (f.arrivoReale) real.push({ t: f.arrivoReale, s: i, kind: 'arr', f })
-    if (f.partenzaReale) real.push({ t: f.partenzaReale, s: i, kind: 'dep', f })
-  })
-  real.sort((a, b) => a.t - b.t)
   if (real.length > 1) path(real.map(r => [xOf(r.t), yRaw(r.s)]), 'tk-plot-real')
   real.forEach(r => {
     if (r.s < lo - 0.5 || r.s > hi + 0.5) return
@@ -1781,26 +1793,79 @@ function nerdTrackChart(d) {
       plot.append(mark)
     }
   }
-  // drag sideways to move through time (up/down still scrolls the page)
+  // inspect and move: hover/touch for the position at an instant, drag to move (sideways in time, and up/down
+  // the stations with a mouse), shift+wheel to scroll time, ctrl+wheel to zoom, arrow keys
+  const readout = el('p', ['tk-readout', 'nerd-dim'], winMs ? 'touch or hover the plot to read the position at that time' : '')
+  const cursor = svgEl('line', { y1: TOP, y2: TOP + plotH, class: 'tk-cursor' })
+  cursor.style.display = 'none'
+  svg.append(cursor)
+  const describe = v => {
+    const i = Math.min(stops.length - 1, Math.floor(v))
+    const frac = v - i
+    if (frac < 0.03 || i >= stops.length - 1) return `at ${stops[i].stazione.toLowerCase()}`
+    return `between ${stops[i].stazione.toLowerCase()} and ${stops[i + 1].stazione.toLowerCase()} · ${Math.round(frac * 100)}%`
+  }
+  const showAt = clientX => {
+    const rect = svg.getBoundingClientRect()
+    const x = (clientX - rect.left) * (W / rect.width)
+    if (x < LEFT || x > W - RIGHT) return
+    const t = tMin + ((x - LEFT) / plotW) * (tMax - tMin)
+    cursor.setAttribute('x1', x)
+    cursor.setAttribute('x2', x)
+    cursor.style.display = ''
+    readout.textContent = `${formatTime(new Date(t), true)} · ${t > now ? 'in the future' : describe(posAt(t))}`
+  }
   if (winMs) {
     svg.classList.add('is-pannable')
+    svg.tabIndex = 0
+    svg.addEventListener('pointermove', e => { if (e.buttons === 0) showAt(e.clientX) })
+    svg.addEventListener('pointerleave', () => { cursor.style.display = 'none' })
     svg.addEventListener('pointerdown', e => {
       e.preventDefault()
+      showAt(e.clientX)
       let lastX = e.clientX
+      let lastY = e.clientY
+      let rowAcc = 0
       let busy = false
       const rect = svg.getBoundingClientRect()
       const msPerPx = winMs / (rect.width * (plotW / W))
       const move = ev => {
         trackPan.ms = Math.min(winMs * 0.3, Math.max(-3 * 3600000, trackPan.ms - (ev.clientX - lastX) * msPerPx))
+        if (ev.pointerType === 'mouse') {
+          rowAcc += ev.clientY - lastY
+          while (Math.abs(rowAcc) >= 44) { trackPan.rows += rowAcc > 0 ? -1 : 1; rowAcc -= Math.sign(rowAcc) * 44 }
+        }
         lastX = ev.clientX
+        lastY = ev.clientY
         if (!busy) { busy = true; requestAnimationFrame(() => { busy = false; renderTrackNerd(trainDetail) }) }
       }
       const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
       window.addEventListener('pointermove', move)
       window.addEventListener('pointerup', up)
     })
+    svg.addEventListener('wheel', e => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault()
+        const order = ['5', '10', '30']
+        const k = order.indexOf(trackWin)
+        const next = order[Math.min(order.length - 1, Math.max(0, k + (e.deltaY > 0 ? 1 : -1)))]
+        if (next !== trackWin) { trackWin = next; renderTrackNerd(trainDetail) }
+      } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        e.preventDefault()
+        trackPan.ms = Math.min(winMs * 0.3, Math.max(-3 * 3600000, trackPan.ms + (e.deltaX || e.deltaY) * (winMs / plotW)))
+        renderTrackNerd(trainDetail)
+      }
+    }, { passive: false })
+    svg.addEventListener('keydown', e => {
+      const step = e.key === 'ArrowLeft' ? -winMs / 6 : e.key === 'ArrowRight' ? winMs / 6 : 0
+      if (step) {
+        e.preventDefault()
+        trackPan.ms = Math.min(winMs * 0.3, Math.max(-3 * 3600000, trackPan.ms + step))
+        renderTrackNerd(trainDetail)
+      } else if (e.key === 'Home') { trackPan.ms = 0; trackPan.rows = 0; renderTrackNerd(trainDetail) }
+    })
   }
-  panel.append(trackNav(winMs, hi < stops.length - 1, lo > 0), svg)
+  panel.append(trackNav(winMs, hi < stops.length - 1, lo > 0), readout, svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
   const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
   legend.append(item('k-est', 'estimate'), item('k-band', '±2σ'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-fix', 'correction'), item('k-real', 'real times'), ...(trackRfi ? [item('k-rfi', 'RFI')] : []))
@@ -1832,7 +1897,6 @@ function trackNav(winMs, canDown, canUp) {
     btn('▼', 'Later stations', () => { trackPan.rows += 1 }, !canDown),
     btn(live ? 'live' : 'back to live', 'Follow the train again', () => { trackPan.ms = 0; trackPan.rows = 0 }, live)
   )
-  if (!live) nav.append(el('span', ['nerd-dim'], 'drag the plot sideways too'))
   return nav
 }
 

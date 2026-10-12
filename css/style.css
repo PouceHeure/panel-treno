@@ -938,3 +938,7 @@ body.view-train .source-switch { display: none; }
 .tk-nav-btn:disabled { opacity: 0.4; cursor: default; }
 svg.is-pannable { touch-action: pan-y pinch-zoom; cursor: grab; user-select: none; }
 svg.is-pannable:active { cursor: grabbing; }
+
+.tk-readout { min-height: 1.2em; margin: 0 0 0.3rem; font-size: 0.74rem; }
+.tk-cursor { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 2; pointer-events: none; }
+svg.is-pannable:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
