@@ -1422,6 +1422,20 @@ async function shareTrain() {
   }
 }
 
+// The official RFI board exists for most stations: show its link when this one has an id.
+async function initRfiLink() {
+  try {
+    const ids = await (await fetch('data/rfi-ids.json')).json()
+    if (!ids[stationID]) return
+    const rfiParams = new URLSearchParams({ stationID })
+    if (stationName) rfiParams.set('stationName', stationName)
+    $('rfiLink').href = `rfi.html?${rfiParams}`
+    $('rfiLink').title = 'Official RFI station board'
+    $('rfiLink').hidden = false
+    syncHeaderSpacerHeight()
+  } catch { /* the link is a bonus: no mapping file, no link */ }
+}
+
 function initTrainPage() {
   document.body.classList.add('view-train')
   const params = new URLSearchParams(window.location.search)
@@ -1493,6 +1507,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const paramView = (getParam('view') || '').toLowerCase()
   if (VIEWS.includes(paramView)) viewMode = paramView
 
+  initRfiLink()
   const searchLink = $('text-search')
   searchLink.title = 'Home: search a station or a train'
   searchLink.setAttribute('aria-label', 'Home')

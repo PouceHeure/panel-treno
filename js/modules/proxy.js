@@ -8,7 +8,8 @@ const CORS_PROXIES = [
   {
     name: 'r.jina.ai',
     build: url => `https://r.jina.ai/${url}`,
-    headers: { 'X-Return-Format': 'text' }
+    headers: { 'X-Return-Format': 'text' },
+    htmlHeaders: { 'X-Return-Format': 'html' } // for HTML pages the text format would strip the table markup
   },
   {
     name: 'allorigins',
@@ -41,11 +42,11 @@ function describeProxyReport(report) {
   return report.attempts.filter(a => !a.ok).map(a => `${a.name}: ${a.detail}`).join(' · ')
 }
 
-async function fetchViaProxy(targetUrl, { asJSON = true } = {}) {
+async function fetchViaProxy(targetUrl, { asJSON = true, html = false } = {}) {
   const attempts = []
   for (const proxy of CORS_PROXIES) {
     try {
-      const res = await fetch(proxy.build(targetUrl), { headers: proxy.headers || {}, signal: AbortSignal.timeout(PROXY_TIMEOUT) })
+      const res = await fetch(proxy.build(targetUrl), { headers: (html && proxy.htmlHeaders) || proxy.headers || {}, signal: AbortSignal.timeout(PROXY_TIMEOUT) })
       if (!res.ok) throw new ProxyFailure(`HTTP ${res.status}`)
       const text = await res.text()
       // A relay can answer 200 with the page ViaggiaTreno's firewall served to it.

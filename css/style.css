@@ -754,3 +754,12 @@ a.tv-name:hover { text-decoration: underline dotted; text-underline-offset: 3px;
 
 /* an odd last stat tile fills the row on phones instead of sitting alone */
 @media (max-width: 520px) { .stat-grid > .stat-tile:last-child:nth-child(odd) { grid-column: 1 / -1; } }
+
+/* RFI board page */
+.rfi-stops { margin: 0 0 0.4rem; padding: 0.5rem 0.6rem; border-radius: 6px; background: var(--tile); color: var(--muted); font-size: 0.78rem; line-height: 1.45; }
+.pill-label { margin-left: 0.35rem; }
+@media (max-width: 520px) { .rfi-page .pill-label { display: none; } .rfi-page .pill-label { margin-left: 0; } }
+body.view-nerd #rfiLink, body.view-train #rfiLink { display: none; }
+@media (max-width: 520px) { #rfiLabel { display: none; } }
+a.pill-btn#rfiLink i { margin-right: 0.35rem; }
+@media (max-width: 520px) { a.pill-btn#rfiLink i { margin-right: 0; } }

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#07182f" />
+    <title>RFI board · Panel Treno</title>
+
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css"
+      rel="stylesheet"
+    />
+    <link rel="icon" href="icon/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/svg+xml" href="icon/icon.svg" />
+    <link rel="apple-touch-icon" href="icon/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="Panel Treno" />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body class="rfi-page">
+    <header class="app-header">
+      <div class="header-inner">
+        <div class="title-row">
+          <h1 id="stationTitle" class="station-name"></h1>
+          <span class="clock" id="currentTime" aria-label="Current time"></span>
+        </div>
+
+        <div class="toolbar">
+          <a href="home.html" class="pill-btn" id="homeLink"><i class="bi bi-house"></i><span class="pill-label">Home</span></a>
+          <a href="index.html" class="pill-btn" id="boardLink"><i class="bi bi-arrow-left"></i><span class="pill-label">Board</span></a>
+          <button type="button" class="pill-btn" id="directionToggle"><i class="bi bi-box-arrow-in-down-right"></i><span class="pill-label" id="directionLabel"></span></button>
+          <a href="#" class="pill-btn" id="officialLink" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i><span class="pill-label">RFI site</span></a>
+        </div>
+      </div>
+    </header>
+
+    <div class="app-header-spacer" id="headerSpacer"></div>
+
+    <main id="rfiBoard" class="board"></main>
+
+    <footer class="app-footer">
+      <span class="footer-status" id="footerStatus">
+        <span class="live-dot is-pending" id="liveDot"></span>
+        <span class="status-text">
+          <span><strong id="statusLabel"></strong><span id="updateDate"></span></span>
+          <span class="status-detail" id="statusDetail"></span>
+        </span>
+      </span>
+      <span class="footer-item">Source: RFI information board</span>
+    </footer>
+
+    <script src="js/modules/proxy.js"></script>
+    <script src="js/rfi.js"></script>
+  </body>
+</html>
