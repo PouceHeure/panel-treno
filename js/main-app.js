@@ -363,7 +363,7 @@ function trainPosition(d, stops, lastPassed, delay, now = Date.now()) {
   if (here.partenzaReale) {
     const eta = (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
     const span = eta - here.partenzaReale
-    const progress = span > 0 ? Math.min(1, Math.max(0, (now - here.partenzaReale) / span)) : null
+    const progress = span > 0 ? Math.min(0.97, Math.max(0, (now - here.partenzaReale) / span)) : null
     return { kind: 'between', from: here.stazione, to: next.stazione, since: here.partenzaReale, progress }
   }
   if (here.arrivoReale) return { kind: 'station', at: here.stazione, since: here.arrivoReale }
@@ -1483,7 +1483,7 @@ function betweenEl(position, next, delay, now) {
   return row
 }
 
-function positionEl(position, now, lastSeenMs) {
+function positionEl(position, now, lastSeenMs, here, next, delay) {
   const box = el('div', ['tv-position'])
   const rel = lastSeenMs ? trackReliability(lastSeenMs, now) : null
   box.title = `Read from the times recorded at the last stops${rel ? `; last detection: ${rel.text}` : ''}`
@@ -1508,10 +1508,229 @@ function positionEl(position, now, lastSeenMs) {
     ends.append(el('span', [], position.from.toLowerCase()), el('span', [], position.to.toLowerCase()))
     box.append(bar, ends)
   }
+  // how long until the next stop (or until the train leaves, when it is in a station)
+  const when = position.kind === 'station'
+    ? { name: 'departs', ms: (here.partenza_teorica || here.programmata) + Math.max(delay, 0) * 60000 }
+    : { name: `reaches ${next.stazione.toLowerCase()}`, ms: (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000 }
+  const left = untilLabel(when.ms, now)
+  const eta = el('p', ['tv-position-eta'])
+  eta.append(icon('bi-stopwatch'), el('strong', [], ` ${left === 'now' ? 'due now' : left}`), ` · ${when.name} ~${formatEpochHHMM(when.ms)}`)
+  box.append(eta)
   return box
 }
 
+// =======================
+// Tracking view: a live position, timetable-driven and corrected by the data
+// =======================
+let trackingMode = false
+let trainFetchedAt = 0
+const live = { raf: 0, data: null, segKey: null, shown: 0, lastTs: 0, els: null, correction: null }
+
+function stopTracking() {
+  cancelAnimationFrame(live.raf)
+  live.raf = 0
+  live.els = null
+}
+
+// What the timetable and the last detections say about the train at time `now`.
+function trackingModel(d, now) {
+  const stops = d.fermate || []
+  const delay = d.ritardo || 0
+  const lastPassed = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
+  const extra = Math.max(delay, 0) * 60000
+  const sched = (f, which) => (which === 'arr' ? f.arrivo_teorico || f.programmata : f.partenza_teorica || f.programmata)
+  if (d.provvedimento === 1) return { kind: 'cancelled' }
+  if (d.arrivato || lastPassed >= stops.length - 1) return { kind: 'arrived', last: stops[stops.length - 1] }
+  const here = stops[Math.max(lastPassed, 0)]
+  const next = stops[Math.max(lastPassed, 0) + 1]
+  const eta = sched(next, 'arr') + extra
+  if (lastPassed < 0 || d.nonPartito) {
+    return { kind: 'waiting', here, next, segKey: 'wait', p: 0, ghost: 0, target: sched(here, 'dep') + extra, eta }
+  }
+  if (!here.partenzaReale) {
+    // arrived and not left yet (or no departure time recorded): in the station
+    return { kind: 'station', here, next, segKey: `s${lastPassed}`, p: 0, ghost: 0, target: sched(here, 'dep') + extra, eta }
+  }
+  const t0 = here.partenzaReale
+  const span = eta - t0
+  const p = span > 0 ? Math.min(0.97, Math.max(0, (now - t0) / span)) : 0
+  const schedSpan = sched(next, 'arr') - sched(here, 'dep')
+  const ghost = schedSpan > 0 ? Math.min(1, Math.max(0, (now - sched(here, 'dep')) / schedSpan)) : 0
+  return { kind: 'between', here, next, segKey: `b${lastPassed}`, p, ghost, target: eta, eta, since: t0 }
+}
+
+// "18 min 04 s", "1 h 14 min": a countdown that cannot be mistaken for a clock time
+function clockLeft(ms, now) {
+  const total = Math.max(0, Math.round((ms - now) / 1000))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const sec = String(total % 60).padStart(2, '0')
+  return h ? `${h} h ${String(m).padStart(2, '0')} min` : `${m} min ${sec} s`
+}
+
+function renderTracking(d) {
+  const root = el('div', ['tv-wrap'])
+  const category = (d.categoria || d.categoriaDescrizione || '').trim()
+  const status = trainStatus(d)
+  const delay = d.ritardo || 0
+  const model = trackingModel(d, Date.now())
+  live.data = d
+  setTrainTitle(d)
+
+  const head = el('section', ['tv-card'])
+  const top = el('div', ['tv-head'])
+  top.append(el('span', ['train-badge'], `${category} ${d.numeroTreno}`.trim()), chip(label(status.key), status.tone))
+  if (d.provvedimento !== 1 && delay !== 0) top.append(chip(delay > 0 ? `+${delay} min` : `${delay} min`, delay > 0 ? 'is-late' : 'is-early'))
+  head.append(top)
+  const route = el('h2', ['tv-route'])
+  route.append(el('span', [], d.origine || '—'), icon('bi-arrow-right'), el('span', [], d.destinazione || '—'))
+  head.append(route)
+  root.append(head)
+
+  if (model.kind === 'cancelled' || model.kind === 'arrived') {
+    const done = el('section', ['tv-card', 'tk-card'])
+    done.append(el('p', ['tk-state'], model.kind === 'cancelled' ? 'This train is cancelled.' : `Arrived at ${model.last.stazione}.`))
+    root.append(done)
+    $('trainInfo').replaceChildren(root)
+    stopTracking()
+    return
+  }
+
+  const card = el('section', ['tv-card', 'tk-card'])
+  const els = {}
+  els.state = el('p', ['tk-state'])
+  const nextLine = el('div', ['tk-next'])
+  els.label = el('span', ['tk-label'])
+  els.name = el('span', ['tk-name'])
+  els.eta = el('span', ['tk-eta'])
+  nextLine.append(els.label, els.name, els.eta)
+  els.count = el('div', ['tk-count'])
+
+  const strip = el('div', ['tk-strip'])
+  const bar = el('div', ['tk-bar'])
+  els.ghost = el('span', ['tk-ghost'])
+  els.ghost.title = 'Where the timetable alone would put the train'
+  els.dot = el('span', ['tk-dot'])
+  els.dot.title = 'Estimated position, corrected by the latest data'
+  bar.append(els.ghost, els.dot)
+  const ends = el('div', ['tk-ends'])
+  els.from = el('span')
+  els.to = el('span')
+  ends.append(els.from, els.to)
+  strip.append(bar, ends)
+
+  els.trust = el('p', ['tk-trust'])
+  els.sync = el('p', ['tk-sync'])
+  card.append(els.state, nextLine, els.count, strip, els.trust, els.sync)
+  root.append(card)
+
+  // the stops after the next one, with a live countdown
+  const stops = d.fermate || []
+  const idx = stops.indexOf(model.next)
+  const upcoming = stops.slice(idx + 1, idx + 6)
+  els.upcoming = upcoming.map(f => ({ f, cell: el('span', ['tk-up-count']) }))
+  if (upcoming.length) {
+    const list = el('section', ['tv-card'])
+    list.append(el('h3', ['tv-section'], 'After that'))
+    els.upcoming.forEach(({ f, cell }) => {
+      const row = el('div', ['tk-up'])
+      const at = (f.arrivo_teorico || f.programmata) + Math.max(delay, 0) * 60000
+      row.append(el('span', ['tk-up-name'], f.stazione), el('span', ['tk-up-time'], formatEpochHHMM(at)), cell)
+      row.dataset.at = String(at)
+      list.append(row)
+    })
+    root.append(list)
+  }
+
+  const legend = el('p', ['tk-legend'])
+  const key = (cls, text) => { const k = el('span', ['tk-key']); k.append(el('span', [cls]), text); return k }
+  legend.append(key('tk-key-dot', 'live estimate'), key('tk-key-ghost', 'timetable only'))
+  root.append(legend)
+
+  $('trainInfo').replaceChildren(root)
+  live.els = els
+
+  // servo: when the data moves the target, the dot slides to it instead of jumping
+  if (live.segKey !== model.segKey) {
+    live.segKey = model.segKey
+    live.shown = 0
+  } else if (live.correction === null || Date.now() - live.correction.at > 1000) {
+    const jump = model.p - live.shown
+    live.correction = { pct: Math.round(jump * 100), at: Date.now() }
+  }
+  cancelAnimationFrame(live.raf)
+  live.lastTs = 0
+  live.raf = requestAnimationFrame(tickTracking)
+}
+
+function tickTracking(ts) {
+  const els = live.els
+  if (!els || !live.data) return
+  const now = Date.now()
+  const d = live.data
+  const model = trackingModel(d, now)
+  if (model.kind !== 'between' && model.kind !== 'station' && model.kind !== 'waiting') return
+  const dt = live.lastTs ? (ts - live.lastTs) / 1000 : 0
+  live.lastTs = ts
+  live.shown += (model.p - live.shown) * (1 - Math.exp(-dt / 2.5))
+
+  els.dot.style.left = `${live.shown * 100}%`
+  els.ghost.style.left = `${model.ghost * 100}%`
+  els.from.textContent = model.here.stazione.toLowerCase()
+  els.to.textContent = model.next.stazione.toLowerCase()
+  els.label.textContent = 'Next stop'
+  els.name.textContent = model.next.stazione
+  els.eta.textContent = `~${formatEpochHHMM(model.eta)}`
+
+  const ago = ms => {
+    const m = Math.max(0, Math.round((now - ms) / 60000))
+    return m < 1 ? 'less than a minute' : `${m} min`
+  }
+  let countdown
+  if (model.kind === 'between') {
+    countdown = model.eta - now
+    els.state.textContent = `Between ${model.here.stazione.toLowerCase()} and ${model.next.stazione.toLowerCase()} · left ${ago(model.since)} ago`
+    els.count.dataset.caption = 'to the next stop'
+  } else if (model.kind === 'station') {
+    countdown = model.target - now
+    els.state.textContent = `In ${model.here.stazione.toLowerCase()}, leaves around ${formatEpochHHMM(model.target)}`
+    els.count.dataset.caption = countdown > 0 ? 'before it leaves' : 'should be leaving'
+  } else {
+    countdown = model.target - now
+    els.state.textContent = `Not departed yet from ${model.here.stazione.toLowerCase()}`
+    els.count.dataset.caption = 'before departure'
+  }
+  els.count.textContent = countdown > 0 ? clockLeft(model.kind === 'between' ? model.eta : model.target, now) : 'due now'
+  els.count.classList.toggle('is-late', countdown <= 0)
+  if (model.kind === 'between') els.name.classList.toggle('is-overdue', countdown <= 0)
+
+  if (d.oraUltimoRilevamento) {
+    const rel = trackReliability(d.oraUltimoRilevamento, now)
+    els.trust.textContent = `Position ${rel.text} · last detection ${ago(d.oraUltimoRilevamento)} ago at ${d.stazioneUltimoRilevamento || '—'}`
+    els.trust.className = `tk-trust track-${rel.tier}`
+  }
+  const age = Math.round((now - trainFetchedAt) / 1000)
+  const nextIn = Math.max(0, Math.round(REFRESH_REQUEST_INTERVAL / 1000 - age))
+  const c = live.correction
+  els.sync.textContent = `Data refreshed ${age} s ago · next in ${nextIn} s${c && now - c.at < 15000 && Math.abs(c.pct) >= 2 ? ` · re-synced ${c.pct > 0 ? '+' : ''}${c.pct}% of the segment` : ''}`
+
+  els.upcoming.forEach(({ cell }, i) => {
+    const row = cell.parentElement
+    const left = untilLabel(Number(row.dataset.at), now)
+    cell.textContent = left === 'now' ? 'due' : left
+  })
+  live.raf = requestAnimationFrame(tickTracking)
+}
+
+function setTrainTitle(d) {
+  const category = (d.categoria || d.categoriaDescrizione || '').trim()
+  document.title = `${category || 'Train'} ${d.numeroTreno} · Panel Treno`
+  $('stationTitle').textContent = `${category || 'Train'} ${d.numeroTreno}`.trim()
+}
+
 function renderTrainPage(d) {
+  if (trackingMode) return renderTracking(d)
+  stopTracking()
   const root = el('div', ['tv-wrap'])
   const category = (d.categoria || d.categoriaDescrizione || '').trim()
   const status = trainStatus(d)
@@ -1547,7 +1766,7 @@ function renderTrainPage(d) {
   }
 
   const position = trainPosition(d, stops, lastPassed, delay, now)
-  if (position) summary.append(positionEl(position, now, d.oraUltimoRilevamento))
+  if (position) summary.append(positionEl(position, now, d.oraUltimoRilevamento, stops[lastPassed], stops[lastPassed + 1], delay))
 
   const facts = el('dl', ['tv-facts'])
   const addFact = (name, value, tone = '') => {
@@ -1600,8 +1819,7 @@ function renderTrainPage(d) {
   root.append(routeCard)
 
   $('trainInfo').replaceChildren(root)
-  document.title = `${category || 'Train'} ${d.numeroTreno} · Panel Treno`
-  $('stationTitle').textContent = `${category || 'Train'} ${d.numeroTreno}`.trim()
+  setTrainTitle(d)
 }
 
 async function loadTrainPage() {
@@ -1622,6 +1840,7 @@ async function loadTrainPage() {
     return
   }
   trainDetail = data
+  trainFetchedAt = Date.now()
   renderTrainPage(data)
   const category = (data.categoria || data.categoriaDescrizione || '').trim()
   rememberRecent(trainRecent(trainRef.number, trainRef.from, trainRef.date, `${`${category} ${data.numeroTreno}`.trim()} · ${data.destinazione || ''}`))
@@ -1682,6 +1901,23 @@ function initTrainPage() {
   $('text-search').setAttribute('aria-label', 'Home')
   $('trainShare').hidden = false
   $('trainShare').addEventListener('click', shareTrain)
+  trackingMode = params.get('track') === '1'
+  const trackBtn = $('trackToggle')
+  trackBtn.hidden = false
+  const applyTrackToggle = () => {
+    $('trackToggleLabel').textContent = trackingMode ? 'Details' : 'Tracking'
+    trackBtn.querySelector('i').className = `bi ${trackingMode ? 'bi-list-ul' : 'bi-broadcast'}`
+    const url = new URLSearchParams(window.location.search)
+    if (trackingMode) url.set('track', '1')
+    else url.delete('track')
+    window.history.replaceState(null, '', `${window.location.pathname}?${url}`)
+  }
+  applyTrackToggle()
+  trackBtn.addEventListener('click', () => {
+    trackingMode = !trackingMode
+    applyTrackToggle()
+    if (trainDetail) renderTrainPage(trainDetail)
+  })
   $('trainShareLabel').textContent = label('share')
   retryLoad = loadTrainPage
 

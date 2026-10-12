@@ -834,3 +834,35 @@ body.view-train .source-switch { display: none; }
 .tv-between-text { grid-column: 2; align-self: center; display: flex; flex-direction: column; font-size: 0.78rem; color: var(--muted); }
 .tv-between-text strong { color: var(--accent); font-size: 0.8rem; }
 @media (max-width: 599px) { .tv-between { column-gap: 0.45rem; } }
+
+/* position card: time to the next stop */
+.tv-position-eta { margin: 0.55rem 0 0; font-size: 0.85rem; }
+.tv-position-eta .bi { color: var(--accent); }
+
+/* Tracking view */
+.tk-card { display: flex; flex-direction: column; gap: 0.7rem; }
+.tk-state { margin: 0; color: var(--muted); font-size: 0.85rem; text-transform: none; }
+.tk-next { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; }
+.tk-label { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.tk-name { font-size: 1.15rem; font-weight: 700; }
+.tk-name.is-overdue { color: var(--late); }
+.tk-eta { color: var(--muted); font-weight: 700; }
+.tk-count { font-size: 2.3rem; font-weight: 700; line-height: 1.05; color: var(--accent); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.tk-count.is-late { color: var(--late); font-size: 2rem; }
+.tk-count::after { content: attr(data-caption); display: block; margin-top: 0.1rem; color: var(--muted); font-size: 0.72rem; font-weight: 400; letter-spacing: 0; }
+.tk-strip { margin: 0.6rem 0.4rem 0; }
+.tk-bar { position: relative; height: 8px; border-radius: 4px; background: var(--rule); }
+.tk-dot { position: absolute; top: -6px; width: 20px; height: 20px; margin-left: -10px; border-radius: 50%; background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); }
+.tk-ghost { position: absolute; top: -3px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; border: 2px dashed var(--muted); background: transparent; }
+.tk-ends { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.7rem; color: var(--muted); font-size: 0.72rem; text-transform: capitalize; }
+.tk-ends span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-trust, .tk-sync { margin: 0; font-size: 0.78rem; }
+.tk-sync { color: var(--muted); }
+.tk-up { display: grid; grid-template-columns: minmax(0, 1fr) 3.4rem 5.8rem; gap: 0.5rem; padding: 0.5rem 0; border-top: 1px solid var(--rule); align-items: baseline; }
+.tk-up-name { font-weight: 700; }
+.tk-up-time { color: var(--muted); font-weight: 700; }
+.tk-up-count { text-align: right; color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
+.tk-legend { display: flex; justify-content: center; gap: 1.2rem; margin: 0; color: var(--muted); font-size: 0.78rem; }
+.tk-key { display: inline-flex; align-items: center; gap: 0.4rem; }
+.tk-key-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+.tk-key-ghost { width: 12px; height: 12px; border-radius: 50%; border: 2px dashed var(--muted); }
