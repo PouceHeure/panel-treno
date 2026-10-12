@@ -1,6 +1,5 @@
 // Official RFI station board (the one shown in the station), grouped by platform.
 // RFI serves an HTML page with no CORS headers: it goes through the same relays as ViaggiaTreno.
-const RFI_MONITOR = 'https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor'
 const REFRESH_INTERVAL = 30 * 1000 // ms
 const LOCALE = 'en-GB'
 
@@ -21,12 +20,6 @@ function el(tag, classes = [], text) {
   return node
 }
 const icon = name => el('i', ['bi', name])
-
-function boardHref() {
-  const p = new URLSearchParams({ stationID })
-  if (stationName) p.set('stationName', stationName)
-  return `index.html?${p}`
-}
 
 function syncUrl() {
   const p = new URLSearchParams({ stationID })
@@ -51,29 +44,6 @@ function renderMessage(iconName, text, detail) {
   box.append(icon(iconName), el('p', [], text))
   if (detail) box.append(el('p', ['state-detail'], detail))
   $('rfiBoard').replaceChildren(box)
-}
-
-// ---- parsing the RFI page ----
-const cellText = (row, id) => (row.querySelector(`#${id}`)?.textContent || '').replace(/\s+/g, ' ').trim()
-
-function parseRows(html) {
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  return [...doc.querySelectorAll('tr[name="treno"]')].map(row => {
-    const stops = (row.querySelector('.testoinfoaggiuntive')?.textContent || '').replace(/\s+/g, ' ').trim()
-    const delayText = cellText(row, 'RRitardo')
-    const delay = parseInt((delayText.match(/\d+/) || [0])[0], 10)
-    return {
-      operator: row.querySelector('.logoCliente')?.getAttribute('alt') || '',
-      category: (row.querySelector('.logoCategoria')?.getAttribute('alt') || '').replace(/^Categoria\s*/i, ''),
-      number: cellText(row, 'RTreno'),
-      place: cellText(row, 'RStazione'),
-      time: cellText(row, 'ROrario'),
-      delay: Number.isFinite(delay) ? delay : 0,
-      platform: cellText(row, 'RBinario'),
-      departing: !!row.querySelector('.exlampeggio'), // the blinking "in partenza / in arrivo" marker
-      stops: stops.replace(/^FERMA A:\s*/i, '')
-    }
-  }).filter(r => r.number) // the page also carries empty filler rows
 }
 
 // ---- display ----
@@ -190,40 +160,29 @@ function setStatus(ok) {
   }
 }
 
-function monitorUrl() {
-  return `${RFI_MONITOR}?placeId=${placeId}&arrivals=${arrivals ? 'True' : 'False'}`
-}
-
 function applyDirection() {
   $('directionLabel').textContent = arrivals ? 'Departures' : 'Arrivals'
   $('directionToggle').querySelector('i').className = `bi ${arrivals ? 'bi-box-arrow-up-right' : 'bi-box-arrow-in-down-right'}`
   $('stationTitle').textContent = `${stationName || stationID} · ${arrivals ? 'arrivals' : 'departures'}`
   document.title = `${stationName || stationID} RFI ${arrivals ? 'arrivals' : 'departures'} · Panel Treno`
-  if (placeId) $('officialLink').href = monitorUrl()
+  if (placeId) $('officialLink').href = rfiMonitorUrl(placeId, arrivals)
   syncUrl()
 }
 
 let loading = 0
 async function load() {
   const request = ++loading
-  let html
+  let rows
   try {
-    html = await fetchViaProxy(monitorUrl(), { asJSON: false, html: true })
+    rows = await fetchRfiRows(placeId, arrivals)
   } catch (err) {
     if (request !== loading) return
     console.error('Error fetching the RFI board:', err)
     setStatus(false)
-    if (!lastRows) renderMessage('bi-wifi-off', 'Could not load the RFI board.', describeProxyReport(lastProxyReport))
+    if (!lastRows) renderMessage('bi-wifi-off', 'Could not load the RFI board.', describeProxyReport(lastProxyReport) || err.message)
     return
   }
   if (request !== loading) return
-  const rows = parseRows(html)
-  if (!rows.length && !/<tbody/i.test(html)) {
-    setStatus(false)
-    $('statusDetail').textContent = 'unexpected page from RFI'
-    if (!lastRows) renderMessage('bi-question-circle', 'The RFI page had no board in it.')
-    return
-  }
   lastRows = rows
   lastSuccess = new Date()
   setStatus(true)
@@ -232,8 +191,6 @@ async function load() {
 
 async function init() {
   $('homeLink').title = 'Home: search a station or a train'
-  $('boardLink').href = boardHref()
-  $('boardLink').hidden = !stationID
   window.addEventListener('resize', syncHeaderSpacerHeight)
   new ResizeObserver(syncHeaderSpacerHeight).observe(document.querySelector('.app-header'))
   setInterval(updateClock, 1000)
@@ -248,11 +205,9 @@ async function init() {
     load()
   })
 
-  let ids = {}
-  try {
-    ids = await (await fetch('data/rfi-ids.json')).json()
-  } catch { /* handled below: no id means no board */ }
+  const ids = await loadRfiIds()
   placeId = ids[stationID]
+  if (placeId) initSourceSwitch('rfi', stationID, stationName)
   applyDirection()
   if (!placeId) {
     $('directionToggle').hidden = true

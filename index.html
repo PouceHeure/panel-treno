@@ -39,9 +39,11 @@
             </button>
           </div>
 
-          <a class="pill-btn" id="rfiLink" href="rfi.html" hidden>
-            <i class="bi bi-display"></i><span id="rfiLabel">RFI</span>
-          </a>
+          <nav class="source-switch" id="sourceSwitch" aria-label="Data source" hidden>
+            <a data-source="mix" title="ViaggiaTreno and RFI merged">Mix</a>
+            <a data-source="vt" title="ViaggiaTreno only">Viaggia</a>
+            <a data-source="rfi" title="Official RFI station board">RFI</a>
+          </nav>
           <a class="pill-btn" id="trainBack" href="index.html" hidden>
             <i class="bi bi-arrow-left"></i><span id="trainBackLabel">Board</span>
           </a>
@@ -75,6 +77,7 @@
 
     <script src="js/modules/proxy.js"></script>
     <script src="js/modules/recent.js"></script>
+    <script src="js/modules/rfi-source.js"></script>
     <script src="js/main-app.js"></script>
   </body>
 </html>

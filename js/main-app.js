@@ -89,6 +89,7 @@ let lastUpdateData = null
 let groupByMode = 'platform'
 let groupFilterText = ''
 let viewMode = 'board'
+let sourceMode = 'vt' // 'vt' = ViaggiaTreno alone, 'mix' = merged with the RFI board
 
 // =======================
 // Helpers
@@ -461,15 +462,19 @@ function boardRow(train, now) {
   const real = cancelled ? null : realLabel(train)
 
   const expanded = expandedTrains.has(trainKey(train))
-  const row = el('div', ['flap-row', `is-${presence}`, cancelled ? 'is-cancelled' : '', 'is-clickable', expanded ? 'is-expanded' : ''])
-  row.setAttribute('role', 'button')
-  row.setAttribute('tabindex', '0')
-  row.setAttribute('aria-expanded', String(expanded))
-  row.addEventListener('click', () => toggleRoute(train))
-  row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRoute(train) } })
+  // a train only RFI lists has no ViaggiaTreno route to open
+  const clickable = !train.rfiOnly
+  const row = el('div', ['flap-row', `is-${presence}`, cancelled ? 'is-cancelled' : '', clickable ? 'is-clickable' : '', expanded && clickable ? 'is-expanded' : ''])
+  if (clickable) {
+    row.setAttribute('role', 'button')
+    row.setAttribute('tabindex', '0')
+    row.setAttribute('aria-expanded', String(expanded))
+    row.addEventListener('click', () => toggleRoute(train))
+    row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRoute(train) } })
+  }
 
   const tile = el('span', ['platform-tile', `is-${presence}`], platform || '–')
-  tile.title = platform ? `${label('platform')} ${platform}` : label('platformUnknown')
+  tile.title = platform ? `${label('platform')} ${platform}${train.platformFromRfi ? ' (RFI)' : ''}` : label('platformUnknown')
   if (platform && platform.length > 2) tile.classList.add('is-long')
   if (cancelled) {
     // A red cross replaces the platform number so a cancelled train stands out at a glance.
@@ -525,7 +530,7 @@ function boardSection(group, now) {
   section.append(title, cols)
   group.trains.forEach(train => {
     section.append(boardRow(train, now))
-    if (expandedTrains.has(trainKey(train))) section.append(routePanel(train))
+    if (!train.rfiOnly && expandedTrains.has(trainKey(train))) section.append(routePanel(train))
   })
   return section
 }
@@ -1056,11 +1061,65 @@ function applyView() {
 // =======================
 // Data
 // =======================
+// RFI shows "18:55" for today: turn it into the timestamp ViaggiaTreno uses.
+function rfiTimeMs(time) {
+  const [h, m] = time.split(':').map(Number)
+  if (Number.isNaN(h)) return null
+  const now = new Date()
+  const at = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m).getTime()
+  return at < now.getTime() - 12 * 3600000 ? at + 86400000 : at
+}
+
+// Mix: ViaggiaTreno trains, completed by the RFI board. RFI knows the platform shown in the station and
+// whether the train is about to leave; trains only RFI lists (other operators) are added.
+function mergeSources(trains, rfiRows) {
+  const byNumber = new Map(rfiRows.map(r => [r.number, r]))
+  const seen = new Set()
+  const merged = trains.map(t => {
+    const r = byNumber.get(String(t.numeroTreno))
+    if (!r) return t
+    seen.add(r.number)
+    const copy = { ...t, rfi: true }
+    if (r.platform) {
+      copy.binarioEffettivoPartenzaDescrizione = r.platform
+      copy.platformFromRfi = true
+    }
+    if (r.departing) copy.inStazione = true
+    if (!delayOf(t) && r.delay > 0) copy.ritardo = r.delay
+    return copy
+  })
+  rfiRows.filter(r => !seen.has(r.number)).forEach(r => {
+    const ms = rfiTimeMs(r.time)
+    if (!ms) return
+    merged.push({
+      numeroTreno: r.number, categoria: r.category, destinazione: r.place,
+      orarioPartenza: ms, compOrarioPartenza: r.time, ritardo: r.delay, provvedimento: 0,
+      binarioEffettivoPartenzaDescrizione: r.platform, platformFromRfi: true, inStazione: r.departing,
+      rfi: true, rfiOnly: true
+    })
+  })
+  return merged
+}
+
+async function fetchRfiSide() {
+  await rfiReady
+  if (sourceMode !== 'mix' || !rfiPlaceId) return null
+  try {
+    return await fetchRfiRows(rfiPlaceId, false)
+  } catch (err) {
+    console.error('Error fetching the RFI board:', err)
+    return null
+  }
+}
+
 async function fetchAndDisplay() {
   const url = `http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/partenze/${stationID}/${encodeURIComponent(nowAsViaggiaTrenoDate())}`
   let data
+  let rfiRows = null
   try {
+    // the two sources are asked one after the other: the relay is rate limited
     data = await fetchViaProxy(url)
+    rfiRows = await fetchRfiSide()
   } catch (err) {
     console.error('Error fetching data:', err)
     setRequestStatus(false)
@@ -1069,6 +1128,11 @@ async function fetchAndDisplay() {
   }
   lastSuccessTime = new Date()
   setRequestStatus(true)
+  if (sourceMode === 'mix') {
+    const viaggia = $('statusDetail').textContent
+    $('statusDetail').textContent = `${viaggia} · RFI ${rfiRows ? 'merged' : 'unavailable, Viaggia only'}`
+    if (rfiRows && Array.isArray(data)) data = mergeSources(data, rfiRows)
+  }
   if (Array.isArray(data) && data.length > 0) lastUpdateData = data
   if (lastUpdateData) render(lastUpdateData)
   else renderMessage('bi-moon-stars', label('serviceOFF'))
@@ -1422,18 +1486,16 @@ async function shareTrain() {
   }
 }
 
-// The official RFI board exists for most stations: show its link when this one has an id.
-async function initRfiLink() {
-  try {
-    const ids = await (await fetch('data/rfi-ids.json')).json()
-    if (!ids[stationID]) return
-    const rfiParams = new URLSearchParams({ stationID })
-    if (stationName) rfiParams.set('stationName', stationName)
-    $('rfiLink').href = `rfi.html?${rfiParams}`
-    $('rfiLink').title = 'Official RFI station board'
-    $('rfiLink').hidden = false
+// The official RFI board exists for most stations: when this one has an id, show the Mix / Viaggia / RFI switch.
+let rfiPlaceId = null
+let rfiReady = Promise.resolve()
+function initSources() {
+  rfiReady = loadRfiIds().then(ids => {
+    rfiPlaceId = ids[stationID] || null
+    if (!rfiPlaceId) { sourceMode = 'vt'; return }
+    initSourceSwitch(sourceMode, stationID, stationName)
     syncHeaderSpacerHeight()
-  } catch { /* the link is a bonus: no mapping file, no link */ }
+  })
 }
 
 function initTrainPage() {
@@ -1506,8 +1568,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (GROUP_MODES.includes(paramGroupBy)) groupByMode = paramGroupBy
   const paramView = (getParam('view') || '').toLowerCase()
   if (VIEWS.includes(paramView)) viewMode = paramView
+  if ((getParam('source') || '').toLowerCase() === 'mix') sourceMode = 'mix'
 
-  initRfiLink()
+  initSources()
   const searchLink = $('text-search')
   searchLink.title = 'Home: search a station or a train'
   searchLink.setAttribute('aria-label', 'Home')
