@@ -89,7 +89,8 @@ let lastUpdateData = null
 let groupByMode = 'platform'
 let groupFilterText = ''
 let viewMode = 'board'
-let sourceMode = 'vt' // 'vt' = ViaggiaTreno alone, 'mix' = merged with the RFI board
+let sourceMode = 'vt' // 'vt' = ViaggiaTreno alone, 'mix' = merged with the RFI board, 'compare' = side by side
+let lastRfiRows = null
 
 // =======================
 // Helpers
@@ -961,7 +962,8 @@ function renderNerd(trainData) {
 // Page chrome
 // =======================
 function render(trainData) {
-  if (viewMode === 'nerd') renderNerd(trainData)
+  if (sourceMode === 'compare') renderCompare(trainData, lastRfiRows)
+  else if (viewMode === 'nerd') renderNerd(trainData)
   else renderBoard(trainData)
 }
 function rerender() {
@@ -1103,7 +1105,7 @@ function mergeSources(trains, rfiRows) {
 
 async function fetchRfiSide() {
   await rfiReady
-  if (sourceMode !== 'mix' || !rfiPlaceId) return null
+  if (sourceMode === 'vt' || !rfiPlaceId) return null
   try {
     return await fetchRfiRows(rfiPlaceId, false)
   } catch (err) {
@@ -1128,10 +1130,11 @@ async function fetchAndDisplay() {
   }
   lastSuccessTime = new Date()
   setRequestStatus(true)
-  if (sourceMode === 'mix') {
+  if (sourceMode !== 'vt') {
     const viaggia = $('statusDetail').textContent
-    $('statusDetail').textContent = `${viaggia} · RFI ${rfiRows ? 'merged' : 'unavailable, Viaggia only'}`
-    if (rfiRows && Array.isArray(data)) data = mergeSources(data, rfiRows)
+    $('statusDetail').textContent = `${viaggia} · RFI ${rfiRows ? (sourceMode === 'mix' ? 'merged' : 'loaded') : 'unavailable'}`
+    if (rfiRows) lastRfiRows = rfiRows
+    if (sourceMode === 'mix' && rfiRows && Array.isArray(data)) data = mergeSources(data, rfiRows)
   }
   if (Array.isArray(data) && data.length > 0) lastUpdateData = data
   if (lastUpdateData) render(lastUpdateData)
@@ -1487,12 +1490,98 @@ async function shareTrain() {
 }
 
 // The official RFI board exists for most stations: when this one has an id, show the Mix / Viaggia / RFI switch.
+// ---- Compare: ViaggiaTreno and RFI side by side, train by train ----
+const PLATFORM_NONE = '–'
+function compareRows(trains, rfiRows) {
+  const vtByNumber = new Map(trains.map(t => [String(t.numeroTreno), t]))
+  // RFI only lists the next departures: do not call a later ViaggiaTreno train "missing" from RFI
+  const horizon = Math.max(0, ...rfiRows.map(r => rfiTimeMs(r.time) || 0)) + 60000
+  const rows = rfiRows.map(r => {
+    const t = vtByNumber.get(r.number)
+    vtByNumber.delete(r.number)
+    return {
+      number: r.number, place: r.place, sort: rfiTimeMs(r.time) || 0, time: r.time,
+      vt: t ? { platform: platformOf(t) || PLATFORM_NONE, delay: delayOf(t), here: trainPresence(t) === 'at-platform', cancelled: isCancelled(t) } : null,
+      rfi: { platform: r.platform || PLATFORM_NONE, delay: r.delay, here: r.departing }
+    }
+  })
+  upcomingTrains([...vtByNumber.values()]).filter(t => (realDepartureMs(t) || 0) <= horizon).forEach(t => {
+    rows.push({
+      number: String(t.numeroTreno), place: t.destinazione || '—', sort: t.orarioPartenza || 0, time: scheduledLabel(t),
+      vt: { platform: platformOf(t) || PLATFORM_NONE, delay: delayOf(t), here: trainPresence(t) === 'at-platform', cancelled: isCancelled(t) },
+      rfi: null
+    })
+  })
+  return rows.sort((a, b) => a.sort - b.sort)
+}
+
+function compareCell(side, mismatchPlatform, mismatchDelay) {
+  const cell = el('span', ['cmp-cell'])
+  if (!side) {
+    cell.append(el('span', ['cmp-missing'], 'not listed'))
+    return cell
+  }
+  const tile = el('span', ['platform-tile', side.here ? 'is-at-platform' : 'is-not-here', mismatchPlatform ? 'is-mismatch' : ''], side.platform)
+  if (side.platform.length > 2) tile.classList.add('is-long')
+  const delay = el('span', ['cmp-delay', side.delay > 0 ? 'is-late' : '', mismatchDelay ? 'is-mismatch' : ''], side.cancelled ? 'cancelled' : side.delay ? `${side.delay > 0 ? '+' : ''}${side.delay}` : 'on time')
+  cell.append(tile, delay)
+  return cell
+}
+
+function renderCompare(trainData, rfiRows) {
+  if (!rfiRows) return renderMessage('bi-question-circle', 'RFI is not available for this station right now.', true)
+  const rows = compareRows(trainData, rfiRows)
+  const both = rows.filter(r => r.vt && r.rfi)
+  const platformKnown = both.filter(r => r.vt.platform !== PLATFORM_NONE && r.rfi.platform !== PLATFORM_NONE)
+  const platformSame = platformKnown.filter(r => r.vt.platform === r.rfi.platform)
+  const delaySame = both.filter(r => Math.abs(r.vt.delay - r.rfi.delay) < 2)
+  const vtLacksPlatform = both.filter(r => r.vt.platform === PLATFORM_NONE && r.rfi.platform !== PLATFORM_NONE)
+  const pct = (n, d) => (d ? `${Math.round((n / d) * 100)}%` : '–')
+
+  const tiles = el('div', ['cmp-tiles'])
+  ;[
+    [pct(platformSame.length, platformKnown.length), 'same platform', `${platformSame.length} of ${platformKnown.length} trains`],
+    [pct(delaySame.length, both.length), 'delay within 1 min', `${delaySame.length} of ${both.length} trains`],
+    [String(vtLacksPlatform.length), 'platform only on RFI', 'Viaggia had none'],
+    [String(rows.length - both.length), 'listed by one only', 'next departures']
+  ].forEach(([value, name, sub]) => {
+    const tile = el('div', ['cmp-tile'])
+    tile.append(el('span', ['cmp-tile-name'], name), el('span', ['cmp-tile-value'], value), el('span', ['cmp-tile-sub'], sub))
+    tiles.append(tile)
+  })
+
+  const card = el('section', ['flap-card', 'cmp-card'])
+  const title = el('header', ['flap-title'])
+  title.append(icon('bi-layout-split'), el('span', [], 'Viaggia vs RFI'))
+  const cols = el('div', ['cmp-row', 'cmp-cols'])
+  ;['sched', 'train', 'viaggia', 'rfi'].forEach(name => cols.append(el('span', [], name)))
+  card.append(title, cols)
+  rows.forEach(r => {
+    const samePlatform = r.vt && r.rfi && r.vt.platform === r.rfi.platform
+    const sameDelay = r.vt && r.rfi && Math.abs(r.vt.delay - r.rfi.delay) < 2
+    const mismatchPlatform = r.vt && r.rfi && !samePlatform
+    const mismatchDelay = r.vt && r.rfi && !sameDelay
+    const row = el('div', ['cmp-row', mismatchPlatform || mismatchDelay || !r.vt || !r.rfi ? 'has-diff' : ''])
+    const who = el('span', ['flap-dest'])
+    who.append(el('span', ['flap-dest-name'], r.place), el('span', ['flap-meta'], r.number))
+    row.append(el('span', ['flap-time'], r.time), who, compareCell(r.vt, mismatchPlatform, mismatchDelay), compareCell(r.rfi, mismatchPlatform, mismatchDelay))
+    card.append(row)
+  })
+  const wrap = el('div', ['cmp-wrap'])
+  wrap.append(tiles, card, el('p', ['cmp-note'], 'Highlighted: the two sources disagree on the platform or by 2 min or more on the delay. Viaggia rounds delays to the minute.'))
+  $('trainInfo').replaceChildren(wrap)
+}
+
 let rfiPlaceId = null
 let rfiReady = Promise.resolve()
 function initSources() {
   rfiReady = loadRfiIds().then(ids => {
     rfiPlaceId = ids[stationID] || null
-    if (!rfiPlaceId) { sourceMode = 'vt'; return }
+    if (!rfiPlaceId) {
+      sourceMode = 'vt'
+      document.body.classList.remove('source-compare')
+      return
+    }
     initSourceSwitch(sourceMode, stationID, stationName)
     syncHeaderSpacerHeight()
   })
@@ -1568,7 +1657,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (GROUP_MODES.includes(paramGroupBy)) groupByMode = paramGroupBy
   const paramView = (getParam('view') || '').toLowerCase()
   if (VIEWS.includes(paramView)) viewMode = paramView
-  if ((getParam('source') || '').toLowerCase() === 'mix') sourceMode = 'mix'
+  const paramSource = (getParam('source') || '').toLowerCase()
+  if (paramSource === 'mix' || paramSource === 'compare') sourceMode = paramSource
+  document.body.classList.toggle('source-compare', sourceMode === 'compare')
 
   initSources()
   const searchLink = $('text-search')

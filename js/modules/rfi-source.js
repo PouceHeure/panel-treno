@@ -48,7 +48,7 @@ async function fetchRfiRows(placeId, arrivals = false) {
 function sourceHref(source, stationID, stationName) {
   const params = new URLSearchParams({ stationID })
   if (stationName) params.set('stationName', stationName)
-  if (source === 'mix') params.set('source', 'mix')
+  if (source === 'mix' || source === 'compare') params.set('source', source)
   return `${source === 'rfi' ? 'rfi.html' : 'index.html'}?${params}`
 }
 
