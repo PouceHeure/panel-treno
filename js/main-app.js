@@ -1533,7 +1533,8 @@ const trackHist = { key: null, ticks: [], fetches: [] }
 let trackRfi = null // { delay, stationId }: what the RFI board says about this train, when asked
 let nerdTrack = false
 let trackRfiCount = 0
-let trackWin = '10' // minutes shown by the position plot: '10', '30' or 'all'
+let trackWin = '10' // minutes shown by the position plot: '5', '10', '30' or 'all'
+const trackPan = { ms: 0, rows: 0 } // how far the plot is moved from "now" (time) and from the train (stations)
 const TRACK_TICK_MS = 5000
 const TRACK_KEEP = 360
 
@@ -1636,7 +1637,8 @@ function nerdTrackChart(d) {
     return panel
   }
   const winMs = trackWin === 'all' ? null : Number(trackWin) * 60000
-  const samples = trackHist.ticks.concat(trackHist.fetches.map(f => ({ t: f.t, s: f.s }))).filter(x => !winMs || x.t >= now - winMs * 0.7)
+  const winStart = winMs ? now - winMs * 0.7 + trackPan.ms : 0
+  const samples = trackHist.ticks.concat(trackHist.fetches.map(f => ({ t: f.t, s: f.s }))).filter(x => !winMs || (x.t >= winStart - winMs && x.t <= winStart + 2 * winMs))
   const all = samples.map(x => x.s).concat([sNow])
   let lo
   let hi
@@ -1646,6 +1648,10 @@ function nerdTrackChart(d) {
     const pad = trackWin === '30' ? 1 : 0
     lo = Math.max(0, here - 1 - pad)
     hi = Math.min(stops.length - 1, here + 2 + pad)
+    // moved up or down the line by the stations buttons
+    const size = hi - lo
+    lo = Math.min(Math.max(0, lo + trackPan.rows), Math.max(0, stops.length - 1 - size))
+    hi = Math.min(stops.length - 1, lo + size)
   } else {
     lo = Math.max(0, Math.floor(Math.min(...all)) - 1)
     hi = Math.min(stops.length - 1, Math.ceil(Math.max(...all)) + 2)
@@ -1661,8 +1667,8 @@ function nerdTrackChart(d) {
   // the window follows the log: from the first sample to a little after the next stop (at least 20 minutes)
   const firstT = samples.length ? Math.min(...samples.map(x => x.t)) : now
   const nextStop = stops[Math.min(stops.length - 1, Math.floor(sNow) + 1)]
-  const tMin = winMs ? now - winMs * 0.7 : firstT - 2 * 60000
-  const tMax = winMs ? now + winMs * 0.3 : Math.max(now + 3 * 60000, arrOf(nextStop) + extra + 2 * 60000, tMin + 20 * 60000)
+  const tMin = winMs ? winStart : firstT - 2 * 60000
+  const tMax = winMs ? winStart + winMs : Math.max(now + 3 * 60000, arrOf(nextStop) + extra + 2 * 60000, tMin + 20 * 60000)
   const LEFT = 116
   const RIGHT = 12
   const TOP = 14
@@ -1708,7 +1714,7 @@ function nerdTrackChart(d) {
     svg.append(svgEl('line', { x1: xOf(t), y1: TOP, x2: xOf(t), y2: TOP + plotH, class: 'tl-vgrid' }))
     svg.append(svgEl('text', { x: xOf(t), y: H - 8, class: 'tl-label', 'text-anchor': 'middle' }, formatTime(new Date(t))))
   }
-  svg.append(svgEl('line', { x1: xOf(now), y1: TOP, x2: xOf(now), y2: TOP + plotH, class: 'tl-now' }))
+  if (now >= tMin && now <= tMax) svg.append(svgEl('line', { x1: xOf(now), y1: TOP, x2: xOf(now), y2: TOP + plotH, class: 'tl-now' }))
 
   const clipId = `tkclip${Math.round(now)}`
   const defs = svgEl('defs')
@@ -1775,7 +1781,26 @@ function nerdTrackChart(d) {
       plot.append(mark)
     }
   }
-  panel.append(svg)
+  // drag sideways to move through time (up/down still scrolls the page)
+  if (winMs) {
+    svg.classList.add('is-pannable')
+    svg.addEventListener('pointerdown', e => {
+      e.preventDefault()
+      let lastX = e.clientX
+      let busy = false
+      const rect = svg.getBoundingClientRect()
+      const msPerPx = winMs / (rect.width * (plotW / W))
+      const move = ev => {
+        trackPan.ms = Math.min(winMs * 0.3, Math.max(-3 * 3600000, trackPan.ms - (ev.clientX - lastX) * msPerPx))
+        lastX = ev.clientX
+        if (!busy) { busy = true; requestAnimationFrame(() => { busy = false; renderTrackNerd(trainDetail) }) }
+      }
+      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+      window.addEventListener('pointermove', move)
+      window.addEventListener('pointerup', up)
+    })
+  }
+  panel.append(trackNav(winMs, hi < stops.length - 1, lo > 0), svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
   const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
   legend.append(item('k-est', 'estimate'), item('k-band', '±2σ'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-fix', 'correction'), item('k-real', 'real times'), ...(trackRfi ? [item('k-rfi', 'RFI')] : []))
@@ -1784,13 +1809,40 @@ function nerdTrackChart(d) {
 }
 
 // How the reported delay evolved, refresh after refresh (ViaggiaTreno and RFI).
+// Move through the plot: earlier / later in time, up / down the stations, back to live.
+function trackNav(winMs, canDown, canUp) {
+  const nav = el('div', ['tk-nav'])
+  const btn = (text, title, onClick, disabled = false) => {
+    const b = el('button', ['tk-nav-btn'], text)
+    b.type = 'button'
+    b.title = title
+    b.disabled = disabled
+    b.addEventListener('click', () => { onClick(); renderTrackNerd(trainDetail) })
+    return b
+  }
+  const live = trackPan.ms === 0 && trackPan.rows === 0
+  if (!winMs) {
+    nav.append(el('span', ['nerd-dim'], 'pick 5, 10 or 30 min to move through the plot'))
+    return nav
+  }
+  nav.append(
+    btn('◀', 'Earlier', () => { trackPan.ms = Math.max(-3 * 3600000, trackPan.ms - winMs / 3) }),
+    btn('▶', 'Later', () => { trackPan.ms = Math.min(winMs * 0.3, trackPan.ms + winMs / 3) }, trackPan.ms >= winMs * 0.3),
+    btn('▲', 'Earlier stations', () => { trackPan.rows -= 1 }, !canUp),
+    btn('▼', 'Later stations', () => { trackPan.rows += 1 }, !canDown),
+    btn(live ? 'live' : 'back to live', 'Follow the train again', () => { trackPan.ms = 0; trackPan.rows = 0 }, live)
+  )
+  if (!live) nav.append(el('span', ['nerd-dim'], 'drag the plot sideways too'))
+  return nav
+}
+
 function nerdTrackDelay() {
   const panel = el('div', ['nerd-panel'])
   const head = el('div', ['nerd-panel-head'])
   head.append(el('span', [], 'delay vs time'), el('span', [], 'minutes'))
   panel.append(head)
   const winMs = trackWin === 'all' ? null : Number(trackWin) * 60000
-  const f = trackHist.fetches.filter(x => !winMs || x.t >= Date.now() - winMs * 0.7)
+  const f = trackHist.fetches.filter(x => !winMs || (x.t >= Date.now() - winMs * 0.7 + trackPan.ms && x.t <= Date.now() + winMs * 0.3 + trackPan.ms))
   if (f.length < 2) {
     panel.append(el('p', ['nerd-dim'], 'needs two refreshes (about 16 s) to draw a curve'))
     return panel

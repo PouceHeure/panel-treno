@@ -931,3 +931,10 @@ body.view-train .source-switch { display: none; }
 
 .tk-plot-band { fill: var(--accent); opacity: 0.16; stroke: none; }
 .k-band { width: 16px; height: 8px; background: var(--accent); opacity: 0.3; }
+
+/* moving through the position plot */
+.tk-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin-bottom: 0.5rem; font-size: 0.72rem; }
+.tk-nav-btn { min-width: 30px; height: 26px; padding: 0 0.55rem; border: 1px solid var(--line); border-radius: 6px; background: var(--tile); color: var(--accent); font: inherit; font-size: 0.75rem; cursor: pointer; }
+.tk-nav-btn:disabled { opacity: 0.4; cursor: default; }
+svg.is-pannable { touch-action: pan-y pinch-zoom; cursor: grab; user-select: none; }
+svg.is-pannable:active { cursor: grabbing; }
