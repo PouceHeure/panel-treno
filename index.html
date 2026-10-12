@@ -42,7 +42,7 @@
           <nav class="source-switch" id="sourceSwitch" aria-label="Data source" hidden>
             <a data-source="vt" title="ViaggiaTreno only">Viaggia</a>
             <a data-source="rfi" title="Official RFI station board">RFI</a>
-            <a data-source="global" title="Both sources together: merged board and comparison">Global</a>
+            <a data-source="global" title="Both sources together: merged board, delays as an interval">Global</a>
           </nav>
           <a class="pill-btn" id="trainBack" href="index.html" hidden>
             <i class="bi bi-arrow-left"></i><span id="trainBackLabel">Board</span>
@@ -59,13 +59,6 @@
     </header>
 
     <div class="app-header-spacer" id="headerSpacer"></div>
-
-    <div class="sub-bar" id="subBar" hidden>
-      <nav class="source-switch is-sub" id="globalSwitch" aria-label="Global view">
-        <a data-source="mix" title="ViaggiaTreno trains completed with the RFI board">Merged</a>
-        <a data-source="compare" title="Times of both sources side by side">Compare</a>
-      </nav>
-    </div>
 
     <main id="trainInfo" class="board"></main>
 

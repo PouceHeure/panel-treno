@@ -778,38 +778,9 @@ body.view-train .source-switch { display: none; }
 }
 @media (max-width: 520px) { .rfi-page .app-footer .footer-item { display: none; } }
 
-/* Compare view: ViaggiaTreno and RFI side by side */
-body.source-compare #groupBySelect, body.source-compare #filterWrap, body.source-compare #viewToggle { display: none; }
-.cmp-wrap { max-width: 760px; margin-inline: auto; display: flex; flex-direction: column; gap: 1rem; }
-.cmp-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
-@media (min-width: 600px) { .cmp-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-.cmp-tile { display: flex; flex-direction: column; gap: 1px; padding: 0.6rem 0.75rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
-.cmp-tile-name, .cmp-tile-sub { color: var(--muted); font-size: 0.72rem; }
-.cmp-tile-value { color: var(--accent); font-size: 1.6rem; font-weight: 700; line-height: 1.2; }
-.cmp-row { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr) 6.2rem; align-items: center; gap: 0.15rem 0.5rem; padding: 0.55rem 0.35rem; border-top: 1px solid var(--rule); }
-.cmp-cols { color: var(--muted); font-size: 0.75rem; letter-spacing: 0.08em; border-top: none; padding-block: 0.35rem 0.2rem; }
-.cmp-cols span:last-child { text-align: right; }
-.cmp-interval { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
-.cmp-interval .flap-time { font-size: 0.95rem; }
-.cmp-delay { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
-.cmp-missing { grid-column: 3; text-align: right; color: var(--late); font-size: 0.78rem; }
-/* the bar sits under the train, across the last two columns */
-.cmp-track { grid-column: 2 / -1; position: relative; height: 14px; margin-top: 0.15rem; }
-.cmp-track::before { content: ''; position: absolute; inset: 6px 0; border-radius: 2px; background: var(--rule); }
-.cmp-zero { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--muted); }
-.cmp-range { position: absolute; top: 3px; height: 8px; border-radius: 4px; background: currentColor; opacity: 0.55; }
-.cmp-range.is-ok { color: var(--ok); }
-.cmp-range.is-slight { color: var(--accent); }
-.cmp-range.is-late { color: var(--late); }
-.cmp-dot { position: absolute; top: 2px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; border: 2px solid var(--surface); background: var(--accent); }
-.cmp-dot.is-rfi { background: #7cc7ff; }
-.cmp-key { display: inline-flex; align-items: center; gap: 0.35rem; margin: 0 0.6rem; }
-.cmp-key .cmp-dot { position: static; margin: 0; }
-.cmp-note { margin: 0; color: var(--muted); font-size: 0.78rem; text-align: center; }
-@media (max-width: 420px) { .cmp-row { grid-template-columns: 3rem minmax(0, 1fr) 5.6rem; } }
+/* Global view: the real-time column is wider so it can hold an interval ("19:03–19:17") */
+.flap-card.is-global .flap-row { grid-template-columns: 2.3rem 3.9rem 6.1rem minmax(0, 1fr) 4.2rem; }
+@media (max-width: 599px) { .flap-card.is-global .flap-row { grid-template-columns: 1.9rem 3.2rem 5.7rem minmax(0, 1fr) 3.3rem; } }
+@media (max-width: 520px) { .flap-card.is-global .flap-row { grid-template-columns: 1.8rem 3rem 5.5rem minmax(0, 1fr) 3rem; } }
+.flap-realcell.is-interval .flap-time { font-size: 0.82rem; }
 
-/* Global's sub-switch (Merged / Compare) sits under the header */
-.sub-bar { display: flex; justify-content: center; padding: 0.7rem 1rem 0; }
-.sub-bar[hidden] { display: none; }
-.source-switch.is-sub { height: 30px; }
-.source-switch.is-sub a { padding: 0 1rem; }

@@ -89,8 +89,7 @@ let lastUpdateData = null
 let groupByMode = 'platform'
 let groupFilterText = ''
 let viewMode = 'board'
-let sourceMode = 'vt' // 'vt' = ViaggiaTreno alone, 'mix' = merged with the RFI board, 'compare' = side by side
-let lastRfiRows = null
+let sourceMode = 'vt' // 'vt' = ViaggiaTreno alone, 'global' = merged with the RFI board, delays shown as an interval
 
 // =======================
 // Helpers
@@ -455,6 +454,17 @@ function toggleRoute(train) {
   rerender()
 }
 
+// Global view: the delays of the two sources, as the interval the departure should fall in.
+function delayInterval(train) {
+  if (sourceMode !== 'global') return null
+  const delays = [train.delayVt, train.delayRfi].filter(d => typeof d === 'number')
+  if (delays.length < 2) return null
+  const min = Math.min(...delays)
+  const max = Math.max(...delays)
+  return min === max ? null : { min, max }
+}
+const signedDelay = n => (n > 0 ? `+${n}` : String(n))
+
 function boardRow(train, now) {
   const delay = delayOf(train)
   const presence = trainPresence(train, now) || 'not-here'
@@ -486,8 +496,16 @@ function boardRow(train, now) {
   }
 
   const sched = el('span', ['flap-time'], scheduledLabel(train))
-  const realEl = el('span', ['flap-realcell'])
-  if (real) {
+  const interval = cancelled ? null : delayInterval(train)
+  const realEl = el('span', ['flap-realcell', interval ? 'is-interval' : ''])
+  if (interval) {
+    // the two sources disagree: show the whole interval instead of a single estimate
+    const at = d => formatEpochHHMM(train.orarioPartenza + d * 60000)
+    const tone = interval.max >= LATE_THRESHOLD ? 'is-late' : interval.max > 0 ? 'is-slight' : 'is-early'
+    const times = el('span', ['flap-time', tone], `${at(interval.min)}–${at(interval.max)}`)
+    times.title = `Viaggia ${signedDelay(train.delayVt)} min · RFI ${signedDelay(train.delayRfi)} min`
+    realEl.append(times, el('span', ['delay-chip', tone], `${signedDelay(interval.min)}…${signedDelay(interval.max)} min`))
+  } else if (real) {
     const tone = delay > 0 ? 'is-late' : 'is-early'
     const estimate = el('span', ['flap-time', tone], `~${real}`)
     estimate.title = label('estimateHint')
@@ -523,7 +541,7 @@ function boardRow(train, now) {
 }
 
 function boardSection(group, now) {
-  const section = el('section', ['flap-card'])
+  const section = el('section', ['flap-card', sourceMode === 'global' ? 'is-global' : ''])
   const title = el('header', ['flap-title'])
   title.append(icon(GROUP_ICONS[groupByMode]), el('span', [], groupHeaderLabel(groupByMode, group.key)))
   const cols = el('div', ['flap-row', 'flap-cols'])
@@ -547,6 +565,7 @@ function renderBoard(trainData) {
   const grid = el('div', ['card-grid', groupByMode === 'train' ? 'is-single' : 'is-multi'])
   groups.forEach(group => grid.append(boardSection(group, now)))
   const legend = el('p', ['board-legend'], label('legend'))
+  if (sourceMode === 'global') legend.append(' · interval: the delays of Viaggia and RFI when they differ (hover for each)')
   $('trainInfo').replaceChildren(grid, legend)
 }
 
@@ -962,8 +981,7 @@ function renderNerd(trainData) {
 // Page chrome
 // =======================
 function render(trainData) {
-  if (sourceMode === 'compare') renderCompare(trainData, lastRfiRows)
-  else if (viewMode === 'nerd') renderNerd(trainData)
+  if (viewMode === 'nerd') renderNerd(trainData)
   else renderBoard(trainData)
 }
 function rerender() {
@@ -1079,9 +1097,9 @@ function mergeSources(trains, rfiRows) {
   const seen = new Set()
   const merged = trains.map(t => {
     const r = byNumber.get(String(t.numeroTreno))
-    if (!r) return t
+    if (!r) return { ...t, delayVt: delayOf(t) }
     seen.add(r.number)
-    const copy = { ...t, rfi: true }
+    const copy = { ...t, rfi: true, delayVt: delayOf(t), delayRfi: r.delay }
     if (r.platform) {
       copy.binarioEffettivoPartenzaDescrizione = r.platform
       copy.platformFromRfi = true
@@ -1097,7 +1115,7 @@ function mergeSources(trains, rfiRows) {
       numeroTreno: r.number, categoria: r.category, destinazione: r.place,
       orarioPartenza: ms, compOrarioPartenza: r.time, ritardo: r.delay, provvedimento: 0,
       binarioEffettivoPartenzaDescrizione: r.platform, platformFromRfi: true, inStazione: r.departing,
-      rfi: true, rfiOnly: true
+      rfi: true, rfiOnly: true, delayRfi: r.delay
     })
   })
   return merged
@@ -1132,9 +1150,8 @@ async function fetchAndDisplay() {
   setRequestStatus(true)
   if (sourceMode !== 'vt') {
     const viaggia = $('statusDetail').textContent
-    $('statusDetail').textContent = `${viaggia} · RFI ${rfiRows ? (sourceMode === 'mix' ? 'merged' : 'loaded') : 'unavailable'}`
-    if (rfiRows) lastRfiRows = rfiRows
-    if (sourceMode === 'mix' && rfiRows && Array.isArray(data)) data = mergeSources(data, rfiRows)
+    $('statusDetail').textContent = `${viaggia} · RFI ${rfiRows ? 'merged' : 'unavailable, Viaggia only'}`
+    if (rfiRows && Array.isArray(data)) data = mergeSources(data, rfiRows)
   }
   if (Array.isArray(data) && data.length > 0) lastUpdateData = data
   if (lastUpdateData) render(lastUpdateData)
@@ -1490,117 +1507,6 @@ async function shareTrain() {
 }
 
 // The official RFI board exists for most stations: when this one has an id, show the Mix / Viaggia / RFI switch.
-// ---- Compare: the times of ViaggiaTreno and RFI side by side, train by train ----
-function compareRows(trains, rfiRows) {
-  const vtByNumber = new Map(trains.map(t => [String(t.numeroTreno), t]))
-  // RFI only lists the next departures: do not call a later ViaggiaTreno train "missing" from RFI
-  const horizon = Math.max(0, ...rfiRows.map(r => rfiTimeMs(r.time) || 0)) + 60000
-  const rows = rfiRows.map(r => {
-    const t = vtByNumber.get(r.number)
-    vtByNumber.delete(r.number)
-    const sort = rfiTimeMs(r.time) || 0
-    return {
-      number: r.number, place: r.place, sort, time: r.time,
-      vt: t ? { delay: delayOf(t), cancelled: isCancelled(t) } : null,
-      rfi: { delay: r.delay }
-    }
-  })
-  upcomingTrains([...vtByNumber.values()]).filter(t => (realDepartureMs(t) || 0) <= horizon).forEach(t => {
-    rows.push({
-      number: String(t.numeroTreno), place: t.destinazione || '—', sort: t.orarioPartenza || 0, time: scheduledLabel(t),
-      vt: { delay: delayOf(t), cancelled: isCancelled(t) }, rfi: null
-    })
-  })
-  return rows.sort((a, b) => a.sort - b.sort)
-}
-
-// ---- the interval each train sits in: from the smaller to the larger delay of the two sources ----
-const signed = n => `${n > 0 ? '+' : ''}${n}`
-
-function compareInterval(row) {
-  const delays = [row.vt && !row.vt.cancelled ? row.vt.delay : null, row.rfi ? row.rfi.delay : null].filter(d => d !== null)
-  if (!delays.length) return null
-  return { min: Math.min(...delays), max: Math.max(...delays) }
-}
-
-// one bar per train on a shared axis: the delay range, a dot per source, a line at the scheduled time
-function compareBar(row, interval, lo, hi) {
-  const pos = d => `${((d - lo) / (hi - lo)) * 100}%`
-  const track = el('span', ['cmp-track'])
-  const zero = el('span', ['cmp-zero'])
-  zero.style.left = pos(0)
-  const range = el('span', ['cmp-range', interval.max >= LATE_THRESHOLD ? 'is-late' : interval.max > 0 ? 'is-slight' : 'is-ok'])
-  range.style.left = pos(interval.min)
-  range.style.width = `max(6px, calc(${pos(interval.max)} - ${pos(interval.min)}))`
-  track.append(zero, range)
-  ;[['vt', row.vt && !row.vt.cancelled ? row.vt.delay : null, 'Viaggia'], ['rfi', row.rfi ? row.rfi.delay : null, 'RFI']].forEach(([key, delay, name]) => {
-    if (delay === null) return
-    const dot = el('span', ['cmp-dot', `is-${key}`])
-    dot.style.left = pos(delay)
-    dot.title = `${name}: ${delay ? signed(delay) + ' min' : 'no delay'}`
-    track.append(dot)
-  })
-  return track
-}
-
-function renderCompare(trainData, rfiRows) {
-  if (!rfiRows) return renderMessage('bi-question-circle', 'RFI is not available for this station right now.', true)
-  const rows = compareRows(trainData, rfiRows)
-  const withInterval = rows.map(r => ({ row: r, interval: compareInterval(r) })).filter(x => x.interval)
-  const both = withInterval.filter(x => x.row.vt && x.row.rfi && !x.row.vt.cancelled)
-  const width = x => x.interval.max - x.interval.min
-  const agree = both.filter(x => width(x) < 2)
-  const meanWidth = both.length ? both.reduce((sum, x) => sum + width(x), 0) / both.length : 0
-  const widest = both.reduce((best, x) => (!best || width(x) > width(best) ? x : best), null)
-  const pct = (n, d) => (d ? `${Math.round((n / d) * 100)}%` : '–')
-  const lo = Math.min(0, ...withInterval.map(x => x.interval.min))
-  const hi = Math.max(5, ...withInterval.map(x => x.interval.max))
-
-  const tiles = el('div', ['cmp-tiles'])
-  ;[
-    [pct(agree.length, both.length), 'sources agree', `interval under 2 min · ${agree.length} of ${both.length}`],
-    [`${meanWidth.toFixed(1)}`, 'mean interval (min)', 'between the two delays'],
-    [widest ? String(width(widest)) : '–', 'widest interval (min)', widest ? `${widest.row.place.toLowerCase()} ${widest.row.number}` : ''],
-    [String(rows.length - both.length), 'listed by one only', 'single point, no interval']
-  ].forEach(([value, name, sub]) => {
-    const tile = el('div', ['cmp-tile'])
-    tile.append(el('span', ['cmp-tile-name'], name), el('span', ['cmp-tile-value'], value), el('span', ['cmp-tile-sub'], sub))
-    tiles.append(tile)
-  })
-
-  const card = el('section', ['flap-card', 'cmp-card'])
-  const title = el('header', ['flap-title'])
-  title.append(icon('bi-arrows-expand-vertical'), el('span', [], 'Departure interval'))
-  const cols = el('div', ['cmp-row', 'cmp-cols'])
-  ;['sched', 'train', 'between'].forEach(name => cols.append(el('span', [], name)))
-  card.append(title, cols)
-  rows.forEach(r => {
-    const interval = compareInterval(r)
-    const row = el('div', ['cmp-row'])
-    const who = el('span', ['flap-dest'])
-    who.append(el('span', ['flap-dest-name'], r.place), el('span', ['flap-meta'], r.number + (r.vt && r.vt.cancelled ? ' · cancelled in Viaggia' : '')))
-    row.append(el('span', ['flap-time'], r.time), who)
-    if (interval) {
-      const ms = rfiTimeMs(r.time)
-      const at = d => (ms ? formatEpochHHMM(ms + d * 60000) : r.time)
-      const text = el('span', ['cmp-interval'])
-      const times = interval.min === interval.max ? at(interval.min) : `${at(interval.min)}–${at(interval.max)}`
-      const delays = interval.min === interval.max ? (interval.min ? `${signed(interval.min)} min` : 'no delay') : `${signed(interval.min)} to ${signed(interval.max)} min`
-      text.append(el('span', ['flap-time', interval.max >= LATE_THRESHOLD ? 'is-late' : interval.max > 0 ? 'is-slight' : 'flap-none'], times), el('span', ['cmp-delay'], delays))
-      row.append(text, compareBar(r, interval, lo, hi))
-    } else {
-      row.append(el('span', ['cmp-missing'], 'cancelled'))
-    }
-    card.append(row)
-  })
-  const wrap = el('div', ['cmp-wrap'])
-  const legend = el('p', ['cmp-note'])
-  const key = (cls, text) => { const k = el('span', ['cmp-key']); k.append(el('span', ['cmp-dot', cls]), text); return k }
-  legend.append(key('is-vt', 'Viaggia'), key('is-rfi', 'RFI'), el('span', ['cmp-key'], '| scheduled time'))
-  wrap.append(tiles, card, legend, el('p', ['cmp-note'], 'Each bar spans the two delays; the real time lies somewhere in it. Viaggia rounds delays to the minute.'))
-  $('trainInfo').replaceChildren(wrap)
-}
-
 let rfiPlaceId = null
 let rfiReady = Promise.resolve()
 function initSources() {
@@ -1608,7 +1514,6 @@ function initSources() {
     rfiPlaceId = ids[stationID] || null
     if (!rfiPlaceId) {
       sourceMode = 'vt'
-      document.body.classList.remove('source-compare')
       return
     }
     initSourceSwitch(sourceMode, stationID, stationName)
@@ -1686,9 +1591,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (GROUP_MODES.includes(paramGroupBy)) groupByMode = paramGroupBy
   const paramView = (getParam('view') || '').toLowerCase()
   if (VIEWS.includes(paramView)) viewMode = paramView
-  const paramSource = (getParam('source') || '').toLowerCase()
-  if (paramSource === 'mix' || paramSource === 'compare') sourceMode = paramSource
-  document.body.classList.toggle('source-compare', sourceMode === 'compare')
+  // "mix" and "compare" were the two halves of Global before they were merged into one view
+  if (['global', 'mix', 'compare'].includes((getParam('source') || '').toLowerCase())) sourceMode = 'global'
 
   initSources()
   const searchLink = $('text-search')
