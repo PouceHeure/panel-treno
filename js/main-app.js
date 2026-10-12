@@ -1514,44 +1514,54 @@ function compareRows(trains, rfiRows) {
   return rows.sort((a, b) => a.sort - b.sort)
 }
 
-// the departure time a source implies: scheduled time + its delay
-function compareCell(side, time, disagree) {
-  const cell = el('span', ['cmp-cell'])
-  if (!side) {
-    cell.append(el('span', ['cmp-missing'], 'not listed'))
-    return cell
-  }
-  if (side.cancelled) {
-    cell.append(el('span', ['cmp-delay', 'is-late'], 'cancelled'))
-    return cell
-  }
-  const ms = rfiTimeMs(time)
-  const real = ms ? formatEpochHHMM(ms + side.delay * 60000) : time
-  const tone = side.delay > 0 ? 'is-late' : side.delay < 0 ? 'is-early' : 'flap-none'
-  cell.append(
-    el('span', ['flap-time', tone, disagree ? 'is-mismatch' : ''], real),
-    el('span', ['cmp-delay', side.delay > 0 ? 'is-late' : ''], side.delay ? `${side.delay > 0 ? '+' : ''}${side.delay} min` : 'no delay')
-  )
-  return cell
+// ---- the interval each train sits in: from the smaller to the larger delay of the two sources ----
+const signed = n => `${n > 0 ? '+' : ''}${n}`
+
+function compareInterval(row) {
+  const delays = [row.vt && !row.vt.cancelled ? row.vt.delay : null, row.rfi ? row.rfi.delay : null].filter(d => d !== null)
+  if (!delays.length) return null
+  return { min: Math.min(...delays), max: Math.max(...delays) }
+}
+
+// one bar per train on a shared axis: the delay range, a dot per source, a line at the scheduled time
+function compareBar(row, interval, lo, hi) {
+  const pos = d => `${((d - lo) / (hi - lo)) * 100}%`
+  const track = el('span', ['cmp-track'])
+  const zero = el('span', ['cmp-zero'])
+  zero.style.left = pos(0)
+  const range = el('span', ['cmp-range', interval.max >= LATE_THRESHOLD ? 'is-late' : interval.max > 0 ? 'is-slight' : 'is-ok'])
+  range.style.left = pos(interval.min)
+  range.style.width = `max(6px, calc(${pos(interval.max)} - ${pos(interval.min)}))`
+  track.append(zero, range)
+  ;[['vt', row.vt && !row.vt.cancelled ? row.vt.delay : null, 'Viaggia'], ['rfi', row.rfi ? row.rfi.delay : null, 'RFI']].forEach(([key, delay, name]) => {
+    if (delay === null) return
+    const dot = el('span', ['cmp-dot', `is-${key}`])
+    dot.style.left = pos(delay)
+    dot.title = `${name}: ${delay ? signed(delay) + ' min' : 'no delay'}`
+    track.append(dot)
+  })
+  return track
 }
 
 function renderCompare(trainData, rfiRows) {
   if (!rfiRows) return renderMessage('bi-question-circle', 'RFI is not available for this station right now.', true)
   const rows = compareRows(trainData, rfiRows)
-  const both = rows.filter(r => r.vt && r.rfi && !r.vt.cancelled)
-  const diff = r => r.vt.delay - r.rfi.delay // > 0: Viaggia reports more delay than RFI
-  const agree = both.filter(r => Math.abs(diff(r)) < 2)
-  const viaggiaMore = both.filter(r => diff(r) >= 2)
-  const rfiMore = both.filter(r => diff(r) <= -2)
-  const meanGap = both.length ? both.reduce((sum, r) => sum + diff(r), 0) / both.length : 0
+  const withInterval = rows.map(r => ({ row: r, interval: compareInterval(r) })).filter(x => x.interval)
+  const both = withInterval.filter(x => x.row.vt && x.row.rfi && !x.row.vt.cancelled)
+  const width = x => x.interval.max - x.interval.min
+  const agree = both.filter(x => width(x) < 2)
+  const meanWidth = both.length ? both.reduce((sum, x) => sum + width(x), 0) / both.length : 0
+  const widest = both.reduce((best, x) => (!best || width(x) > width(best) ? x : best), null)
   const pct = (n, d) => (d ? `${Math.round((n / d) * 100)}%` : '–')
+  const lo = Math.min(0, ...withInterval.map(x => x.interval.min))
+  const hi = Math.max(5, ...withInterval.map(x => x.interval.max))
 
   const tiles = el('div', ['cmp-tiles'])
   ;[
-    [pct(agree.length, both.length), 'within 1 min', `${agree.length} of ${both.length} trains`],
-    [String(viaggiaMore.length), 'Viaggia later', 'by 2 min or more'],
-    [String(rfiMore.length), 'RFI later', 'by 2 min or more'],
-    [`${meanGap > 0 ? '+' : ''}${meanGap.toFixed(1)}`, 'mean gap (min)', 'Viaggia minus RFI']
+    [pct(agree.length, both.length), 'sources agree', `interval under 2 min · ${agree.length} of ${both.length}`],
+    [`${meanWidth.toFixed(1)}`, 'mean interval (min)', 'between the two delays'],
+    [widest ? String(width(widest)) : '–', 'widest interval (min)', widest ? `${widest.row.place.toLowerCase()} ${widest.row.number}` : ''],
+    [String(rows.length - both.length), 'listed by one only', 'single point, no interval']
   ].forEach(([value, name, sub]) => {
     const tile = el('div', ['cmp-tile'])
     tile.append(el('span', ['cmp-tile-name'], name), el('span', ['cmp-tile-value'], value), el('span', ['cmp-tile-sub'], sub))
@@ -1560,24 +1570,34 @@ function renderCompare(trainData, rfiRows) {
 
   const card = el('section', ['flap-card', 'cmp-card'])
   const title = el('header', ['flap-title'])
-  title.append(icon('bi-clock-history'), el('span', [], 'Viaggia vs RFI · times'))
+  title.append(icon('bi-arrows-expand-vertical'), el('span', [], 'Departure interval'))
   const cols = el('div', ['cmp-row', 'cmp-cols'])
-  ;['sched', 'train', 'viaggia', 'rfi'].forEach(name => cols.append(el('span', [], name)))
+  ;['sched', 'train', 'between'].forEach(name => cols.append(el('span', [], name)))
   card.append(title, cols)
   rows.forEach(r => {
-    const comparable = r.vt && r.rfi && !r.vt.cancelled
-    const gap = comparable ? diff(r) : 0
-    const disagree = comparable && Math.abs(gap) >= 2
-    const row = el('div', ['cmp-row', disagree || !r.vt || !r.rfi ? 'has-diff' : ''])
+    const interval = compareInterval(r)
+    const row = el('div', ['cmp-row'])
     const who = el('span', ['flap-dest'])
-    const meta = el('span', ['flap-meta'], r.number)
-    if (disagree) meta.append(' · ', el('span', ['is-late'], `${Math.abs(gap)} min apart`))
-    who.append(el('span', ['flap-dest-name'], r.place), meta)
-    row.append(el('span', ['flap-time'], r.time), who, compareCell(r.vt, r.time, disagree), compareCell(r.rfi, r.time, disagree))
+    who.append(el('span', ['flap-dest-name'], r.place), el('span', ['flap-meta'], r.number + (r.vt && r.vt.cancelled ? ' · cancelled in Viaggia' : '')))
+    row.append(el('span', ['flap-time'], r.time), who)
+    if (interval) {
+      const ms = rfiTimeMs(r.time)
+      const at = d => (ms ? formatEpochHHMM(ms + d * 60000) : r.time)
+      const text = el('span', ['cmp-interval'])
+      const times = interval.min === interval.max ? at(interval.min) : `${at(interval.min)}–${at(interval.max)}`
+      const delays = interval.min === interval.max ? (interval.min ? `${signed(interval.min)} min` : 'no delay') : `${signed(interval.min)} to ${signed(interval.max)} min`
+      text.append(el('span', ['flap-time', interval.max >= LATE_THRESHOLD ? 'is-late' : interval.max > 0 ? 'is-slight' : 'flap-none'], times), el('span', ['cmp-delay'], delays))
+      row.append(text, compareBar(r, interval, lo, hi))
+    } else {
+      row.append(el('span', ['cmp-missing'], 'cancelled'))
+    }
     card.append(row)
   })
   const wrap = el('div', ['cmp-wrap'])
-  wrap.append(tiles, card, el('p', ['cmp-note'], 'Real time = scheduled time + the delay each source reports. Highlighted: 2 min or more apart (Viaggia rounds delays to the minute).'))
+  const legend = el('p', ['cmp-note'])
+  const key = (cls, text) => { const k = el('span', ['cmp-key']); k.append(el('span', ['cmp-dot', cls]), text); return k }
+  legend.append(key('is-vt', 'Viaggia'), key('is-rfi', 'RFI'), el('span', ['cmp-key'], '| scheduled time'))
+  wrap.append(tiles, card, legend, el('p', ['cmp-note'], 'Each bar spans the two delays; the real time lies somewhere in it. Viaggia rounds delays to the minute.'))
   $('trainInfo').replaceChildren(wrap)
 }
 
