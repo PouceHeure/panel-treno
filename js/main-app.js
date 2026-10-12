@@ -454,16 +454,43 @@ function toggleRoute(train) {
   rerender()
 }
 
-// Global view: the delays of the two sources, as the interval the departure should fall in.
-function delayInterval(train) {
-  if (sourceMode !== 'global') return null
-  const delays = [train.delayVt, train.delayRfi].filter(d => typeof d === 'number')
-  if (delays.length < 2) return null
-  const min = Math.min(...delays)
-  const max = Math.max(...delays)
-  return min === max ? null : { min, max }
-}
+// Global view: both sources' delays for a train, shown as a small range bar on a shared axis.
+const delayAxis = { lo: 0, hi: 5 }
 const signedDelay = n => (n > 0 ? `+${n}` : String(n))
+
+function sourceDelays(train) {
+  if (sourceMode !== 'global' || typeof train.delayVt !== 'number' || typeof train.delayRfi !== 'number') return null
+  return { vt: train.delayVt, rfi: train.delayRfi, min: Math.min(train.delayVt, train.delayRfi), max: Math.max(train.delayVt, train.delayRfi) }
+}
+
+function updateDelayAxis(trains) {
+  const both = trains.map(sourceDelays).filter(Boolean)
+  delayAxis.lo = Math.min(0, ...both.map(d => d.min))
+  delayAxis.hi = Math.max(5, ...both.map(d => d.max))
+}
+
+function miniTrack(d) {
+  // 6px of margin on each side so the end dots are not clipped
+  const pos = v => `calc(6px + (100% - 12px) * ${(v - delayAxis.lo) / (delayAxis.hi - delayAxis.lo)})`
+  const track = el('span', ['mini-track'])
+  const zero = el('span', ['mini-zero'])
+  zero.style.left = pos(0)
+  track.append(zero)
+  if (d.min !== d.max) {
+    const range = el('span', ['mini-range', d.max >= LATE_THRESHOLD ? 'is-late' : 'is-slight'])
+    range.style.left = pos(d.min)
+    range.style.width = `calc(${pos(d.max)} - ${pos(d.min)})`
+    track.append(range)
+  }
+  const dot = (cls, v, name) => {
+    const node = el('span', ['mini-dot', cls])
+    node.style.left = pos(v)
+    node.title = `${name}: ${v ? signedDelay(v) + ' min' : 'no delay'}`
+    return node
+  }
+  track.append(dot('is-rfi', d.rfi, 'RFI'), dot('is-vt', d.vt, 'Viaggia'))
+  return track
+}
 
 function boardRow(train, now) {
   const delay = delayOf(train)
@@ -496,15 +523,22 @@ function boardRow(train, now) {
   }
 
   const sched = el('span', ['flap-time'], scheduledLabel(train))
-  const interval = cancelled ? null : delayInterval(train)
-  const realEl = el('span', ['flap-realcell', interval ? 'is-interval' : ''])
-  if (interval) {
-    // the two sources disagree: show the whole interval instead of a single estimate
+  const both = cancelled ? null : sourceDelays(train)
+  const realEl = el('span', ['flap-realcell', both ? 'is-interval' : ''])
+  if (both) {
+    // both sources listed the train: the times they imply (a range when they differ) and a bar under them
     const at = d => formatEpochHHMM(train.orarioPartenza + d * 60000)
-    const tone = interval.max >= LATE_THRESHOLD ? 'is-late' : interval.max > 0 ? 'is-slight' : 'is-early'
-    const times = el('span', ['flap-time', tone], `${at(interval.min)}–${at(interval.max)}`)
-    times.title = `Viaggia ${signedDelay(train.delayVt)} min · RFI ${signedDelay(train.delayRfi)} min`
-    realEl.append(times, el('span', ['delay-chip', tone], `${signedDelay(interval.min)}…${signedDelay(interval.max)} min`))
+    const tone = both.max >= LATE_THRESHOLD ? 'is-late' : both.max > 0 ? 'is-slight' : 'flap-none'
+    let text
+    if (both.min === both.max) text = both.max ? `~${at(both.max)}` : scheduledLabel(train)
+    else {
+      const from = at(both.min)
+      const to = at(both.max)
+      text = `${from}–${from.slice(0, 2) === to.slice(0, 2) ? to.slice(3) : to}` // 19:29–34 when the hour is the same
+    }
+    const times = el('span', ['flap-time', tone], text)
+    times.title = `Viaggia ${signedDelay(both.vt)} min · RFI ${signedDelay(both.rfi)} min`
+    realEl.append(times, miniTrack(both))
   } else if (real) {
     const tone = delay > 0 ? 'is-late' : 'is-early'
     const estimate = el('span', ['flap-time', tone], `~${real}`)
@@ -555,6 +589,7 @@ function boardSection(group, now) {
 }
 
 function renderBoard(trainData) {
+  updateDelayAxis(trainData)
   const groups = buildGroups(trainData)
   if (groups.length === 0) {
     const noData = upcomingTrains(trainData).length === 0
@@ -565,7 +600,7 @@ function renderBoard(trainData) {
   const grid = el('div', ['card-grid', groupByMode === 'train' ? 'is-single' : 'is-multi'])
   groups.forEach(group => grid.append(boardSection(group, now)))
   const legend = el('p', ['board-legend'], label('legend'))
-  if (sourceMode === 'global') legend.append(' · interval: the delays of Viaggia and RFI when they differ (hover for each)')
+  if (sourceMode === 'global') legend.append(' · bar: the delays of Viaggia (yellow) and RFI (blue), the line is the scheduled time')
   $('trainInfo').replaceChildren(grid, legend)
 }
 
