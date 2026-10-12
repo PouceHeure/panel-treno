@@ -1471,6 +1471,18 @@ function delayEvolution(stops) {
   return card
 }
 
+function betweenEl(position, next, delay, now) {
+  const row = el('div', ['tv-between'])
+  const eta = (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
+  const train = el('span', ['tv-between-train'])
+  train.append(icon('bi-train-front-fill'))
+  train.style.top = `calc((100% - 24px) * ${position.progress === null ? 0.5 : position.progress})`
+  const text = el('div', ['tv-between-text'])
+  text.append(el('strong', [], 'Between stations'), el('span', [], `left ${Math.max(0, Math.round((now - position.since) / 60000))} min ago · ${untilLabel(eta, now) === 'now' ? 'arriving' : `reaches ${next.stazione.toLowerCase()} ${untilLabel(eta, now)}`}`))
+  row.append(train, text)
+  return row
+}
+
 function positionEl(position, now, lastSeenMs) {
   const box = el('div', ['tv-position'])
   const rel = lastSeenMs ? trackReliability(lastSeenMs, now) : null
@@ -1579,7 +1591,11 @@ function renderTrainPage(d) {
   columns.append(el('span'), el('span', [], 'station'), el('span', ['tv-cell-head'], 'arr'), el('span', ['tv-cell-head'], 'dep'))
   routeCard.append(columns)
   const line = el('div', ['tv-line'])
-  stops.forEach((f, i) => line.append(trainStopEl(f, i, stops, d, lastPassed)))
+  stops.forEach((f, i) => {
+    line.append(trainStopEl(f, i, stops, d, lastPassed))
+    // the train is between this stop and the next: say so on the line itself
+    if (position && position.kind === 'between' && i === lastPassed) line.append(betweenEl(position, stops[i + 1], delay, now))
+  })
   routeCard.append(line)
   root.append(routeCard)
 

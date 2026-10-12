@@ -826,3 +826,11 @@ body.view-train .source-switch { display: none; }
 .tv-position-dot { position: absolute; top: -4px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface); }
 .tv-position-ends { display: flex; justify-content: space-between; gap: 0.5rem; color: var(--muted); font-size: 0.7rem; text-transform: capitalize; }
 .tv-position-ends span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* on the route line: the train between two stops */
+.tv-between { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 0.6rem; min-height: 3.6rem; margin-top: -0.4rem; padding-bottom: 0.9rem; }
+.tv-between::before { content: ""; position: absolute; left: 9.5px; top: 0; bottom: 0; width: 3px; background: repeating-linear-gradient(to bottom, var(--faint) 0 5px, transparent 5px 9px); }
+.tv-between-train { position: absolute; left: 0; width: 22px; height: 24px; display: flex; align-items: center; justify-content: center; z-index: 1; border-radius: 6px; background: var(--accent); color: var(--bg); font-size: 0.8rem; }
+.tv-between-text { grid-column: 2; align-self: center; display: flex; flex-direction: column; font-size: 0.78rem; color: var(--muted); }
+.tv-between-text strong { color: var(--accent); font-size: 0.8rem; }
+@media (max-width: 599px) { .tv-between { column-gap: 0.45rem; } }
