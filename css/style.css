@@ -866,3 +866,22 @@ body.view-train .source-switch { display: none; }
 .tk-key { display: inline-flex; align-items: center; gap: 0.4rem; }
 .tk-key-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
 .tk-key-ghost { width: 12px; height: 12px; border-radius: 50%; border: 2px dashed var(--muted); }
+
+/* Tracking: the line of stops with the train on it */
+.tk-list-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.tk-more { height: 28px; padding: 0 0.8rem; border: 1px solid var(--line); border-radius: 999px; background: var(--tile); color: var(--accent); font: inherit; font-size: 0.75rem; cursor: pointer; }
+.tk-line { position: relative; margin-top: 0.4rem; }
+.tk-row { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr) 3.4rem 5.8rem; column-gap: 0.5rem; align-items: start; padding: 0 0 1rem; }
+.tk-row::before { content: ""; position: absolute; left: 9.5px; top: 11px; bottom: -11px; width: 3px; background: var(--faint); }
+.tk-row.is-end::before { display: none; }
+.tk-row.is-passed::before { background: var(--accent); }
+.tk-row-dot { width: 14px; height: 14px; margin: 4px 0 0 4px; border-radius: 50%; background: var(--surface); border: 3px solid var(--faint); position: relative; z-index: 1; }
+.tk-row.is-passed .tk-row-dot { background: var(--accent); border-color: var(--accent); }
+.tk-row.is-next .tk-row-dot { border-color: var(--accent); }
+.tk-row.is-end .tk-row-dot { border-radius: 4px; background: var(--text); border-color: var(--text); }
+.tk-row.is-passed .tk-up-name { color: var(--muted); }
+.tk-row .tk-up-name { font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.tk-row .tk-up-time { text-align: right; }
+.tk-line .tk-dot { left: 11px; z-index: 2; margin-top: -10px; }
+.tk-line .tk-ghost { left: 11px; z-index: 2; margin-top: -7px; }
+@media (max-width: 599px) { .tk-row { grid-template-columns: 22px minmax(0, 1fr) 3.1rem 5.2rem; column-gap: 0.4rem; } }

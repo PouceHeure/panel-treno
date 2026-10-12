@@ -1523,6 +1523,7 @@ function positionEl(position, now, lastSeenMs, here, next, delay) {
 // Tracking view: a live position, timetable-driven and corrected by the data
 // =======================
 let trackingMode = false
+let trackAll = false
 let trainFetchedAt = 0
 const live = { raf: 0, data: null, segKey: null, shown: 0, lastTs: 0, els: null, correction: null }
 
@@ -1606,41 +1607,48 @@ function renderTracking(d) {
   nextLine.append(els.label, els.name, els.eta)
   els.count = el('div', ['tk-count'])
 
-  const strip = el('div', ['tk-strip'])
-  const bar = el('div', ['tk-bar'])
+  els.trust = el('p', ['tk-trust'])
+  els.sync = el('p', ['tk-sync'])
+  card.append(els.state, nextLine, els.count, els.trust, els.sync)
+  root.append(card)
+
+  // the line: a window of stops around the train (or all of them), the train sliding along it
+  const stops = d.fermate || []
+  const hereIdx = stops.indexOf(model.here)
+  const from = trackAll ? 0 : Math.max(0, hereIdx - 2)
+  const to = trackAll ? stops.length : Math.min(stops.length, hereIdx + 8)
+  const listCard = el('section', ['tv-card'])
+  const listHead = el('div', ['tk-list-head'])
+  listHead.append(el('h3', ['tv-section'], `Stops · ${stops.length}`))
+  if (stops.length > to - from || trackAll) {
+    const more = el('button', ['tk-more'], trackAll ? 'Show fewer' : `Show all ${stops.length}`)
+    more.type = 'button'
+    more.addEventListener('click', () => { trackAll = !trackAll; renderTracking(d) })
+    listHead.append(more)
+  }
+  listCard.append(listHead)
+  const line = el('div', ['tk-line'])
+  els.rows = []
+  stops.slice(from, to).forEach((f, k) => {
+    const i = from + k
+    const passed = f.actualFermataType === 1
+    const at = (f.arrivo_teorico || f.programmata) + Math.max(delay, 0) * 60000
+    const row = el('div', ['tk-row', passed ? 'is-passed' : '', i === hereIdx + 1 ? 'is-next' : '', i === stops.length - 1 ? 'is-end' : ''])
+    const cell = el('span', ['tk-up-count'])
+    row.append(el('span', ['tk-row-dot']), el('span', ['tk-up-name'], f.stazione), el('span', ['tk-up-time'], formatEpochHHMM(passed ? (f.arrivoReale || f.partenzaReale || at) : at)), cell)
+    row.dataset.at = String(at)
+    row.dataset.passed = passed ? '1' : ''
+    line.append(row)
+    els.rows.push({ f, i, row, cell })
+  })
+  els.hereIdx = hereIdx
   els.ghost = el('span', ['tk-ghost'])
   els.ghost.title = 'Where the timetable alone would put the train'
   els.dot = el('span', ['tk-dot'])
   els.dot.title = 'Estimated position, corrected by the latest data'
-  bar.append(els.ghost, els.dot)
-  const ends = el('div', ['tk-ends'])
-  els.from = el('span')
-  els.to = el('span')
-  ends.append(els.from, els.to)
-  strip.append(bar, ends)
-
-  els.trust = el('p', ['tk-trust'])
-  els.sync = el('p', ['tk-sync'])
-  card.append(els.state, nextLine, els.count, strip, els.trust, els.sync)
-  root.append(card)
-
-  // the stops after the next one, with a live countdown
-  const stops = d.fermate || []
-  const idx = stops.indexOf(model.next)
-  const upcoming = stops.slice(idx + 1, idx + 6)
-  els.upcoming = upcoming.map(f => ({ f, cell: el('span', ['tk-up-count']) }))
-  if (upcoming.length) {
-    const list = el('section', ['tv-card'])
-    list.append(el('h3', ['tv-section'], 'After that'))
-    els.upcoming.forEach(({ f, cell }) => {
-      const row = el('div', ['tk-up'])
-      const at = (f.arrivo_teorico || f.programmata) + Math.max(delay, 0) * 60000
-      row.append(el('span', ['tk-up-name'], f.stazione), el('span', ['tk-up-time'], formatEpochHHMM(at)), cell)
-      row.dataset.at = String(at)
-      list.append(row)
-    })
-    root.append(list)
-  }
+  line.append(els.ghost, els.dot)
+  listCard.append(line)
+  root.append(listCard)
 
   const legend = el('p', ['tk-legend'])
   const key = (cls, text) => { const k = el('span', ['tk-key']); k.append(el('span', [cls]), text); return k }
@@ -1654,10 +1662,11 @@ function renderTracking(d) {
   if (live.segKey !== model.segKey) {
     live.segKey = model.segKey
     live.shown = 0
-  } else if (live.correction === null || Date.now() - live.correction.at > 1000) {
+  } else if (live.lastFetch !== trainFetchedAt) {
     const jump = model.p - live.shown
     live.correction = { pct: Math.round(jump * 100), at: Date.now() }
   }
+  live.lastFetch = trainFetchedAt
   cancelAnimationFrame(live.raf)
   live.lastTs = 0
   live.raf = requestAnimationFrame(tickTracking)
@@ -1674,10 +1683,15 @@ function tickTracking(ts) {
   live.lastTs = ts
   live.shown += (model.p - live.shown) * (1 - Math.exp(-dt / 2.5))
 
-  els.dot.style.left = `${live.shown * 100}%`
-  els.ghost.style.left = `${model.ghost * 100}%`
-  els.from.textContent = model.here.stazione.toLowerCase()
-  els.to.textContent = model.next.stazione.toLowerCase()
+  // markers on the line: from the dot of the last stop to the dot of the next one
+  const hereRow = els.rows.find(r => r.i === els.hereIdx)
+  const nextRow = els.rows.find(r => r.i === els.hereIdx + 1)
+  if (hereRow && nextRow) {
+    const y = r => r.row.offsetTop + 11
+    const place = (node, frac) => { node.style.top = `${y(hereRow) + frac * (y(nextRow) - y(hereRow))}px` }
+    place(els.dot, live.shown)
+    place(els.ghost, model.ghost)
+  }
   els.label.textContent = 'Next stop'
   els.name.textContent = model.next.stazione
   els.eta.textContent = `~${formatEpochHHMM(model.eta)}`
@@ -1714,10 +1728,10 @@ function tickTracking(ts) {
   const c = live.correction
   els.sync.textContent = `Data refreshed ${age} s ago · next in ${nextIn} s${c && now - c.at < 15000 && Math.abs(c.pct) >= 2 ? ` · re-synced ${c.pct > 0 ? '+' : ''}${c.pct}% of the segment` : ''}`
 
-  els.upcoming.forEach(({ cell }, i) => {
-    const row = cell.parentElement
+  els.rows.forEach(({ row, cell }) => {
+    if (row.dataset.passed) return
     const left = untilLabel(Number(row.dataset.at), now)
-    cell.textContent = left === 'now' ? 'due' : left
+    cell.textContent = left === 'now' ? 'due' : left.replace(/^in /, '')
   })
   live.raf = requestAnimationFrame(tickTracking)
 }
