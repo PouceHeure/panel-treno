@@ -1658,6 +1658,14 @@ function nerdTrackChart(d) {
   }
   while (hi - lo < 2 && (lo > 0 || hi < stops.length - 1)) { if (hi < stops.length - 1) hi++; else lo-- }
   const rows = stops.slice(lo, hi + 1)
+  // predicted passing times: the filter's arrival at the next stop, then the timetable's gaps after it
+  const hereStop = stops.indexOf(model.here)
+  const nextS = hereStop >= 0 ? stops[hereStop + 1] : null
+  let nextArrival = model.eta
+  if (model.kind === 'between' && model.kal && model.kal.r > 1e-4) {
+    nextArrival = Math.min(now + 3 * 3600000, now + ((1 - model.p) / model.kal.r) * 60000)
+  }
+  const predAt = i => (nextS && i > hereStop && nextArrival ? nextArrival + (stops[i].arrivo_teorico || stops[i].programmata) - (nextS.arrivo_teorico || nextS.programmata) : null)
   const extra = Math.max(d.ritardo || 0, 0) * 60000
   const arrOf = f => f.arrivo_teorico || f.programmata
   const depOf = f => f.partenza_teorica || f.programmata
@@ -1667,7 +1675,7 @@ function nerdTrackChart(d) {
   const nextStop = stops[Math.min(stops.length - 1, Math.floor(sNow) + 1)]
   const tMin = winMs ? winStart : firstT - 2 * 60000
   const tMax = winMs ? winStart + winMs : Math.max(now + 3 * 60000, arrOf(nextStop) + extra + 2 * 60000, tMin + 20 * 60000)
-  const LEFT = 116
+  const LEFT = 150
   const RIGHT = 12
   const TOP = 14
   // the vertical axis follows the scheduled travel time between stations (dwell times left out)
@@ -1699,11 +1707,17 @@ function nerdTrackChart(d) {
     if (y - lastLabelY < 22) return // too close to the previous name: the line stays, the label is skipped
     lastLabelY = y
     // station names wrap on two lines instead of being cut: "genova piazza / principe"
-    const lines = wrapLabel(f.stazione, 16)
+    const lines = wrapLabel(f.stazione, 15)
     const label = svgEl('text', { x: 4, y: lines.length > 1 ? y - 1 : y + 4, class: 'tl-label' })
     lines.forEach((line, k) => label.append(svgEl('tspan', { x: 4, dy: k ? 11 : 0 }, line)))
     label.append(svgEl('title', {}, f.stazione))
     svg.append(label)
+    const due = predAt(lo + i)
+    if (due) {
+      const when = svgEl('text', { x: LEFT - 6, y: y + 4, 'text-anchor': 'end', class: 'tk-plot-when' }, `~${formatEpochHHMM(due)}`)
+      when.append(svgEl('title', {}, `Predicted at ${formatTime(new Date(due), true)}`))
+      svg.append(when)
+    }
   })
   const span = tMax - tMin
   // the smallest round step that keeps the clock labels about 44px apart
@@ -1728,7 +1742,7 @@ function nerdTrackChart(d) {
   // what the current delay predicts for the stops ahead
   const idxHere = stops.indexOf(model.here)
   const ahead = rows.map((f, i) => ({ f, i, idx: lo + i })).filter(r => r.idx > idxHere)
-  path([[xOf(now), yOf(sNow)]].concat(ahead.flatMap(r => [[xOf(arrOf(r.f) + extra), yAt(lo + r.i)], [xOf(depOf(r.f) + extra), yAt(lo + r.i)]])), 'tk-plot-pred')
+  path([[xOf(now), yOf(sNow)]].concat(ahead.flatMap(r => { const at = predAt(lo + r.i) || arrOf(r.f) + extra; const dwell = depOf(r.f) - arrOf(r.f); return [[xOf(at), yAt(lo + r.i)], [xOf(at + dwell), yAt(lo + r.i)]] })), 'tk-plot-pred')
   // the filter's confidence: +-2 sigma around the estimate, from the departure and on to the expected arrival
   if (model.kind === 'between' && model.kal) {
     const hereI = stops.indexOf(model.here)

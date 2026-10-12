@@ -930,3 +930,5 @@ body.view-train .source-switch { display: none; }
 
 .tk-readout { min-height: 1.2em; margin: 0 0 0.3rem; font-size: 0.74rem; }
 .tk-cursor { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 2; pointer-events: none; }
+
+.tk-plot-when { fill: var(--accent); font-family: var(--font); font-size: 10px; font-weight: 700; }
