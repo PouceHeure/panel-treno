@@ -922,3 +922,9 @@ body.view-train .source-switch { display: none; }
 .tk-zoom.is-small .tk-zoom-btn { padding: 0 0.55rem; font-size: 0.7rem; }
 
 .route-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.tk-plot-real { fill: none; stroke: var(--ok); stroke-width: 2; stroke-linejoin: round; opacity: 0.85; }
+.tl-dot.is-arrival { fill: var(--bg); stroke: var(--ok); stroke-width: 2; }
+.k-real { width: 16px; height: 2px; background: var(--ok); }
+
+@media (max-width: 420px) { .tk-zoom.is-small .tk-zoom-btn { padding: 0 0.42rem; } }

@@ -1603,7 +1603,7 @@ function nerdTrackChart(d) {
   const panel = el('div', ['nerd-panel'])
   const head = el('div', ['nerd-panel-head'])
   const winSwitch = el('div', ['tk-zoom', 'is-small'])
-  ;[['10', '10 min'], ['30', '30 min'], ['all', 'All']].forEach(([key, text]) => {
+  ;[['5', '5 min'], ['10', '10 min'], ['30', '30 min'], ['all', 'All']].forEach(([key, text]) => {
     const b = el('button', ['tk-zoom-btn', trackWin === key ? 'is-active' : ''], text)
     b.type = 'button'
     b.addEventListener('click', () => { trackWin = key; renderTrackNerd(trainDetail) })
@@ -1661,7 +1661,7 @@ function nerdTrackChart(d) {
     svg.append(svgEl('text', { x: 4, y: y + 4, class: 'tl-label' }, clipName(f.stazione)))
   })
   const span = tMax - tMin
-  const step = span <= 12 * 60000 ? 2 * 60000 : span <= 40 * 60000 ? 5 * 60000 : span <= 90 * 60000 ? 10 * 60000 : span <= 240 * 60000 ? 30 * 60000 : 60 * 60000
+  const step = span <= 6.5 * 60000 ? 60000 : span <= 12 * 60000 ? 2 * 60000 : span <= 40 * 60000 ? 5 * 60000 : span <= 90 * 60000 ? 10 * 60000 : span <= 240 * 60000 ? 30 * 60000 : 60 * 60000
   for (let t = Math.ceil(tMin / step) * step; t < tMax; t += step) {
     svg.append(svgEl('line', { x1: xOf(t), y1: TOP, x2: xOf(t), y2: TOP + plotH, class: 'tl-vgrid' }))
     svg.append(svgEl('text', { x: xOf(t), y: H - 8, class: 'tl-label', 'text-anchor': 'middle' }, formatTime(new Date(t))))
@@ -1694,10 +1694,21 @@ function nerdTrackChart(d) {
     dot.append(svgEl('title', {}, `${formatTime(new Date(f.t), true)} · delay ${f.delay > 0 ? '+' : ''}${f.delay} min${f.sBefore !== null ? ` · moved ${(f.s - f.sBefore >= 0 ? '+' : '')}${((f.s - f.sBefore) * 100).toFixed(0)}% of a segment` : ''}`))
     plot.append(dot)
   })
-  // times the train really left the stations shown
-  rows.forEach((f, i) => {
-    const at = f.partenzaReale || f.arrivoReale
-    if (at) plot.append(svgEl('circle', { cx: xOf(at), cy: TOP + i * ROW, r: 4, class: 'tl-dot is-ok' }))
+  // what really happened, rebuilt from the recorded times: arrival and departure at each stop,
+  // joined by straight lines (linear in time between two stops)
+  const yRaw = s => TOP + (s - lo) * ROW
+  const real = []
+  stops.forEach((f, i) => {
+    if (f.arrivoReale) real.push({ t: f.arrivoReale, s: i, kind: 'arr', f })
+    if (f.partenzaReale) real.push({ t: f.partenzaReale, s: i, kind: 'dep', f })
+  })
+  real.sort((a, b) => a.t - b.t)
+  if (real.length > 1) path(real.map(r => [xOf(r.t), yRaw(r.s)]), 'tk-plot-real')
+  real.forEach(r => {
+    if (r.s < lo - 0.5 || r.s > hi + 0.5) return
+    const dot = svgEl('circle', { cx: xOf(r.t), cy: yRaw(r.s), r: r.kind === 'dep' ? 4.5 : 3.5, class: `tl-dot is-ok ${r.kind === 'arr' ? 'is-arrival' : ''}` })
+    dot.append(svgEl('title', {}, `${r.f.stazione}: ${r.kind === 'arr' ? 'arrived' : 'left'} ${formatEpochHHMM(r.t)}`))
+    plot.append(dot)
   })
   // RFI's estimate for the station of its board
   if (trackRfi) {
@@ -1713,7 +1724,7 @@ function nerdTrackChart(d) {
   panel.append(svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
   const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
-  legend.append(item('k-est', 'estimate'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-fix', 'correction'), item('k-pass', 'real'), ...(trackRfi ? [item('k-rfi', 'RFI')] : []))
+  legend.append(item('k-est', 'estimate'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-fix', 'correction'), item('k-real', 'real times'), ...(trackRfi ? [item('k-rfi', 'RFI')] : []))
   panel.append(legend)
   return panel
 }
