@@ -1523,7 +1523,7 @@ function positionEl(position, now, lastSeenMs, here, next, delay) {
 // Tracking view: a live position, timetable-driven and corrected by the data
 // =======================
 let trackingMode = false
-let trackAll = false
+let trackZoom = 'normal' // 'close' = 2 stops each side, spaced by travel time; 'normal' = a window; 'all' = every stop
 let trainFetchedAt = 0
 const live = { raf: 0, data: null, segKey: null, shown: 0, lastTs: 0, els: null, correction: null }
 
@@ -1615,18 +1615,27 @@ function renderTracking(d) {
   // the line: a window of stops around the train (or all of them), the train sliding along it
   const stops = d.fermate || []
   const hereIdx = stops.indexOf(model.here)
-  const from = trackAll ? 0 : Math.max(0, hereIdx - 2)
-  const to = trackAll ? stops.length : Math.min(stops.length, hereIdx + 8)
+  const from = trackZoom === 'all' ? 0 : Math.max(0, hereIdx - 2)
+  const to = trackZoom === 'all' ? stops.length : Math.min(stops.length, hereIdx + (trackZoom === 'close' ? 3 : 8))
   const listCard = el('section', ['tv-card'])
   const listHead = el('div', ['tk-list-head'])
   listHead.append(el('h3', ['tv-section'], `Stops · ${stops.length}`))
-  if (stops.length > to - from || trackAll) {
-    const more = el('button', ['tk-more'], trackAll ? 'Show fewer' : `Show all ${stops.length}`)
-    more.type = 'button'
-    more.addEventListener('click', () => { trackAll = !trackAll; renderTracking(d) })
-    listHead.append(more)
-  }
+  const zoom = el('div', ['tk-zoom'])
+  zoom.setAttribute('role', 'group')
+  zoom.setAttribute('aria-label', 'Zoom')
+  ;[['close', 'Close'], ['normal', 'Normal'], ['all', 'All']].forEach(([key, text]) => {
+    const b = el('button', ['tk-zoom-btn', trackZoom === key ? 'is-active' : ''], text)
+    b.type = 'button'
+    b.addEventListener('click', () => { trackZoom = key; renderTracking(d) })
+    zoom.append(b)
+  })
+  listHead.append(zoom)
   listCard.append(listHead)
+  // total scheduled minutes covered by the visible window (to scale the spacing)
+  let windowMinutes = 0
+  for (let i = from; i < to - 1; i++) {
+    windowMinutes += ((stops[i + 1].arrivo_teorico || stops[i + 1].programmata) - (stops[i].partenza_teorica || stops[i].programmata)) / 60000
+  }
   const line = el('div', ['tk-line'])
   els.rows = []
   stops.slice(from, to).forEach((f, k) => {
@@ -1638,6 +1647,12 @@ function renderTracking(d) {
     row.append(el('span', ['tk-row-dot']), el('span', ['tk-up-name'], f.stazione), el('span', ['tk-up-time'], formatEpochHHMM(passed ? (f.arrivoReale || f.partenzaReale || at) : at)), cell)
     row.dataset.at = String(at)
     row.dataset.passed = passed ? '1' : ''
+    if (trackZoom === 'close' && stops[i + 1]) {
+      // zoomed in: the gap between two stops follows the scheduled travel time, the whole line fitting about a screen
+      const minutes = ((stops[i + 1].arrivo_teorico || stops[i + 1].programmata) - (f.partenza_teorica || f.programmata)) / 60000
+      const px = Math.min(12, Math.max(1.5, 520 / Math.max(1, windowMinutes)))
+      row.style.minHeight = `${Math.max(60, Math.round(minutes * px))}px`
+    }
     line.append(row)
     els.rows.push({ f, i, row, cell })
   })

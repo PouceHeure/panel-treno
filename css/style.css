@@ -885,3 +885,8 @@ body.view-train .source-switch { display: none; }
 .tk-line .tk-dot { left: 11px; z-index: 2; margin-top: -10px; }
 .tk-line .tk-ghost { left: 11px; z-index: 2; margin-top: -7px; }
 @media (max-width: 599px) { .tk-row { grid-template-columns: 22px minmax(0, 1fr) 3.1rem 5.2rem; column-gap: 0.4rem; } }
+
+.tk-zoom { display: inline-flex; height: 28px; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--tile); }
+.tk-zoom-btn { padding: 0 0.7rem; border: none; border-left: 1px solid var(--line); background: transparent; color: var(--muted); font: inherit; font-size: 0.75rem; font-weight: 700; cursor: pointer; }
+.tk-zoom-btn:first-child { border-left: none; }
+.tk-zoom-btn.is-active { background: var(--accent); color: var(--bg); }
