@@ -795,3 +795,14 @@ body.view-train .source-switch { display: none; }
 .mini-dot.is-vt { background: var(--accent); }
 .mini-dot.is-rfi { background: #7cc7ff; }
 
+
+/* colour key under the Global board */
+.bar-key { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.4rem 0.75rem; margin: 1rem 0 0.2rem; font-size: 0.76rem; color: var(--text); }
+.bar-key-item { display: inline-flex; align-items: center; gap: 0.4rem; }
+.key-dot { width: 10px; height: 10px; border-radius: 50%; }
+.key-dot.is-vt { background: var(--accent); }
+.key-dot.is-rfi { background: #7cc7ff; }
+.key-line { width: 2px; height: 12px; background: var(--muted); }
+.key-swatch { width: 18px; height: 6px; border-radius: 3px; opacity: 0.7; }
+.key-swatch.is-slight { background: var(--accent); }
+.key-swatch.is-late { background: var(--late); }

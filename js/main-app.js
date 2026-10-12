@@ -532,9 +532,7 @@ function boardRow(train, now) {
     let text
     if (both.min === both.max) text = both.max ? `~${at(both.max)}` : scheduledLabel(train)
     else {
-      const from = at(both.min)
-      const to = at(both.max)
-      text = `${from}–${from.slice(0, 2) === to.slice(0, 2) ? to.slice(3) : to}` // 19:29–34 when the hour is the same
+      text = `${at(both.min)}–${at(both.max)}`
     }
     const times = el('span', ['flap-time', tone], text)
     times.title = `Viaggia ${signedDelay(both.vt)} min · RFI ${signedDelay(both.rfi)} min`
@@ -600,7 +598,23 @@ function renderBoard(trainData) {
   const grid = el('div', ['card-grid', groupByMode === 'train' ? 'is-single' : 'is-multi'])
   groups.forEach(group => grid.append(boardSection(group, now)))
   const legend = el('p', ['board-legend'], label('legend'))
-  if (sourceMode === 'global') legend.append(' · bar: the delays of Viaggia (yellow) and RFI (blue), the line is the scheduled time')
+  if (sourceMode === 'global') {
+    // a colour key, so the bars read without a sentence
+    const key = (mark, text) => {
+      const item = el('span', ['bar-key-item'])
+      item.append(mark, text)
+      return item
+    }
+    const bar = el('p', ['bar-key'])
+    bar.append(
+      key(el('span', ['key-dot', 'is-vt']), 'Viaggia'),
+      key(el('span', ['key-dot', 'is-rfi']), 'RFI'),
+      key(el('span', ['key-line']), 'planned'),
+      key(el('span', ['key-swatch', 'is-slight']), `< ${LATE_THRESHOLD} min`),
+      key(el('span', ['key-swatch', 'is-late']), `${LATE_THRESHOLD} min+`)
+    )
+    return $('trainInfo').replaceChildren(grid, bar, legend)
+  }
   $('trainInfo').replaceChildren(grid, legend)
 }
 
