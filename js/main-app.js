@@ -1571,12 +1571,15 @@ function recordTick() {
 // A data refresh arrived: how far was the old estimate from the new one?
 function recordFetch(prev, data) {
   const now = Date.now()
-  const s = trackCoord(data, trackingModel(data, now))
-  if (s === null) return
   const last = trackHist.fetches[trackHist.fetches.length - 1]
   if (last && now - last.t < 8000) return // a page reload right after a refresh is not a new data point
   const sBefore = prev ? trackCoord(prev, trackingModel(prev, now)) : null
-  trackHist.fetches.push({ t: now, s, sBefore, delay: data.ritardo || 0, rfi: trackRfi ? trackRfi.delay : null })
+  const age = data.oraUltimoRilevamento ? Math.max(0, (now - data.oraUltimoRilevamento) / 60000) : 3
+  const entry = { t: now, s: null, sBefore, delay: data.ritardo || 0, rfi: trackRfi ? trackRfi.delay : null, age }
+  trackHist.fetches.push(entry) // first, so that the filter already counts this measurement
+  const s = trackCoord(data, trackingModel(data, now))
+  if (s === null) { trackHist.fetches.pop(); return }
+  entry.s = s
   trackHist.ticks.push({ t: now, s })
   saveTrackHist()
 }
@@ -1592,7 +1595,24 @@ async function fetchTrackRfi(boardId) {
   } catch { /* RFI is a bonus series */ }
 }
 
-const clipName = (name, n = 17) => (name.length > n ? `${name.slice(0, n - 1)}…`.toLowerCase() : name.toLowerCase())
+// up to two lines of at most `n` characters, cut on word boundaries (an ellipsis only when it still does not fit)
+function wrapLabel(name, n = 16) {
+  const words = name.toLowerCase().split(/\s+/)
+  const lines = ['']
+  words.forEach(w => {
+    const cur = lines[lines.length - 1]
+    if (!cur) lines[lines.length - 1] = w
+    else if ((cur + ' ' + w).length <= n) lines[lines.length - 1] = `${cur} ${w}`
+    else lines.push(w)
+  })
+  if (lines.length > 2) {
+    const rest = lines.slice(1).join(' ')
+    lines.length = 1
+    lines.push(rest.length > n ? `${rest.slice(0, n - 1)}…` : rest)
+  }
+  return lines.map(l => (l.length > n ? `${l.slice(0, n - 1)}…` : l))
+}
+
 
 // Stations on the vertical axis, clock time on the horizontal one.
 function nerdTrackChart(d) {
@@ -1643,9 +1663,9 @@ function nerdTrackChart(d) {
   const nextStop = stops[Math.min(stops.length - 1, Math.floor(sNow) + 1)]
   const tMin = winMs ? now - winMs * 0.7 : firstT - 2 * 60000
   const tMax = winMs ? now + winMs * 0.3 : Math.max(now + 3 * 60000, arrOf(nextStop) + extra + 2 * 60000, tMin + 20 * 60000)
-  const LEFT = 112
+  const LEFT = 116
   const RIGHT = 12
-  const TOP = 10
+  const TOP = 14
   const ROW = winMs ? 46 : 24
   const plotH = (rows.length - 1) * ROW
   const H = TOP + plotH + 26
@@ -1658,7 +1678,12 @@ function nerdTrackChart(d) {
   rows.forEach((f, i) => {
     const y = TOP + i * ROW
     svg.append(svgEl('line', { x1: LEFT, y1: y, x2: W - RIGHT, y2: y, class: 'tl-grid' }))
-    svg.append(svgEl('text', { x: 4, y: y + 4, class: 'tl-label' }, clipName(f.stazione)))
+    // station names wrap on two lines instead of being cut: "genova piazza / principe"
+    const lines = wrapLabel(f.stazione, 16)
+    const label = svgEl('text', { x: 4, y: lines.length > 1 ? y - 1 : y + 4, class: 'tl-label' })
+    lines.forEach((line, k) => label.append(svgEl('tspan', { x: 4, dy: k ? 11 : 0 }, line)))
+    label.append(svgEl('title', {}, f.stazione))
+    svg.append(label)
   })
   const span = tMax - tMin
   const step = span <= 6.5 * 60000 ? 60000 : span <= 12 * 60000 ? 2 * 60000 : span <= 40 * 60000 ? 5 * 60000 : span <= 90 * 60000 ? 10 * 60000 : span <= 240 * 60000 ? 30 * 60000 : 60 * 60000
@@ -1683,6 +1708,18 @@ function nerdTrackChart(d) {
   const idxHere = stops.indexOf(model.here)
   const ahead = rows.map((f, i) => ({ f, i, idx: lo + i })).filter(r => r.idx > idxHere)
   path([[xOf(now), yOf(sNow)]].concat(ahead.flatMap(r => [[xOf(arrOf(r.f) + extra), TOP + r.i * ROW], [xOf(depOf(r.f) + extra), TOP + r.i * ROW]])), 'tk-plot-pred')
+  // the filter's confidence: +-2 sigma around the estimate, from the departure and on to the expected arrival
+  if (model.kind === 'between' && model.kal) {
+    const hereI = stops.indexOf(model.here)
+    const yBand = v => TOP + (hereI + Math.min(1, Math.max(0, v)) - lo) * ROW
+    const run = kalmanRun(d, model.here, model.next, model.since, now, 5000)
+    const pts = run.samples.concat(kalmanForecast(run, now, Math.max(model.eta, now) + 60000))
+    const upper = pts.map(x => [xOf(x.t), yBand(x.p + 2 * x.sigma)])
+    const lower = pts.map(x => [xOf(x.t), yBand(x.p - 2 * x.sigma)]).reverse()
+    const poly = svgEl('polygon', { points: upper.concat(lower).map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '), class: 'tk-plot-band' })
+    poly.append(svgEl('title', {}, 'Kalman filter: +-2 sigma around the estimated position'))
+    plot.append(poly)
+  }
   // estimated position over time
   path(samples.concat([{ t: now, s: sNow }]).sort((a, b) => a.t - b.t).map(x => [xOf(x.t), yOf(x.s)]), 'tk-plot-est')
   // corrections: each data refresh moved the estimate from sBefore to s
@@ -1724,7 +1761,7 @@ function nerdTrackChart(d) {
   panel.append(svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
   const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
-  legend.append(item('k-est', 'estimate'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-fix', 'correction'), item('k-real', 'real times'), ...(trackRfi ? [item('k-rfi', 'RFI')] : []))
+  legend.append(item('k-est', 'estimate'), item('k-band', '±2σ'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-fix', 'correction'), item('k-real', 'real times'), ...(trackRfi ? [item('k-rfi', 'RFI')] : []))
   panel.append(legend)
   return panel
 }
@@ -1791,11 +1828,13 @@ function renderTrackNerd(d) {
   const meanFix = fixes.length ? fixes.reduce((a, b) => a + b, 0) / fixes.length : 0
   const maxFix = fixes.length ? Math.max(...fixes) : 0
   const rel = d.oraUltimoRilevamento ? trackReliability(d.oraUltimoRilevamento, now) : null
+  const cur = trackingModel(d, now)
+  const unc = cur.kind === 'between' && cur.kal ? (cur.sigma * cur.kal.tseg).toFixed(1) : null
   const grid = el('div', ['stat-grid'])
   grid.append(
     statTile('refreshes', String(trackHist.fetches.length), `${trackHist.ticks.length} position samples`),
     statTile('mean correction', `${(meanFix * 100).toFixed(0)}%`, 'of a segment per refresh'),
-    statTile('max correction', `${(maxFix * 100).toFixed(0)}%`, 'of a segment'),
+    statTile('uncertainty', unc ? `±${unc}m` : '–', unc ? '1σ on the next arrival' : 'in a station'),
     statTile('delay', `${(d.ritardo || 0) > 0 ? '+' : ''}${d.ritardo || 0}m`, trackRfi ? `RFI says ${trackRfi.delay > 0 ? '+' : ''}${trackRfi.delay}m` : 'RFI: not asked or not listed', (d.ritardo || 0) >= LATE_THRESHOLD ? 'is-late' : ''),
     statTile('last detection', rel ? rel.text : '–', d.oraUltimoRilevamento ? `${Math.max(0, Math.round((now - d.oraUltimoRilevamento) / 60000))} min ago` : '')
   )
@@ -1823,6 +1862,89 @@ async function setNerdTrack(on) {
   window.history.replaceState(null, '', `${window.location.pathname}?${url}`)
   if (on && !trackRfi) await fetchTrackRfi(new URLSearchParams(window.location.search).get('stationID'))
   if (trainDetail) renderTrainPage(trainDetail)
+}
+
+// =======================
+// Kalman filter for the position along the current segment
+// =======================
+// State: p (fraction of the segment covered, 0..1) and r (fraction per minute).
+// The timetable gives the prior speed; every refresh gives a position implied by the announced arrival
+// time (noise grows with the age of the last detection); the real departure time pins p = 0 at its
+// real instant, even when it is only learnt later. Everything is replayed from the departure, so a
+// late-arriving measurement is applied where it belongs.
+const KALMAN = { qPos: 4e-4, qRate: 2.5e-5, etaSigmaMin: 1, ageGain: 0.5, rfiSigmaMin: 1.5 }
+const KALMAN_MINUTE = 60000
+
+function kalmanRun(d, here, next, t0, now, stepMs = 0) {
+  const schedArr = next.arrivo_teorico || next.programmata
+  const schedDep = here.partenza_teorica || here.programmata
+  const tseg = Math.max(1, (schedArr + Math.max(d.ritardo || 0, 0) * KALMAN_MINUTE - t0) / KALMAN_MINUTE) // minutes
+  let p = 0
+  let r = 1 / Math.max(1, (schedArr - schedDep) / KALMAN_MINUTE)
+  let P = [[1e-4, 0], [0, (0.4 * r) ** 2]]
+  const predict = dtMs => {
+    const dt = dtMs / KALMAN_MINUTE
+    if (dt <= 0) return
+    p += r * dt
+    const p00 = P[0][0] + dt * (P[1][0] + P[0][1]) + dt * dt * P[1][1] + KALMAN.qPos * dt
+    const p01 = P[0][1] + dt * P[1][1]
+    P = [[p00, p01], [p01, P[1][1] + KALMAN.qRate * dt]]
+  }
+  const update = (z, R) => {
+    const S = P[0][0] + R
+    const k0 = P[0][0] / S
+    const k1 = P[1][0] / S
+    const y = z - p
+    p += k0 * y
+    r = Math.max(0, r + k1 * y)
+    P = [[(1 - k0) * P[0][0], (1 - k0) * P[0][1]], [P[1][0] - k1 * P[0][0], P[1][1] - k1 * P[0][1]]]
+  }
+  // measurements, each at the instant it applies to
+  const events = [{ t: t0, z: 0, R: (0.1 / tseg) ** 2 }]
+  const implied = (t, etaMs) => Math.min(0.99, Math.max(0, (t - t0) / Math.max(KALMAN_MINUTE, etaMs - t0)))
+  trackHist.fetches.filter(f => f.t > t0).forEach(f => {
+    const sigmaVt = Math.hypot(KALMAN.etaSigmaMin, KALMAN.ageGain * (f.age ?? 2))
+    events.push({ t: f.t, z: implied(f.t, schedArr + Math.max(f.delay, 0) * KALMAN_MINUTE), R: (sigmaVt / tseg) ** 2 })
+    if (typeof f.rfi === 'number') {
+      events.push({ t: f.t, z: implied(f.t, schedArr + Math.max(f.rfi, 0) * KALMAN_MINUTE), R: (KALMAN.rfiSigmaMin / tseg) ** 2 })
+    }
+  })
+  events.sort((a, b) => a.t - b.t)
+
+  const samples = []
+  let t = t0
+  let i = 0
+  while (i < events.length && events[i].t <= t0) update(events[i].z, events[i++].R)
+  while (t < now) {
+    const tn = stepMs ? Math.min(now, t + stepMs) : now
+    while (i < events.length && events[i].t <= tn) {
+      predict(events[i].t - t)
+      t = events[i].t
+      update(events[i].z, events[i].R)
+      i++
+    }
+    predict(tn - t)
+    t = tn
+    p = Math.min(0.98, Math.max(0, p))
+    if (stepMs) samples.push({ t, p, sigma: Math.sqrt(Math.max(P[0][0], 0)) })
+  }
+  p = Math.min(0.98, Math.max(0, p))
+  return { p, r, P, sigma: Math.sqrt(Math.max(P[0][0], 0)), samples, tseg }
+}
+
+// Where the filter expects the train, and how unsure it is, until `untilMs` (no new measurement).
+function kalmanForecast(state, fromMs, untilMs, stepMs = 15000) {
+  let { p, r, P } = state
+  const out = [{ t: fromMs, p, sigma: Math.sqrt(Math.max(P[0][0], 0)) }]
+  for (let t = fromMs; t < untilMs; t += stepMs) {
+    const dt = stepMs / KALMAN_MINUTE
+    p += r * dt
+    const p00 = P[0][0] + dt * (P[1][0] + P[0][1]) + dt * dt * P[1][1] + KALMAN.qPos * dt
+    const p01 = P[0][1] + dt * P[1][1]
+    P = [[p00, p01], [p01, P[1][1] + KALMAN.qRate * dt]]
+    out.push({ t: t + stepMs, p: Math.min(1, p), sigma: Math.sqrt(Math.max(P[0][0], 0)) })
+  }
+  return out
 }
 
 // =======================
@@ -1861,10 +1983,12 @@ function trackingModel(d, now) {
   }
   const t0 = here.partenzaReale
   const span = eta - t0
-  const p = span > 0 ? Math.min(0.97, Math.max(0, (now - t0) / span)) : 0
+  const linear = span > 0 ? Math.min(0.97, Math.max(0, (now - t0) / span)) : 0
+  const kal = kalmanRun(d, here, next, t0, now)
+  const p = Number.isFinite(kal.p) ? Math.min(0.97, kal.p) : linear
   const schedSpan = sched(next, 'arr') - sched(here, 'dep')
   const ghost = schedSpan > 0 ? Math.min(1, Math.max(0, (now - sched(here, 'dep')) / schedSpan)) : 0
-  return { kind: 'between', here, next, segKey: `b${lastPassed}`, p, ghost, target: eta, eta, since: t0 }
+  return { kind: 'between', here, next, segKey: `b${lastPassed}`, p, sigma: kal.sigma, kal, ghost, target: eta, eta, since: t0 }
 }
 
 // "18 min 04 s", "1 h 14 min": a countdown that cannot be mistaken for a clock time

@@ -928,3 +928,6 @@ body.view-train .source-switch { display: none; }
 .k-real { width: 16px; height: 2px; background: var(--ok); }
 
 @media (max-width: 420px) { .tk-zoom.is-small .tk-zoom-btn { padding: 0 0.42rem; } }
+
+.tk-plot-band { fill: var(--accent); opacity: 0.16; stroke: none; }
+.k-band { width: 16px; height: 8px; background: var(--accent); opacity: 0.3; }
