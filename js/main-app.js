@@ -1520,6 +1520,274 @@ function positionEl(position, now, lastSeenMs, here, next, delay) {
 }
 
 // =======================
+// Tracking data log (feeds the nerd view)
+// =======================
+// ticks: the model's position every few seconds; fetches: what each data refresh changed.
+const trackHist = { key: null, ticks: [], fetches: [] }
+let trackRfi = null // { delay, stationId }: what the RFI board says about this train, when asked
+let nerdTrack = false
+const TRACK_TICK_MS = 5000
+const TRACK_KEEP = 360
+
+function trackCoord(d, model) {
+  const stops = d.fermate || []
+  if (model.kind === 'arrived') return stops.length - 1
+  if (!model.here) return null
+  const i = stops.indexOf(model.here)
+  return i + (model.kind === 'between' ? model.p : 0)
+}
+
+function loadTrackHist() {
+  trackHist.key = `panelTreno.track.${trainRef.number}-${trainRef.date}`
+  try {
+    const saved = JSON.parse(localStorage.getItem(trackHist.key))
+    trackHist.fetches = Array.isArray(saved) ? saved.slice(-TRACK_KEEP) : []
+  } catch { trackHist.fetches = [] }
+  trackHist.ticks = []
+}
+
+function saveTrackHist() {
+  try { localStorage.setItem(trackHist.key, JSON.stringify(trackHist.fetches.slice(-TRACK_KEEP))) } catch { /* storage is optional */ }
+}
+
+function recordTick() {
+  if (!trainDetail || !trackHist.key) return
+  const now = Date.now()
+  const s = trackCoord(trainDetail, trackingModel(trainDetail, now))
+  if (s === null) return
+  trackHist.ticks.push({ t: now, s })
+  if (trackHist.ticks.length > TRACK_KEEP) trackHist.ticks.shift()
+  if (trackingMode && nerdTrack) renderTrackNerd(trainDetail)
+}
+
+// A data refresh arrived: how far was the old estimate from the new one?
+function recordFetch(prev, data) {
+  const now = Date.now()
+  const s = trackCoord(data, trackingModel(data, now))
+  if (s === null) return
+  const last = trackHist.fetches[trackHist.fetches.length - 1]
+  if (last && now - last.t < 8000) return // a page reload right after a refresh is not a new data point
+  const sBefore = prev ? trackCoord(prev, trackingModel(prev, now)) : null
+  trackHist.fetches.push({ t: now, s, sBefore, delay: data.ritardo || 0, rfi: trackRfi ? trackRfi.delay : null })
+  trackHist.ticks.push({ t: now, s })
+  saveTrackHist()
+}
+
+async function fetchTrackRfi(boardId) {
+  trackRfi = null
+  if (!boardId) return
+  try {
+    const ids = await loadRfiIds()
+    if (!ids[boardId]) return
+    const rows = await fetchRfiRows(ids[boardId], false)
+    const row = rows.find(r => r.number === String(trainRef.number))
+    if (row) trackRfi = { delay: row.delay, stationId: boardId }
+  } catch { /* RFI is a bonus series */ }
+}
+
+const clipName = (name, n = 17) => (name.length > n ? `${name.slice(0, n - 1)}…`.toLowerCase() : name.toLowerCase())
+
+// Stations on the vertical axis, clock time on the horizontal one.
+function nerdTrackChart(d) {
+  const stops = d.fermate || []
+  const now = Date.now()
+  const model = trackingModel(d, now)
+  const sNow = trackCoord(d, model)
+  const panel = el('div', ['nerd-panel'])
+  const head = el('div', ['nerd-panel-head'])
+  head.append(el('span', [], 'position vs time'), el('span', [], 'stations x clock'))
+  panel.append(head)
+  if (sNow === null) {
+    panel.append(el('p', ['nerd-dim'], 'no position to plot yet'))
+    return panel
+  }
+  const samples = trackHist.ticks.concat(trackHist.fetches.map(f => ({ t: f.t, s: f.s })))
+  const all = samples.map(x => x.s).concat([sNow])
+  let lo = Math.max(0, Math.floor(Math.min(...all)) - 1)
+  let hi = Math.min(stops.length - 1, Math.ceil(Math.max(...all)) + 2)
+  while (hi - lo < 4 && (lo > 0 || hi < stops.length - 1)) { if (hi < stops.length - 1) hi++; if (hi - lo < 4 && lo > 0) lo-- }
+  if (hi - lo > 13) lo = hi - 13
+  const rows = stops.slice(lo, hi + 1)
+  const extra = Math.max(d.ritardo || 0, 0) * 60000
+  const arrOf = f => f.arrivo_teorico || f.programmata
+  const depOf = f => f.partenza_teorica || f.programmata
+
+  // the window follows the log: from the first sample to a little after the next stop (at least 20 minutes)
+  const firstT = samples.length ? Math.min(...samples.map(x => x.t)) : now
+  const nextStop = stops[Math.min(stops.length - 1, Math.floor(sNow) + 1)]
+  const tMin = firstT - 2 * 60000
+  const tMax = Math.max(now + 3 * 60000, arrOf(nextStop) + extra + 2 * 60000, tMin + 20 * 60000)
+  const LEFT = 112
+  const RIGHT = 12
+  const TOP = 10
+  const ROW = 24
+  const plotH = (rows.length - 1) * ROW
+  const H = TOP + plotH + 26
+  const W = chartWidth()
+  const plotW = W - LEFT - RIGHT
+  const xOf = ms => LEFT + ((ms - tMin) / (tMax - tMin)) * plotW
+  const yOf = s => TOP + (Math.min(Math.max(s, lo), hi) - lo) * ROW
+
+  const svg = svgChart(H, 'Estimated and corrected train position against time', W)
+  rows.forEach((f, i) => {
+    const y = TOP + i * ROW
+    svg.append(svgEl('line', { x1: LEFT, y1: y, x2: W - RIGHT, y2: y, class: 'tl-grid' }))
+    svg.append(svgEl('text', { x: 4, y: y + 4, class: 'tl-label' }, clipName(f.stazione)))
+  })
+  const span = tMax - tMin
+  const step = span <= 40 * 60000 ? 5 * 60000 : span <= 90 * 60000 ? 10 * 60000 : span <= 240 * 60000 ? 30 * 60000 : 60 * 60000
+  for (let t = Math.ceil(tMin / step) * step; t < tMax; t += step) {
+    svg.append(svgEl('line', { x1: xOf(t), y1: TOP, x2: xOf(t), y2: TOP + plotH, class: 'tl-vgrid' }))
+    svg.append(svgEl('text', { x: xOf(t), y: H - 8, class: 'tl-label', 'text-anchor': 'middle' }, formatTime(new Date(t))))
+  }
+  svg.append(svgEl('line', { x1: xOf(now), y1: TOP, x2: xOf(now), y2: TOP + plotH, class: 'tl-now' }))
+
+  const clipId = `tkclip${Math.round(now)}`
+  const defs = svgEl('defs')
+  const clip = svgEl('clipPath', { id: clipId })
+  clip.append(svgEl('rect', { x: LEFT, y: TOP - 8, width: plotW, height: plotH + 16 }))
+  defs.append(clip)
+  svg.append(defs)
+  const plot = svgEl('g', { 'clip-path': `url(#${clipId})` })
+  svg.append(plot)
+  const path = (pts, cls) => plot.append(svgEl('polyline', { points: pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '), class: cls }))
+  // timetable alone
+  path(rows.flatMap((f, i) => [[xOf(arrOf(f)), TOP + i * ROW], [xOf(depOf(f)), TOP + i * ROW]]), 'tk-plot-sched')
+  // what the current delay predicts for the stops ahead
+  const idxHere = stops.indexOf(model.here)
+  const ahead = rows.map((f, i) => ({ f, i, idx: lo + i })).filter(r => r.idx > idxHere)
+  path([[xOf(now), yOf(sNow)]].concat(ahead.flatMap(r => [[xOf(arrOf(r.f) + extra), TOP + r.i * ROW], [xOf(depOf(r.f) + extra), TOP + r.i * ROW]])), 'tk-plot-pred')
+  // estimated position over time
+  path(samples.concat([{ t: now, s: sNow }]).sort((a, b) => a.t - b.t).map(x => [xOf(x.t), yOf(x.s)]), 'tk-plot-est')
+  // corrections: each data refresh moved the estimate from sBefore to s
+  trackHist.fetches.forEach(f => {
+    if (f.sBefore !== null && Math.abs(f.s - f.sBefore) > 0.02) {
+      plot.append(svgEl('line', { x1: xOf(f.t), y1: yOf(f.sBefore), x2: xOf(f.t), y2: yOf(f.s), class: 'tk-plot-fix' }))
+    }
+    const dot = svgEl('circle', { cx: xOf(f.t), cy: yOf(f.s), r: 3, class: 'tk-plot-fetch' })
+    dot.append(svgEl('title', {}, `${formatTime(new Date(f.t), true)} · delay ${f.delay > 0 ? '+' : ''}${f.delay} min${f.sBefore !== null ? ` · moved ${(f.s - f.sBefore >= 0 ? '+' : '')}${((f.s - f.sBefore) * 100).toFixed(0)}% of a segment` : ''}`))
+    plot.append(dot)
+  })
+  // times the train really left the stations shown
+  rows.forEach((f, i) => {
+    const at = f.partenzaReale || f.arrivoReale
+    if (at) plot.append(svgEl('circle', { cx: xOf(at), cy: TOP + i * ROW, r: 4, class: 'tl-dot is-ok' }))
+  })
+  // RFI's estimate for the station of its board
+  if (trackRfi) {
+    const j = stops.findIndex(f => f.id === trackRfi.stationId)
+    if (j >= lo && j <= hi) {
+      const x = xOf(depOf(stops[j]) + trackRfi.delay * 60000)
+      const y = TOP + (j - lo) * ROW
+      const mark = svgEl('path', { d: `M${x},${y - 6} L${x + 6},${y} L${x},${y + 6} L${x - 6},${y} Z`, class: 'tk-plot-rfi' })
+      mark.append(svgEl('title', {}, `RFI: ${stops[j].stazione} at ${formatEpochHHMM(depOf(stops[j]) + trackRfi.delay * 60000)} (${trackRfi.delay > 0 ? '+' : ''}${trackRfi.delay} min)`))
+      plot.append(mark)
+    }
+  }
+  panel.append(svg)
+  const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
+  const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
+  legend.append(item('k-est', 'estimate'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-fix', 'correction'), item('k-pass', 'real'), ...(trackRfi ? [item('k-rfi', 'RFI')] : []))
+  panel.append(legend)
+  return panel
+}
+
+// How the reported delay evolved, refresh after refresh (ViaggiaTreno and RFI).
+function nerdTrackDelay() {
+  const panel = el('div', ['nerd-panel'])
+  const head = el('div', ['nerd-panel-head'])
+  head.append(el('span', [], 'delay vs time'), el('span', [], 'minutes'))
+  panel.append(head)
+  const f = trackHist.fetches
+  if (f.length < 2) {
+    panel.append(el('p', ['nerd-dim'], 'needs two refreshes (about 40 s) to draw a curve'))
+    return panel
+  }
+  const LEFT = 40
+  const RIGHT = 12
+  const TOP = 12
+  const H = 130
+  const plotH = H - TOP - 24
+  const W = chartWidth()
+  const plotW = W - LEFT - RIGHT
+  const t0 = f[0].t
+  const t1 = Math.max(f[f.length - 1].t, t0 + 60000)
+  const vals = f.flatMap(x => [x.delay, x.rfi]).filter(v => typeof v === 'number')
+  const yMax = Math.max(5, Math.ceil(Math.max(...vals) / 5) * 5)
+  const yMin = Math.min(0, Math.floor(Math.min(...vals) / 5) * 5)
+  const xOf = ms => LEFT + ((ms - t0) / (t1 - t0)) * plotW
+  const yOf = v => TOP + plotH - ((v - yMin) / (yMax - yMin)) * plotH
+  const svg = svgChart(H, 'Reported delay against time', W)
+  ;[yMin, 0, yMax].filter((v, i, a) => a.indexOf(v) === i).forEach(v => {
+    svg.append(svgEl('line', { x1: LEFT, y1: yOf(v), x2: W - RIGHT, y2: yOf(v), class: 'tl-grid' }))
+    svg.append(svgEl('text', { x: 4, y: yOf(v) + 4, class: 'tl-label' }, `${v > 0 ? '+' : ''}${v}`))
+  })
+  ;[t0, t1].forEach((t, i) => svg.append(svgEl('text', { x: i ? W - RIGHT : LEFT, y: H - 6, class: 'tl-label', 'text-anchor': i ? 'end' : 'start' }, formatTime(new Date(t)))))
+  // a step line: the delay holds until the next refresh changes it
+  const steps = series => {
+    const pts = []
+    series.forEach((p, i) => {
+      if (i) pts.push([xOf(p.t), yOf(series[i - 1].v)])
+      pts.push([xOf(p.t), yOf(p.v)])
+    })
+    return pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+  }
+  svg.append(svgEl('polyline', { points: steps(f.map(x => ({ t: x.t, v: x.delay }))), class: 'tk-plot-est' }))
+  const rfi = f.filter(x => typeof x.rfi === 'number').map(x => ({ t: x.t, v: x.rfi }))
+  if (rfi.length > 1) svg.append(svgEl('polyline', { points: steps(rfi), class: 'tk-plot-rfi-line' }))
+  panel.append(svg)
+  const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
+  const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
+  legend.append(item('k-est', 'Viaggia'), ...(rfi.length > 1 ? [item('k-rfi-line', 'RFI')] : []))
+  panel.append(legend)
+  return panel
+}
+
+function renderTrackNerd(d) {
+  const now = Date.now()
+  const wrap = el('div', ['nerd-wrap'])
+  const category = (d.categoria || d.categoriaDescrizione || '').trim()
+  wrap.append(trackModeBar(), el('p', ['nerd-prompt'], `$ treno --track ${`${category} ${d.numeroTreno}`.trim().replace(/\s+/g, '_')} --plot position,delay`))
+
+  const fixes = trackHist.fetches.filter(f => f.sBefore !== null).map(f => Math.abs(f.s - f.sBefore))
+  const meanFix = fixes.length ? fixes.reduce((a, b) => a + b, 0) / fixes.length : 0
+  const maxFix = fixes.length ? Math.max(...fixes) : 0
+  const rel = d.oraUltimoRilevamento ? trackReliability(d.oraUltimoRilevamento, now) : null
+  const grid = el('div', ['stat-grid'])
+  grid.append(
+    statTile('refreshes', String(trackHist.fetches.length), `${trackHist.ticks.length} position samples`),
+    statTile('mean correction', `${(meanFix * 100).toFixed(0)}%`, 'of a segment per refresh'),
+    statTile('max correction', `${(maxFix * 100).toFixed(0)}%`, 'of a segment'),
+    statTile('delay', `${(d.ritardo || 0) > 0 ? '+' : ''}${d.ritardo || 0}m`, trackRfi ? `RFI says ${trackRfi.delay > 0 ? '+' : ''}${trackRfi.delay}m` : 'RFI: not asked or not listed', (d.ritardo || 0) >= LATE_THRESHOLD ? 'is-late' : ''),
+    statTile('last detection', rel ? rel.text : '–', d.oraUltimoRilevamento ? `${Math.max(0, Math.round((now - d.oraUltimoRilevamento) / 60000))} min ago` : '')
+  )
+  wrap.append(grid, nerdTrackChart(d), nerdTrackDelay())
+  $('trainInfo').replaceChildren(wrap)
+}
+
+// Live | Nerd, at the top of the Tracking view.
+function trackModeBar() {
+  const bar = el('div', ['tk-modes'])
+  ;[[false, 'Live'], [true, 'Nerd']].forEach(([nerd, text]) => {
+    const b = el('button', ['tk-mode', nerdTrack === nerd ? 'is-active' : ''], text)
+    b.type = 'button'
+    b.addEventListener('click', () => setNerdTrack(nerd))
+    bar.append(b)
+  })
+  return bar
+}
+
+async function setNerdTrack(on) {
+  nerdTrack = on
+  const url = new URLSearchParams(window.location.search)
+  if (on) url.set('nerd', '1')
+  else url.delete('nerd')
+  window.history.replaceState(null, '', `${window.location.pathname}?${url}`)
+  if (on && !trackRfi) await fetchTrackRfi(new URLSearchParams(window.location.search).get('stationID'))
+  if (trainDetail) renderTrainPage(trainDetail)
+}
+
+// =======================
 // Tracking view: a live position, timetable-driven and corrected by the data
 // =======================
 let trackingMode = false
@@ -1577,6 +1845,7 @@ function renderTracking(d) {
   const model = trackingModel(d, Date.now())
   live.data = d
   setTrainTitle(d)
+  root.append(trackModeBar())
 
   const head = el('section', ['tv-card'])
   const top = el('div', ['tv-head'])
@@ -1758,6 +2027,12 @@ function setTrainTitle(d) {
 }
 
 function renderTrainPage(d) {
+  document.body.classList.toggle('view-nerd', trackingMode && nerdTrack)
+  if (trackingMode && nerdTrack) {
+    stopTracking()
+    setTrainTitle(d)
+    return renderTrackNerd(d)
+  }
   if (trackingMode) return renderTracking(d)
   stopTracking()
   const root = el('div', ['tv-wrap'])
@@ -1868,8 +2143,11 @@ async function loadTrainPage() {
     if (!trainDetail) renderMessage('bi-question-circle', label('trainNotFound'), false, 'This train has no data (it may be too old or the link is wrong).')
     return
   }
+  const previous = trainDetail
+  if (nerdTrack) await fetchTrackRfi(new URLSearchParams(window.location.search).get('stationID'))
   trainDetail = data
   trainFetchedAt = Date.now()
+  recordFetch(previous, data)
   renderTrainPage(data)
   const category = (data.categoria || data.categoriaDescrizione || '').trim()
   rememberRecent(trainRecent(trainRef.number, trainRef.from, trainRef.date, `${`${category} ${data.numeroTreno}`.trim()} · ${data.destinazione || ''}`))
@@ -1931,6 +2209,9 @@ function initTrainPage() {
   $('trainShare').hidden = false
   $('trainShare').addEventListener('click', shareTrain)
   trackingMode = params.get('track') === '1'
+  nerdTrack = params.get('nerd') === '1'
+  loadTrackHist()
+  setInterval(recordTick, TRACK_TICK_MS)
   const trackBtn = $('trackToggle')
   trackBtn.hidden = false
   const applyTrackToggle = () => {
@@ -1945,6 +2226,7 @@ function initTrainPage() {
   trackBtn.addEventListener('click', () => {
     trackingMode = !trackingMode
     applyTrackToggle()
+    if (!trackingMode) document.body.classList.remove('view-nerd')
     if (trainDetail) renderTrainPage(trainDetail)
   })
   $('trainShareLabel').textContent = label('share')

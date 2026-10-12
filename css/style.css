@@ -890,3 +890,30 @@ body.view-train .source-switch { display: none; }
 .tk-zoom-btn { padding: 0 0.7rem; border: none; border-left: 1px solid var(--line); background: transparent; color: var(--muted); font: inherit; font-size: 0.75rem; font-weight: 700; cursor: pointer; }
 .tk-zoom-btn:first-child { border-left: none; }
 .tk-zoom-btn.is-active { background: var(--accent); color: var(--bg); }
+
+/* Live | Nerd switch at the top of Tracking */
+.tk-modes { display: inline-flex; align-self: center; height: 30px; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--tile); }
+.tv-wrap > .tk-modes, .nerd-wrap > .tk-modes { align-self: center; }
+.tk-mode { padding: 0 1.1rem; border: none; border-left: 1px solid var(--line); background: transparent; color: var(--muted); font: inherit; font-size: 0.8rem; font-weight: 700; cursor: pointer; }
+.tk-mode:first-child { border-left: none; }
+.tk-mode.is-active { background: var(--accent); color: var(--bg); }
+
+/* Tracking, nerd: position and delay plots */
+.tl-vgrid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.7; }
+.tk-plot-sched { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.tk-plot-pred { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 2 3; opacity: 0.8; }
+.tk-plot-est { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.tk-plot-fix { stroke: var(--late); stroke-width: 2; }
+.tk-plot-fetch { fill: var(--bg); stroke: var(--accent); stroke-width: 1.5; }
+.tk-plot-rfi { fill: #7cc7ff; stroke: var(--bg); stroke-width: 1; }
+.tk-plot-rfi-line { fill: none; stroke: #7cc7ff; stroke-width: 2; stroke-linejoin: round; }
+.tk-plot-legend { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; margin: 0.5rem 0 0; font-size: 0.72rem; }
+.tk-plot-key { display: inline-flex; align-items: center; gap: 0.35rem; }
+.tk-plot-key span { display: inline-block; }
+.k-est { width: 16px; height: 2px; background: var(--accent); }
+.k-pred { width: 16px; height: 0; border-top: 2px dotted var(--accent); }
+.k-sched { width: 16px; height: 0; border-top: 2px dashed var(--muted); }
+.k-fix { width: 2px; height: 12px; background: var(--late); }
+.k-pass { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.k-rfi { width: 9px; height: 9px; background: #7cc7ff; transform: rotate(45deg); }
+.k-rfi-line { width: 16px; height: 2px; background: #7cc7ff; }
