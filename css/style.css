@@ -932,3 +932,16 @@ body.view-train .source-switch { display: none; }
 .tk-cursor { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 2; pointer-events: none; }
 
 .tk-plot-when { fill: var(--accent); font-family: var(--font); font-size: 10px; font-weight: 700; }
+
+.tk-motion { margin: 0; color: var(--muted); font-size: 0.82rem; }
+.tk-motion:empty { display: none; }
+
+.tk-plot-det { fill: var(--bg); stroke: var(--ok); stroke-width: 1.5; }
+.k-det { width: 9px; height: 9px; border: 1.5px solid var(--ok); transform: rotate(45deg); }
+.nerd-panel-head { flex-wrap: wrap; align-items: center; }
+
+/* a station the train goes through without stopping */
+.tv-pass { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 0.6rem; align-items: center; min-height: 1.6rem; margin-top: -0.5rem; padding-bottom: 0.5rem; }
+.tv-pass::before { content: ""; position: absolute; left: 9.5px; top: 0; bottom: 0; width: 3px; background: var(--accent); }
+.tv-pass-dot { position: relative; z-index: 1; width: 9px; height: 9px; margin-left: 7px; background: var(--surface); border: 2px solid var(--accent); transform: rotate(45deg); }
+.tv-pass-text { color: var(--muted); font-size: 0.78rem; }

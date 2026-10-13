@@ -1477,6 +1477,12 @@ function delayEvolution(stops) {
   return card
 }
 
+function passEl(det) {
+  const row = el('div', ['tv-pass'])
+  row.append(el('span', ['tv-pass-dot']), el('span', ['tv-pass-text'], `passed ${det.name.toLowerCase()} · ${formatEpochHHMM(det.t)} · no stop`))
+  return row
+}
+
 function betweenEl(position, next, delay, now) {
   const row = el('div', ['tv-between'])
   const eta = (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
@@ -1529,9 +1535,63 @@ function positionEl(position, now, lastSeenMs, here, next, delay) {
 // Tracking data log (feeds the nerd view)
 // =======================
 // ticks: the model's position every few seconds; fetches: what each data refresh changed.
-const trackHist = { key: null, ticks: [], fetches: [] }
+const trackHist = { key: null, ticks: [], fetches: [], detections: [] }
+
+// ---- station coordinates (data/stations.json, built by scripts/build-stations.py) ----
+let stationBook = null // code -> [lat, lon, name]
+let stationNames = null // NAME -> code
+let stationsReady = Promise.resolve()
+function loadStations() {
+  stationsReady = fetch('data/stations.json')
+    .then(r => r.json())
+    .then(book => {
+      stationBook = book
+      stationNames = new Map(Object.entries(book).map(([id, v]) => [v[2], id]))
+    })
+    .catch(() => { /* without coordinates the filter falls back to the timetable alone */ })
+}
+
+const toRad = deg => (deg * Math.PI) / 180
+function haversineKm(a, b) {
+  const dLat = toRad(b[0] - a[0])
+  const dLon = toRad(b[1] - a[1])
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLon / 2) ** 2
+  return 2 * 6371 * Math.asin(Math.sqrt(h))
+}
+const stationPoint = id => (stationBook && stationBook[id] ? [stationBook[id][0], stationBook[id][1]] : null)
+
+// Where a station lies between two consecutive stops of the train: [segment index + fraction, off-line km].
+function projectOnRoute(stops, point) {
+  if (!point) return null
+  let best = null
+  for (let i = 0; i < stops.length - 1; i++) {
+    const A = stationPoint(stops[i].id)
+    const B = stationPoint(stops[i + 1].id)
+    if (!A || !B) continue
+    const k = Math.cos(toRad((A[0] + B[0]) / 2)) // longitude shrinks with latitude
+    const bx = (B[1] - A[1]) * k
+    const by = B[0] - A[0]
+    const px = (point[1] - A[1]) * k
+    const py = point[0] - A[0]
+    const len2 = bx * bx + by * by
+    if (!len2) continue
+    const t = (px * bx + py * by) / len2
+    if (t <= 0.02 || t >= 0.98) continue
+    const off = haversineKm(point, [A[0] + by * t, A[1] + (bx * t) / k])
+    if (!best || off < best.off) best = { s: i + t, off }
+  }
+  return best
+}
+
+// Length of the segment from stop i to stop i+1, in km (null without coordinates).
+function segmentKm(stops, i) {
+  const A = stops[i] && stationPoint(stops[i].id)
+  const B = stops[i + 1] && stationPoint(stops[i + 1].id)
+  return A && B ? haversineKm(A, B) : null
+}
 let nerdTrack = false
 let trackWin = '10' // minutes shown by the position plot: '5', '10', '30' or 'all'
+let trackAxis = 'min' // vertical axis of the plot: 'min' (scheduled travel time) or 'km' (distance)
 const TRACK_TICK_MS = 5000
 const TRACK_KEEP = 360
 
@@ -1545,15 +1605,41 @@ function trackCoord(d, model) {
 
 function loadTrackHist() {
   trackHist.key = `panelTreno.track.${trainRef.number}-${trainRef.date}`
+  trackHist.fetches = []
+  trackHist.detections = []
   try {
     const saved = JSON.parse(localStorage.getItem(trackHist.key))
-    trackHist.fetches = Array.isArray(saved) ? saved.slice(-TRACK_KEEP) : []
-  } catch { trackHist.fetches = [] }
+    if (Array.isArray(saved)) trackHist.fetches = saved.slice(-TRACK_KEEP) // older format: the fetches only
+    else if (saved) {
+      trackHist.fetches = (saved.f || []).slice(-TRACK_KEEP)
+      trackHist.detections = saved.d || []
+    }
+  } catch { /* nothing saved */ }
   trackHist.ticks = []
 }
 
 function saveTrackHist() {
-  try { localStorage.setItem(trackHist.key, JSON.stringify(trackHist.fetches.slice(-TRACK_KEEP))) } catch { /* storage is optional */ }
+  try {
+    localStorage.setItem(trackHist.key, JSON.stringify({ f: trackHist.fetches.slice(-TRACK_KEEP), d: trackHist.detections.slice(-200) }))
+  } catch { /* storage is optional */ }
+}
+
+// The API only keeps the LAST detection of a train. Detection points are often stations it goes through
+// without stopping: log each one as it appears, so the passage is not lost at the next refresh.
+function recordDetection(data) {
+  if (!data.oraUltimoRilevamento || !data.stazioneUltimoRilevamento || !stationNames) return
+  const name = data.stazioneUltimoRilevamento.trim().toUpperCase()
+  if (trackHist.detections.some(x => x.t === data.oraUltimoRilevamento)) return
+  const id = stationNames.get(name)
+  if (!id) return
+  const stops = data.fermate || []
+  if (stops.some(f => f.id === id)) return // a listed stop has its own real times
+  const point = stationPoint(id)
+  const proj = point && projectOnRoute(stops, point)
+  if (!proj || proj.off > 8) return // not on this train's line
+  trackHist.detections.push({ t: data.oraUltimoRilevamento, name, id, s: proj.s })
+  trackHist.detections.sort((a, b) => a.t - b.t)
+  saveTrackHist()
 }
 
 function recordTick() {
@@ -1613,6 +1699,7 @@ function nerdTrackChart(d) {
     if (st.arrivoReale) real.push({ t: st.arrivoReale, s: i, kind: 'arr', f: st })
     if (st.partenzaReale) real.push({ t: st.partenzaReale, s: i, kind: 'dep', f: st })
   })
+  trackHist.detections.forEach(x => real.push({ t: x.t, s: x.s, kind: 'det', f: { stazione: x.name } }))
   real.sort((x, y) => x.t - y.t)
   const histPts = trackHist.ticks.concat(trackHist.fetches.map(x => ({ t: x.t, s: x.s }))).sort((x, y) => x.t - y.t)
   const posAt = t => {
@@ -1632,7 +1719,15 @@ function nerdTrackChart(d) {
     b.addEventListener('click', () => { trackWin = key; renderTrackNerd(trainDetail) })
     winSwitch.append(b)
   })
-  head.append(el('span', [], 'position vs time'), winSwitch)
+  const axisSwitch = el('div', ['tk-zoom', 'is-small'])
+  ;[['min', 'min'], ['km', 'km']].forEach(([key, text]) => {
+    const b = el('button', ['tk-zoom-btn', trackAxis === key ? 'is-active' : ''], text)
+    b.type = 'button'
+    b.title = key === 'km' ? 'Stations spaced by distance' : 'Stations spaced by scheduled travel time'
+    b.addEventListener('click', () => { trackAxis = key; renderTrackNerd(trainDetail) })
+    axisSwitch.append(b)
+  })
+  head.append(el('span', [], 'position vs time'), axisSwitch, winSwitch)
   panel.append(head)
   if (sNow === null) {
     panel.append(el('p', ['nerd-dim'], 'no position to plot yet'))
@@ -1662,8 +1757,8 @@ function nerdTrackChart(d) {
   const hereStop = stops.indexOf(model.here)
   const nextS = hereStop >= 0 ? stops[hereStop + 1] : null
   let nextArrival = model.eta
-  if (model.kind === 'between' && model.kal && model.kal.r > 1e-4) {
-    nextArrival = Math.min(now + 3 * 3600000, now + ((1 - model.p) / model.kal.r) * 60000)
+  if (model.kind === 'between' && model.kal && Number.isFinite(model.kal.minToGo)) {
+    nextArrival = Math.min(now + 3 * 3600000, now + model.kal.minToGo * 60000)
   }
   const predAt = i => (nextS && i > hereStop && nextArrival ? nextArrival + (stops[i].arrivo_teorico || stops[i].programmata) - (nextS.arrivo_teorico || nextS.programmata) : null)
   const extra = Math.max(d.ritardo || 0, 0) * 60000
@@ -1678,9 +1773,13 @@ function nerdTrackChart(d) {
   const LEFT = 150
   const RIGHT = 12
   const TOP = 14
-  // the vertical axis follows the scheduled travel time between stations (dwell times left out)
+  // the vertical axis follows the scheduled travel time between stations (dwell times left out), or the distance
   const cum = [0]
-  stops.forEach((st, i) => { if (i) cum[i] = cum[i - 1] + Math.max(0.5, (arrOf(st) - depOf(stops[i - 1])) / 60000) })
+  const kmOk = stops.every((st, i) => !i || segmentKm(stops, i - 1) !== null)
+  const useKm = trackAxis === 'km' && kmOk
+  stops.forEach((st, i) => {
+    if (i) cum[i] = cum[i - 1] + (useKm ? Math.max(0.2, segmentKm(stops, i - 1)) : Math.max(0.5, (arrOf(st) - depOf(stops[i - 1])) / 60000))
+  })
   const minAt = v => {
     const c = Math.min(Math.max(v, 0), stops.length - 1)
     const i = Math.floor(c)
@@ -1772,6 +1871,15 @@ function nerdTrackChart(d) {
   if (real.length > 1) path(real.map(r => [xOf(r.t), yRaw(r.s)]), 'tk-plot-real')
   real.forEach(r => {
     if (r.s < lo - 0.5 || r.s > hi + 0.5) return
+    if (r.kind === 'det') {
+      // a station the train went through without stopping
+      const x = xOf(r.t)
+      const y = yRaw(r.s)
+      const mark = svgEl('path', { d: `M${x},${y - 5} L${x + 5},${y} L${x},${y + 5} L${x - 5},${y} Z`, class: 'tk-plot-det' })
+      mark.append(svgEl('title', {}, `${r.f.stazione.toLowerCase()}: passed ${formatEpochHHMM(r.t)} without stopping`))
+      plot.append(mark)
+      return
+    }
     const dot = svgEl('circle', { cx: xOf(r.t), cy: yRaw(r.s), r: r.kind === 'dep' ? 4.5 : 3.5, class: `tl-dot is-ok ${r.kind === 'arr' ? 'is-arrival' : ''}` })
     dot.append(svgEl('title', {}, `${r.f.stazione}: ${r.kind === 'arr' ? 'arrived' : 'left'} ${formatEpochHHMM(r.t)}`))
     plot.append(dot)
@@ -1805,7 +1913,7 @@ function nerdTrackChart(d) {
   panel.append(readout, svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
   const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
-  legend.append(item('k-est', 'estimate'), item('k-band', '±2σ'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-fix', 'correction'), item('k-real', 'real times'))
+  legend.append(item('k-est', 'estimate'), item('k-band', '±2σ'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-fix', 'correction'), item('k-real', 'real times'), item('k-det', 'passed, no stop'))
   panel.append(legend)
   return panel
 }
@@ -1871,12 +1979,12 @@ function renderTrackNerd(d) {
   const maxFix = fixes.length ? Math.max(...fixes) : 0
   const rel = d.oraUltimoRilevamento ? trackReliability(d.oraUltimoRilevamento, now) : null
   const cur = trackingModel(d, now)
-  const unc = cur.kind === 'between' && cur.kal ? (cur.sigma * cur.kal.tseg).toFixed(1) : null
+  const unc = cur.kind === 'between' && cur.kal && cur.kal.sigmaMin !== null ? cur.kal.sigmaMin.toFixed(1) : null
   const grid = el('div', ['stat-grid'])
   grid.append(
     statTile('refreshes', String(trackHist.fetches.length), `${trackHist.ticks.length} position samples`),
-    statTile('mean correction', `${(meanFix * 100).toFixed(0)}%`, 'of a segment per refresh'),
-    statTile('uncertainty', unc ? `±${unc}m` : '–', unc ? '1σ on the next arrival' : 'in a station'),
+    statTile('speed', cur.kind === 'between' && cur.speedKmh ? `~${Math.round(cur.speedKmh)}` : '–', cur.kind === 'between' && cur.km ? `km/h · ${cur.km.toFixed(1)} km segment` : 'needs the station coordinates'),
+    statTile('uncertainty', unc ? `±${unc}m` : '–', unc ? `1σ on the next arrival · ${cur.kal.sigmaKm.toFixed(2)} km` : 'in a station'),
     statTile('delay', `${(d.ritardo || 0) > 0 ? '+' : ''}${d.ritardo || 0}m`, `${Math.max(0, Math.round((now - (d.oraUltimoRilevamento || now)) / 60000))} min since last detection`, (d.ritardo || 0) >= LATE_THRESHOLD ? 'is-late' : ''),
     statTile('last detection', rel ? rel.text : '–', d.oraUltimoRilevamento ? `${Math.max(0, Math.round((now - d.oraUltimoRilevamento) / 60000))} min ago` : '')
   )
@@ -1908,47 +2016,70 @@ async function setNerdTrack(on) {
 // =======================
 // Kalman filter for the position along the current segment
 // =======================
-// State: p (fraction of the segment covered, 0..1) and r (fraction per minute).
+// State: p (fraction of the segment covered, 0..1) and r (fraction per minute); with the station coordinates
+// the segment length gives km and km/h, and detections at stations the train only passes become measurements.
 // The timetable gives the prior speed; every refresh gives a position implied by the announced arrival
 // time (noise grows with the age of the last detection); the real departure time pins p = 0 at its
 // real instant, even when it is only learnt later. Everything is replayed from the departure, so a
 // late-arriving measurement is applied where it belongs.
-const KALMAN = { qPos: 4e-4, qRate: 2.5e-5, etaSigmaMin: 1, ageGain: 0.5 }
+// Physical units: x in km along the segment, v in km/min. The noise is physical too, so the same uncertainty
+// means the same thing on a 2 km and on a 50 km segment (a timing error is turned into km by the speed).
+const KALMAN = {
+  qPos: 0.02, // km^2 per minute: the position drifts away from "constant speed" by about 0.14 km / sqrt(min)
+  qVel: 9e-4, // (km/min)^2 per minute: the speed changes by about 1.8 km/h / sqrt(min)
+  etaSigmaMin: 1, // the announced delay is rounded to the minute
+  ageGain: 0.5, // extra minutes of doubt per minute since the last detection
+  detectionKm: 0.4, // a detection point is known to about 400 m
+  departureKm: 0.1
+}
 const KALMAN_MINUTE = 60000
 
 function kalmanRun(d, here, next, t0, now, stepMs = 0) {
+  const stops = d.fermate || []
+  const hereI = stops.indexOf(here)
   const schedArr = next.arrivo_teorico || next.programmata
   const schedDep = here.partenza_teorica || here.programmata
-  const tseg = Math.max(1, (schedArr + Math.max(d.ritardo || 0, 0) * KALMAN_MINUTE - t0) / KALMAN_MINUTE) // minutes
-  let p = 0
-  let r = 1 / Math.max(1, (schedArr - schedDep) / KALMAN_MINUTE)
-  let P = [[1e-4, 0], [0, (0.4 * r) ** 2]]
+  const schedMin = Math.max(1, (schedArr - schedDep) / KALMAN_MINUTE)
+  const realKm = segmentKm(stops, hereI)
+  const L = realKm || schedMin // without coordinates: 1 pseudo-km per minute
+  // state: position x (km) and speed v (km/min); the timetable gives the prior speed
+  let x = 0
+  let v = L / schedMin
+  let P = [[0.05 ** 2, 0], [0, (0.3 * v) ** 2]]
   const predict = dtMs => {
     const dt = dtMs / KALMAN_MINUTE
     if (dt <= 0) return
-    p += r * dt
+    x += v * dt
     const p00 = P[0][0] + dt * (P[1][0] + P[0][1]) + dt * dt * P[1][1] + KALMAN.qPos * dt
     const p01 = P[0][1] + dt * P[1][1]
-    P = [[p00, p01], [p01, P[1][1] + KALMAN.qRate * dt]]
+    P = [[p00, p01], [p01, P[1][1] + KALMAN.qVel * dt]]
   }
   const update = (z, R) => {
     const S = P[0][0] + R
     const k0 = P[0][0] / S
     const k1 = P[1][0] / S
-    const y = z - p
-    p += k0 * y
-    r = Math.max(0, r + k1 * y)
+    const y = z - x
+    x += k0 * y
+    v = Math.max(0, v + k1 * y)
     P = [[(1 - k0) * P[0][0], (1 - k0) * P[0][1]], [P[1][0] - k1 * P[0][0], P[1][1] - k1 * P[0][1]]]
   }
+  const etaNow = schedArr + Math.max(d.ritardo || 0, 0) * KALMAN_MINUTE
+  const vAvg = L / Math.max(1, (etaNow - t0) / KALMAN_MINUTE) // km/min implied by the announced arrival
   // measurements, each at the instant it applies to
-  const events = [{ t: t0, z: 0, R: (0.1 / tseg) ** 2 }]
-  const implied = (t, etaMs) => Math.min(0.99, Math.max(0, (t - t0) / Math.max(KALMAN_MINUTE, etaMs - t0)))
+  const events = [{ t: t0, z: 0, R: KALMAN.departureKm ** 2 }]
+  // a detection at a station the train goes through without stopping: a real position
+  trackHist.detections.filter(m => m.t > t0 && m.s > hereI && m.s < hereI + 1).forEach(m => {
+    events.push({ t: m.t, z: (m.s - hereI) * L, R: KALMAN.detectionKm ** 2 })
+  })
+  // each refresh: where the announced arrival time says the train is; a timing error counts for speed x error km
+  const implied = (t, etaMs) => Math.min(0.99, Math.max(0, (t - t0) / Math.max(KALMAN_MINUTE, etaMs - t0))) * L
   trackHist.fetches.filter(f => f.t > t0).forEach(f => {
-    const sigmaVt = Math.hypot(KALMAN.etaSigmaMin, KALMAN.ageGain * (f.age ?? 2))
-    events.push({ t: f.t, z: implied(f.t, schedArr + Math.max(f.delay, 0) * KALMAN_MINUTE), R: (sigmaVt / tseg) ** 2 })
+    const sigmaMin = Math.hypot(KALMAN.etaSigmaMin, KALMAN.ageGain * (f.age ?? 2))
+    events.push({ t: f.t, z: implied(f.t, schedArr + Math.max(f.delay, 0) * KALMAN_MINUTE), R: (vAvg * sigmaMin) ** 2 })
   })
   events.sort((a, b) => a.t - b.t)
 
+  const fraction = () => Math.min(0.98, Math.max(0, x / L))
   const samples = []
   let t = t0
   let i = 0
@@ -1963,24 +2094,28 @@ function kalmanRun(d, here, next, t0, now, stepMs = 0) {
     }
     predict(tn - t)
     t = tn
-    p = Math.min(0.98, Math.max(0, p))
-    if (stepMs) samples.push({ t, p, sigma: Math.sqrt(Math.max(P[0][0], 0)) })
+    if (stepMs) samples.push({ t, p: fraction(), sigma: Math.sqrt(Math.max(P[0][0], 0)) / L })
   }
-  p = Math.min(0.98, Math.max(0, p))
-  return { p, r, P, sigma: Math.sqrt(Math.max(P[0][0], 0)), samples, tseg }
+  const sigmaKm = Math.sqrt(Math.max(P[0][0], 0))
+  return {
+    p: fraction(), x, v, P, L, km: realKm, sigma: sigmaKm / L, sigmaKm,
+    sigmaMin: v > 1e-3 ? sigmaKm / v : null, // the same doubt, as a time
+    minToGo: v > 1e-3 ? Math.max(0, (L - x) / v) : Infinity,
+    speedKmh: realKm ? v * 60 : null, samples, tseg: schedMin
+  }
 }
 
 // Where the filter expects the train, and how unsure it is, until `untilMs` (no new measurement).
 function kalmanForecast(state, fromMs, untilMs, stepMs = 15000) {
-  let { p, r, P } = state
-  const out = [{ t: fromMs, p, sigma: Math.sqrt(Math.max(P[0][0], 0)) }]
+  let { x, v, P, L } = state
+  const out = [{ t: fromMs, p: Math.min(1, x / L), sigma: Math.sqrt(Math.max(P[0][0], 0)) / L }]
   for (let t = fromMs; t < untilMs; t += stepMs) {
     const dt = stepMs / KALMAN_MINUTE
-    p += r * dt
+    x += v * dt
     const p00 = P[0][0] + dt * (P[1][0] + P[0][1]) + dt * dt * P[1][1] + KALMAN.qPos * dt
     const p01 = P[0][1] + dt * P[1][1]
-    P = [[p00, p01], [p01, P[1][1] + KALMAN.qRate * dt]]
-    out.push({ t: t + stepMs, p: Math.min(1, p), sigma: Math.sqrt(Math.max(P[0][0], 0)) })
+    P = [[p00, p01], [p01, P[1][1] + KALMAN.qVel * dt]]
+    out.push({ t: t + stepMs, p: Math.min(1, x / L), sigma: Math.sqrt(Math.max(P[0][0], 0)) / L })
   }
   return out
 }
@@ -2026,7 +2161,7 @@ function trackingModel(d, now) {
   const p = Number.isFinite(kal.p) ? Math.min(0.97, kal.p) : linear
   const schedSpan = sched(next, 'arr') - sched(here, 'dep')
   const ghost = schedSpan > 0 ? Math.min(1, Math.max(0, (now - sched(here, 'dep')) / schedSpan)) : 0
-  return { kind: 'between', here, next, segKey: `b${lastPassed}`, p, sigma: kal.sigma, kal, ghost, target: eta, eta, since: t0 }
+  return { kind: 'between', here, next, segKey: `b${lastPassed}`, p, sigma: kal.sigma, kal, km: kal.km, speedKmh: kal.speedKmh, ghost, target: eta, eta, since: t0 }
 }
 
 // "18 min 04 s", "1 h 14 min": a countdown that cannot be mistaken for a clock time
@@ -2077,9 +2212,10 @@ function renderTracking(d) {
   nextLine.append(els.label, els.name, els.eta)
   els.count = el('div', ['tk-count'])
 
+  els.motion = el('p', ['tk-motion'])
   els.trust = el('p', ['tk-trust'])
   els.sync = el('p', ['tk-sync'])
-  card.append(els.state, nextLine, els.count, els.trust, els.sync)
+  card.append(els.state, nextLine, els.count, els.motion, els.trust, els.sync)
   root.append(card)
 
   // the line: a window of stops around the train (or all of them), the train sliding along it
@@ -2199,6 +2335,12 @@ function tickTracking(ts) {
     els.state.textContent = `Not departed yet from ${model.here.stazione.toLowerCase()}`
     els.count.dataset.caption = 'before departure'
   }
+  if (model.kind === 'between' && model.km) {
+    const toGo = (1 - Math.min(model.p, 0.97)) * model.km
+    els.motion.textContent = `${toGo.toFixed(1)} km to ${model.next.stazione.toLowerCase()} of ${model.km.toFixed(1)} · about ${Math.round(model.speedKmh)} km/h`
+  } else {
+    els.motion.textContent = ''
+  }
   els.count.textContent = countdown > 0 ? clockLeft(model.kind === 'between' ? model.eta : model.target, now) : 'due now'
   els.count.classList.toggle('is-late', countdown <= 0)
   if (model.kind === 'between') els.name.classList.toggle('is-overdue', countdown <= 0)
@@ -2317,6 +2459,8 @@ function renderTrainPage(d) {
   const line = el('div', ['tv-line'])
   stops.forEach((f, i) => {
     line.append(trainStopEl(f, i, stops, d, lastPassed))
+    // stations the train went through without stopping (from the detections logged while this page was open)
+    trackHist.detections.filter(x => Math.floor(x.s) === i).forEach(x => line.append(passEl(x)))
     // the train is between this stop and the next: say so on the line itself
     if (position && position.kind === 'between' && i === lastPassed) line.append(betweenEl(position, stops[i + 1], delay, now))
   })
@@ -2344,9 +2488,11 @@ async function loadTrainPage() {
     if (!trainDetail) renderMessage('bi-question-circle', label('trainNotFound'), false, 'This train has no data (it may be too old or the link is wrong).')
     return
   }
+  await stationsReady
   const previous = trainDetail
   trainDetail = data
   trainFetchedAt = Date.now()
+  recordDetection(data)
   recordFetch(previous, data)
   renderTrainPage(data)
   const category = (data.categoria || data.categoriaDescrizione || '').trim()
@@ -2410,6 +2556,7 @@ function initTrainPage() {
   $('trainShare').addEventListener('click', shareTrain)
   trackingMode = params.get('track') === '1'
   nerdTrack = params.get('nerd') === '1'
+  loadStations()
   loadTrackHist()
   setInterval(recordTick, TRACK_TICK_MS)
   const trackBtn = $('trackToggle')
