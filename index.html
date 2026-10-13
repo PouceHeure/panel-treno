@@ -75,10 +75,16 @@
         </span>
       </span>
       <a href="http://www.viaggiatreno.it" target="_blank" rel="noopener">ViaggiaTreno (RFI)</a>
+      <span class="times-switch" id="timesSwitch" role="group" aria-label="Predicted times" title="Raw: scheduled time plus the announced delay. Model: corrected with what trains were seen doing.">
+        <span class="times-label">times</span>
+        <button type="button" data-mode="raw">raw</button>
+        <button type="button" data-mode="model">model</button>
+      </span>
       <span class="footer-item">v<span id="versionNumber"></span></span>
     </footer>
 
     <script src="js/modules/proxy.js"></script>
+    <script src="js/modules/model.js"></script>
     <script src="js/modules/recent.js"></script>
     <script src="js/modules/rfi-source.js"></script>
     <script src="js/main-app.js"></script>

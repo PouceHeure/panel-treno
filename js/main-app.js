@@ -354,6 +354,14 @@ function trackReliability(lastSeenMs, now = Date.now()) {
   return TRACK_TIERS.find(t => minutes < t.maxMin)
 }
 
+// Predicted times (see js/modules/model.js) for the stops of a train detail still ahead.
+function predOf(d) {
+  const stops = d.fermate || []
+  const lastPassed = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
+  const here = stops[lastPassed]
+  return predictStopTimes(stops, d.ritardo || 0, lastPassed, !!here && !here.partenzaReale)
+}
+
 // Where a train is right now, read from the times recorded at its last stops:
 // arrived and not left = in the station; left and not arrived at the next one = between the two.
 function trainPosition(d, stops, lastPassed, delay, now = Date.now()) {
@@ -362,7 +370,7 @@ function trainPosition(d, stops, lastPassed, delay, now = Date.now()) {
   const next = stops[lastPassed + 1]
   if (!here || !next) return null
   if (here.partenzaReale) {
-    const eta = (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
+    const eta = (predOf(d).get(lastPassed + 1) || {}).arrMs || (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
     const span = eta - here.partenzaReale
     const progress = span > 0 ? Math.min(0.97, Math.max(0, (now - here.partenzaReale) / span)) : null
     return { kind: 'between', from: here.stazione, to: next.stazione, since: here.partenzaReale, progress }
@@ -377,8 +385,9 @@ function routeStopsFrom(detail) {
   const hereIdx = all.findIndex(f => f.id === stationID)
   const start = Math.max(0, hereIdx)
   const cancelledIds = new Set((detail.fermateSoppresse || []).map(s => s.id))
+  const pred = predOf(detail)
 
-  const stopFrom = (f, { useDeparture, isHere = false, isEnd = false }) => {
+  const stopFrom = (f, { useDeparture, isHere = false, isEnd = false }, absIndex) => {
     const schedMs = (useDeparture ? f.partenza_teorica : f.arrivo_teorico) || f.programmata
     const realMs = useDeparture ? f.partenzaReale : f.arrivoReale
     const platform = useDeparture
@@ -395,14 +404,16 @@ function routeStopsFrom(detail) {
       platform: normalizePlatformLabel(platform),
       isHere,
       isEnd,
-      cancelled: cancelledIds.has(f.id)
+      cancelled: cancelledIds.has(f.id),
+      // the model's delay for this stop (departure delay for the stop the board belongs to)
+      predDelay: pred.get(absIndex) ? (useDeparture ? pred.get(absIndex).depDelay : pred.get(absIndex).arrDelay) : null
     }
   }
 
   const stops = []
   all.slice(start).forEach((f, i, list) => {
     const isHere = i === 0 && hereIdx >= 0
-    stops.push(stopFrom(f, { useDeparture: isHere || (start === 0 && i === 0), isHere, isEnd: i === list.length - 1 }))
+    stops.push(stopFrom(f, { useDeparture: isHere || (start === 0 && i === 0), isHere, isEnd: i === list.length - 1 }, start + i))
   })
   return stops
 }
@@ -415,7 +426,7 @@ async function loadRoute(train) {
   try {
     const url = `http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/andamentoTreno/${train.codOrigine}/${train.numeroTreno}/${train.dataPartenzaTreno}`
     const detail = await fetchViaProxy(url)
-    routeCache.set(key, { status: 'ok', at: Date.now(), stops: routeStopsFrom(detail) })
+    routeCache.set(key, { status: 'ok', at: Date.now(), detail }) // the stops are derived at display time (the times mode can change)
   } catch (err) {
     routeCache.set(key, { ...entry, status: 'error', at: Date.now(), message: err.message, pending: false })
   }
@@ -429,8 +440,9 @@ function routeStopEl(stop, delay) {
   // The delay at the current station carries over to the next stops: scheduled time + delay, marked "~".
   let real = stop.real
   let tone = stop.diffMin > 0 ? 'is-late' : 'is-early'
-  if (!real && delay > 0 && stop.schedMs && !stop.passed) {
-    real = `~${formatEpochHHMM(stop.schedMs + delay * 60000)}`
+  const shown = stop.predDelay !== null && stop.predDelay !== undefined ? stop.predDelay : delay
+  if (!real && shown > 0 && stop.schedMs && !stop.passed) {
+    real = `~${formatEpochHHMM(stop.schedMs + shown * 60000)}`
     tone = 'is-late'
   }
   const times = el('span', ['route-time'])
@@ -472,7 +484,7 @@ function routePanel(train) {
 
   if (entry && entry.status === 'ok') {
     const line = el('div', ['route-line'])
-    entry.stops.forEach(stop => line.append(routeStopEl(stop, delayOf(train))))
+    routeStopsFrom(entry.detail).forEach(stop => line.append(routeStopEl(stop, delayOf(train))))
     panel.append(line)
   } else if (entry && entry.status === 'error') {
     panel.append(el('p', ['route-note', 'is-late'], `${label('routeError')}: ${entry.message}`))
@@ -1384,7 +1396,7 @@ function untilLabel(ms, now = Date.now()) {
   return `in ${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}`
 }
 
-function trainStopEl(f, index, stops, detail, lastPassedIndex) {
+function trainStopEl(f, index, stops, detail, lastPassedIndex, pred) {
   const passed = f.actualFermataType === 1
   const delayNow = detail.ritardo || 0
   const cancelledIds = new Set((detail.fermateSoppresse || []).map(s => s.id))
@@ -1395,8 +1407,9 @@ function trainStopEl(f, index, stops, detail, lastPassedIndex) {
 
   const arrSched = f.arrivo_teorico || f.programmata
   const depSched = f.partenza_teorica || f.programmata
-  const arrCell = isFirst ? el('span', ['tv-cell']) : tvTimeCell(arrSched, f.arrivoReale, delayNow, passed)
-  const depCell = isLast ? el('span', ['tv-cell']) : tvTimeCell(depSched, f.partenzaReale, delayNow, passed)
+  const guess = pred && pred.get(index)
+  const arrCell = isFirst ? el('span', ['tv-cell']) : tvTimeCell(arrSched, f.arrivoReale, guess ? guess.arrDelay : delayNow, passed)
+  const depCell = isLast ? el('span', ['tv-cell']) : tvTimeCell(depSched, f.partenzaReale, guess ? guess.depDelay : delayNow, passed)
 
   const info = el('div', ['tv-info'])
   const stationLink = el('a', ['tv-name'], f.stazione)
@@ -1485,7 +1498,7 @@ function passEl(det) {
 
 function betweenEl(position, next, delay, now) {
   const row = el('div', ['tv-between'])
-  const eta = (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
+  const eta = (predOf(trainDetail).get(trainDetail.fermate.indexOf(next)) || {}).arrMs || (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
   const train = el('span', ['tv-between-train'])
   train.append(icon('bi-train-front-fill'))
   train.style.top = `calc((100% - 24px) * ${position.progress === null ? 0.5 : position.progress})`
@@ -1522,8 +1535,8 @@ function positionEl(position, now, lastSeenMs, here, next, delay) {
   }
   // how long until the next stop (or until the train leaves, when it is in a station)
   const when = position.kind === 'station'
-    ? { name: 'departs', ms: (here.partenza_teorica || here.programmata) + Math.max(delay, 0) * 60000 }
-    : { name: `reaches ${next.stazione.toLowerCase()}`, ms: (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000 }
+    ? { name: 'departs', ms: predOf(trainDetail).leaveMs || (here.partenza_teorica || here.programmata) + Math.max(delay, 0) * 60000 }
+    : { name: `reaches ${next.stazione.toLowerCase()}`, ms: (predOf(trainDetail).get(trainDetail.fermate.indexOf(next)) || {}).arrMs || (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000 }
   const left = untilLabel(when.ms, now)
   const eta = el('p', ['tv-position-eta'])
   eta.append(icon('bi-stopwatch'), el('strong', [], ` ${left === 'now' ? 'due now' : left}`), ` · ${when.name} ~${formatEpochHHMM(when.ms)}`)
@@ -1760,7 +1773,9 @@ function nerdTrackChart(d) {
   if (model.kind === 'between' && model.kal && Number.isFinite(model.kal.minToGo)) {
     nextArrival = Math.min(now + 3 * 3600000, now + model.kal.minToGo * 60000)
   }
-  const predAt = i => (nextS && i > hereStop && nextArrival ? nextArrival + (stops[i].arrivo_teorico || stops[i].programmata) - (nextS.arrivo_teorico || nextS.programmata) : null)
+  const modelPred = predOf(d)
+  const modelAt = i => (modelPred.get(i) || {}).arrMs
+  const predAt = i => (nextS && i > hereStop && nextArrival && modelAt(i) && modelAt(hereStop + 1) ? nextArrival + modelAt(i) - modelAt(hereStop + 1) : null)
   const extra = Math.max(d.ritardo || 0, 0) * 60000
   const arrOf = f => f.arrivo_teorico || f.programmata
   const depOf = f => f.partenza_teorica || f.programmata
@@ -2032,20 +2047,6 @@ async function setNerdTrack(on) {
 // time (noise grows with the age of the last detection); the real departure time pins p = 0 at its
 // real instant, even when it is only learnt later. Everything is replayed from the departure, so a
 // late-arriving measurement is applied where it belongs.
-// Calibration, from 240 trains / 2 256 segments collected over a day (Liguria, mostly regional trains):
-// - the announced delay overstates the arrival delay: the median change between a departure and the next
-//   arrival is about -2 min as soon as the train is late (0 when it is on time), with a robust spread of ~1.5 min
-//   (about 3 min on segments over 20 min);
-// - a train stays in a station about 1 min longer than the timetable says.
-function delayDrift(minutes) {
-  return minutes <= 0.5 ? 0 : -Math.min(minutes, 2.2 + 0.04 * minutes)
-}
-const DWELL_EXTRA_MIN = 1
-const adjustedDelay = delay => {
-  const d = Math.max(delay, 0)
-  return d + delayDrift(d)
-}
-
 // Physical units: x in km along the segment, v in km/min. The noise is physical too, so the same uncertainty
 // means the same thing on a 2 km and on a 50 km segment (a timing error is turned into km by the speed).
 const KALMAN = {
@@ -2069,7 +2070,7 @@ function kalmanRun(d, here, next, t0, now, stepMs = 0) {
   // state: position x (km) and speed v (km/min); the timetable gives the prior speed
   let x = 0
   // expected travel time: the timetable, corrected by what trains typically gain on the way when they are late
-  const priorMin = Math.max(0.5 * schedMin, schedMin + delayDrift(here.ritardoPartenza ?? (d.ritardo || 0)))
+  const priorMin = Math.max(0.5 * schedMin, schedMin + delayDrift(here.ritardoPartenza ?? (d.ritardo || 0), schedMin))
   let v = L / priorMin
   let P = [[0.05 ** 2, 0], [0, (0.3 * v) ** 2]]
   const predict = dtMs => {
@@ -2089,7 +2090,7 @@ function kalmanRun(d, here, next, t0, now, stepMs = 0) {
     v = Math.max(0, v + k1 * y)
     P = [[(1 - k0) * P[0][0], (1 - k0) * P[0][1]], [P[1][0] - k1 * P[0][0], P[1][1] - k1 * P[0][1]]]
   }
-  const etaNow = schedArr + adjustedDelay(d.ritardo || 0) * KALMAN_MINUTE
+  const etaNow = schedArr + adjustedDelay(d.ritardo || 0, schedMin) * KALMAN_MINUTE
   const vAvg = L / Math.max(1, (etaNow - t0) / KALMAN_MINUTE) // km/min implied by the announced arrival
   // measurements, each at the instant it applies to
   const events = [{ t: t0, z: 0, R: KALMAN.departureKm ** 2 }]
@@ -2102,7 +2103,7 @@ function kalmanRun(d, here, next, t0, now, stepMs = 0) {
   trackHist.fetches.filter(f => f.t > t0).forEach(f => {
     // the announced arrival is itself uncertain: about 1.8 min, growing with the length of the segment and the age of the detection
     const sigmaMin = Math.hypot(KALMAN.etaSigmaMin, 0.09 * schedMin, KALMAN.ageGain * (f.age ?? 2))
-    events.push({ t: f.t, z: implied(f.t, schedArr + adjustedDelay(f.delay) * KALMAN_MINUTE), R: (vAvg * sigmaMin) ** 2 })
+    events.push({ t: f.t, z: implied(f.t, schedArr + adjustedDelay(f.delay, schedMin) * KALMAN_MINUTE), R: (vAvg * sigmaMin) ** 2 })
   })
   events.sort((a, b) => a.t - b.t)
 
@@ -2209,13 +2210,15 @@ function trackingModel(d, now) {
   if (d.arrivato || lastPassed >= stops.length - 1) return { kind: 'arrived', last: stops[stops.length - 1] }
   const here = stops[Math.max(lastPassed, 0)]
   const next = stops[Math.max(lastPassed, 0) + 1]
-  const eta = sched(next, 'arr') + adjustedDelay(delay) * 60000
+  const pred = predictStopTimes(stops, delay, lastPassed, lastPassed >= 0 && !here.partenzaReale)
+  const nextIdx = Math.max(lastPassed, 0) + 1
+  const eta = (pred.get(nextIdx) || {}).arrMs || sched(next, 'arr') + extra
   if (lastPassed < 0 || d.nonPartito) {
-    return { kind: 'waiting', here, next, segKey: 'wait', p: 0, ghost: 0, target: sched(here, 'dep') + extra, eta }
+    return { kind: 'waiting', here, next, segKey: 'wait', p: 0, ghost: 0, target: pred.leaveMs || sched(here, 'dep') + extra, eta }
   }
   if (!here.partenzaReale) {
     // arrived and not left yet (or no departure time recorded): in the station
-    return { kind: 'station', here, next, segKey: `s${lastPassed}`, p: 0, ghost: 0, target: sched(here, 'dep') + extra + DWELL_EXTRA_MIN * 60000, eta: sched(next, 'arr') + (adjustedDelay(delay) + DWELL_EXTRA_MIN) * 60000 }
+    return { kind: 'station', here, next, segKey: `s${lastPassed}`, p: 0, ghost: 0, target: pred.leaveMs || sched(here, 'dep') + extra, eta }
   }
   const t0 = here.partenzaReale
   const span = eta - t0
@@ -2283,6 +2286,7 @@ function renderTracking(d) {
 
   // the line: a window of stops around the train (or all of them), the train sliding along it
   const stops = d.fermate || []
+  const trackPred = predOf(d)
   const hereIdx = stops.indexOf(model.here)
   const from = trackZoom === 'all' ? 0 : Math.max(0, hereIdx - 2)
   const to = trackZoom === 'all' ? stops.length : Math.min(stops.length, hereIdx + (trackZoom === 'close' ? 3 : 8))
@@ -2310,7 +2314,7 @@ function renderTracking(d) {
   stops.slice(from, to).forEach((f, k) => {
     const i = from + k
     const passed = f.actualFermataType === 1
-    const at = (f.arrivo_teorico || f.programmata) + Math.max(delay, 0) * 60000
+    const at = (trackPred.get(i) || {}).arrMs || (f.arrivo_teorico || f.programmata) + Math.max(delay, 0) * 60000
     const row = el('div', ['tk-row', passed ? 'is-passed' : '', i === hereIdx + 1 ? 'is-next' : '', i === stops.length - 1 ? 'is-end' : ''])
     const cell = el('span', ['tk-up-count'])
     row.append(el('span', ['tk-row-dot']), el('span', ['tk-up-name'], f.stazione), el('span', ['tk-up-time'], formatEpochHHMM(passed ? (f.arrivoReale || f.partenzaReale || at) : at)), cell)
@@ -2485,15 +2489,18 @@ function renderTrainPage(d) {
     wrap.append(el('dt', [], name), el('dd', [tone], value))
     facts.append(wrap)
   }
-  const eta = arrivalSched && delay > 0 && !d.arrivato ? ` → ~${formatEpochHHMM(arrivalSched + delay * 60000)}` : ''
+  const pred = predOf(d)
+  const finalPred = pred.get(stops.length - 1)
+  const finalMs = finalPred ? finalPred.arrMs : arrivalSched
+  const eta = arrivalSched && delay > 0 && !d.arrivato && Math.round((finalMs - arrivalSched) / 60000) > 0 ? ` → ~${formatEpochHHMM(finalMs)}` : ''
   addFact('date', d.dataPartenzaTrenoAsDate)
   addFact('departs', formatEpochHHMM(departSched))
   addFact('arrives', arrivalSched ? `${formatEpochHHMM(arrivalSched)}${eta}` : null, eta ? 'is-late' : '')
   addFact('duration', durationLabel(departSched, arrivalSched))
-  if (arrivalSched && !d.arrivato && d.provvedimento !== 1 && !d.nonPartito) addFact('arrival', untilLabel(arrivalSched + Math.max(delay, 0) * 60000, now))
+  if (arrivalSched && !d.arrivato && d.provvedimento !== 1 && !d.nonPartito) addFact('arrival', untilLabel(finalMs, now))
   const next = stops[lastPassed + 1]
   if (next && !d.arrivato && !d.nonPartito && d.provvedimento !== 1) {
-    const nextEta = (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
+    const nextEta = (pred.get(lastPassed + 1) || {}).arrMs || (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
     addFact('next stop', `${next.stazione} · ${formatEpochHHMM(nextEta)} (${untilLabel(nextEta, now)})`)
   }
   if (d.oraUltimoRilevamento) {
@@ -2521,7 +2528,7 @@ function renderTrainPage(d) {
   routeCard.append(columns)
   const line = el('div', ['tv-line'])
   stops.forEach((f, i) => {
-    line.append(trainStopEl(f, i, stops, d, lastPassed))
+    line.append(trainStopEl(f, i, stops, d, lastPassed, pred))
     // stations the train went through without stopping (from the detections logged while this page was open)
     trackHist.detections.filter(x => Math.floor(x.s) === i).forEach(x => line.append(passEl(x)))
     // the train is between this stop and the next: say so on the line itself
@@ -2667,7 +2674,22 @@ window.addEventListener('resize', syncHeaderSpacerHeight)
 // the header can change height by itself (title or labels wrapping once the data is loaded)
 new ResizeObserver(syncHeaderSpacerHeight).observe(document.querySelector('.app-header'))
 
+// raw / model: whether times ahead use the announced delay as it is, or the corrected model
+function initTimesSwitch() {
+  const box = document.getElementById('timesSwitch')
+  if (!box) return
+  const paint = () => box.querySelectorAll('button').forEach(b => b.classList.toggle('is-active', b.dataset.mode === timesMode))
+  box.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    setTimesMode(b.dataset.mode)
+    paint()
+    if (trainDetail) renderTrainPage(trainDetail)
+    else rerender()
+  }))
+  paint()
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  initTimesSwitch()
   renderRequestStrip()
   if ((getParam('view') || '').toLowerCase() === 'train') {
     initTrainPage()
