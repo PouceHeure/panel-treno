@@ -1842,20 +1842,30 @@ function nerdTrackChart(d) {
   const idxHere = stops.indexOf(model.here)
   const ahead = rows.map((f, i) => ({ f, i, idx: lo + i })).filter(r => r.idx > idxHere)
   path([[xOf(now), yOf(sNow)]].concat(ahead.flatMap(r => { const at = predAt(lo + r.i) || arrOf(r.f) + extra; const dwell = depOf(r.f) - arrOf(r.f); return [[xOf(at), yAt(lo + r.i)], [xOf(at + dwell), yAt(lo + r.i)]] })), 'tk-plot-pred')
-  // the filter's confidence: +-2 sigma around the estimate, from the departure and on to the expected arrival
+  // the filter replayed with everything known now (late detections and real times applied where they belong,
+  // and the past revised by the smoother), against what was believed at the time
+  let revised = null
   if (model.kind === 'between' && model.kal) {
     const hereI = stops.indexOf(model.here)
     const yBand = v => yAt(hereI + Math.min(1, Math.max(0, v)))
     const run = kalmanRun(d, model.here, model.next, model.since, now, 5000)
+    revised = run.samples.map(x => ({ t: x.t, s: hereI + x.p }))
     const pts = run.samples.concat(kalmanForecast(run, now, Math.max(model.eta, now) + 60000))
     const upper = pts.map(x => [xOf(x.t), yBand(x.p + 2 * x.sigma)])
     const lower = pts.map(x => [xOf(x.t), yBand(x.p - 2 * x.sigma)]).reverse()
     const poly = svgEl('polygon', { points: upper.concat(lower).map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '), class: 'tk-plot-band' })
-    poly.append(svgEl('title', {}, 'Kalman filter: +-2 sigma around the estimated position'))
+    poly.append(svgEl('title', {}, 'Kalman smoother: +-2 sigma around the revised position'))
     plot.append(poly)
   }
   // estimated position over time
-  path(samples.concat([{ t: now, s: sNow }]).sort((a, b) => a.t - b.t).map(x => [xOf(x.t), yOf(x.s)]), 'tk-plot-est')
+  const sortT = (a, b) => a.t - b.t
+  if (revised) {
+    const t0 = model.since
+    path(samples.filter(x => x.t < t0).concat(revised).sort(sortT).map(x => [xOf(x.t), yOf(x.s)]), 'tk-plot-est')
+    path(samples.filter(x => x.t >= t0).concat([{ t: now, s: sNow }]).sort(sortT).map(x => [xOf(x.t), yOf(x.s)]), 'tk-plot-belief')
+  } else {
+    path(samples.concat([{ t: now, s: sNow }]).sort(sortT).map(x => [xOf(x.t), yOf(x.s)]), 'tk-plot-est')
+  }
   // corrections: each data refresh moved the estimate from sBefore to s
   trackHist.fetches.forEach(f => {
     if (f.sBefore !== null && Math.abs(f.s - f.sBefore) > 0.02) {
@@ -1913,7 +1923,7 @@ function nerdTrackChart(d) {
   panel.append(readout, svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
   const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
-  legend.append(item('k-est', 'estimate'), item('k-band', '±2σ'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-fix', 'correction'), item('k-real', 'real times'), item('k-det', 'passed, no stop'))
+  legend.append(item('k-est', 'revised estimate'), item('k-belief', 'believed then'), item('k-band', '±2σ'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-fix', 'correction'), item('k-real', 'real times'), item('k-det', 'passed, no stop'))
   panel.append(legend)
   return panel
 }
@@ -2080,21 +2090,57 @@ function kalmanRun(d, here, next, t0, now, stepMs = 0) {
   events.sort((a, b) => a.t - b.t)
 
   const fraction = () => Math.min(0.98, Math.max(0, x / L))
-  const samples = []
-  let t = t0
+  // forward pass over a time grid that also contains every measurement instant, remembering each step
+  // so that the past can be revised afterwards (Rauch-Tung-Striebel smoother)
+  const times = new Set([t0, now])
+  events.forEach(e => { if (e.t >= t0 && e.t <= now) times.add(e.t) })
+  if (stepMs) for (let g = t0 + stepMs; g < now; g += stepMs) times.add(g)
+  const ticks = [...times].sort((a, b) => a - b)
+  const steps = []
   let i = 0
-  while (i < events.length && events[i].t <= t0) update(events[i].z, events[i++].R)
-  while (t < now) {
-    const tn = stepMs ? Math.min(now, t + stepMs) : now
-    while (i < events.length && events[i].t <= tn) {
-      predict(events[i].t - t)
-      t = events[i].t
-      update(events[i].z, events[i].R)
-      i++
+  let prevT = t0
+  ticks.forEach((tk, k) => {
+    let F = null
+    let xp = null
+    let Pp = null
+    if (k > 0) {
+      const dt = (tk - prevT) / KALMAN_MINUTE
+      F = [[1, dt], [0, 1]]
+      predict(tk - prevT)
+      xp = [x, v]
+      Pp = [[P[0][0], P[0][1]], [P[1][0], P[1][1]]]
     }
-    predict(tn - t)
-    t = tn
-    if (stepMs) samples.push({ t, p: fraction(), sigma: Math.sqrt(Math.max(P[0][0], 0)) / L })
+    while (i < events.length && events[i].t <= tk) update(events[i].z, events[i++].R)
+    steps.push({ t: tk, F, xp, Pp, xf: [x, v], Pf: [[P[0][0], P[0][1]], [P[1][0], P[1][1]]] })
+    prevT = tk
+  })
+  const samples = []
+  if (stepMs) {
+    const mul = (A, B) => [[A[0][0] * B[0][0] + A[0][1] * B[1][0], A[0][0] * B[0][1] + A[0][1] * B[1][1]], [A[1][0] * B[0][0] + A[1][1] * B[1][0], A[1][0] * B[0][1] + A[1][1] * B[1][1]]]
+    const tr = A => [[A[0][0], A[1][0]], [A[0][1], A[1][1]]]
+    const inv = A => { const det = A[0][0] * A[1][1] - A[0][1] * A[1][0] || 1e-12; return [[A[1][1] / det, -A[0][1] / det], [-A[1][0] / det, A[0][0] / det]] }
+    let xs = steps[steps.length - 1].xf
+    let Ps = steps[steps.length - 1].Pf
+    const smooth = new Array(steps.length)
+    smooth[steps.length - 1] = { x: xs[0], var: Ps[0][0] }
+    for (let k = steps.length - 2; k >= 0; k--) {
+      const cur = steps[k]
+      const nxt = steps[k + 1]
+      const C = mul(mul(cur.Pf, tr(nxt.F)), inv(nxt.Pp))
+      const dx = [xs[0] - nxt.xp[0], xs[1] - nxt.xp[1]]
+      xs = [cur.xf[0] + C[0][0] * dx[0] + C[0][1] * dx[1], cur.xf[1] + C[1][0] * dx[0] + C[1][1] * dx[1]]
+      const dP = [[Ps[0][0] - nxt.Pp[0][0], Ps[0][1] - nxt.Pp[0][1]], [Ps[1][0] - nxt.Pp[1][0], Ps[1][1] - nxt.Pp[1][1]]]
+      const CdP = mul(mul(C, dP), tr(C))
+      Ps = [[cur.Pf[0][0] + CdP[0][0], cur.Pf[0][1] + CdP[0][1]], [cur.Pf[1][0] + CdP[1][0], cur.Pf[1][1] + CdP[1][1]]]
+      smooth[k] = { x: xs[0], var: Ps[0][0] }
+    }
+    steps.forEach((st, k) => {
+      samples.push({
+        t: st.t,
+        p: Math.min(0.98, Math.max(0, smooth[k].x / L)), sigma: Math.sqrt(Math.max(smooth[k].var, 0)) / L, // revised with everything known now
+        pf: Math.min(0.98, Math.max(0, st.xf[0] / L)) // what the filter alone said at that instant
+      })
+    })
   }
   const sigmaKm = Math.sqrt(Math.max(P[0][0], 0))
   return {
