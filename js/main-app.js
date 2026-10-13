@@ -2032,12 +2032,26 @@ async function setNerdTrack(on) {
 // time (noise grows with the age of the last detection); the real departure time pins p = 0 at its
 // real instant, even when it is only learnt later. Everything is replayed from the departure, so a
 // late-arriving measurement is applied where it belongs.
+// Calibration, from 240 trains / 2 256 segments collected over a day (Liguria, mostly regional trains):
+// - the announced delay overstates the arrival delay: the median change between a departure and the next
+//   arrival is about -2 min as soon as the train is late (0 when it is on time), with a robust spread of ~1.5 min
+//   (about 3 min on segments over 20 min);
+// - a train stays in a station about 1 min longer than the timetable says.
+function delayDrift(minutes) {
+  return minutes <= 0.5 ? 0 : -Math.min(minutes, 2.2 + 0.04 * minutes)
+}
+const DWELL_EXTRA_MIN = 1
+const adjustedDelay = delay => {
+  const d = Math.max(delay, 0)
+  return d + delayDrift(d)
+}
+
 // Physical units: x in km along the segment, v in km/min. The noise is physical too, so the same uncertainty
 // means the same thing on a 2 km and on a 50 km segment (a timing error is turned into km by the speed).
 const KALMAN = {
   qPos: 0.02, // km^2 per minute: the position drifts away from "constant speed" by about 0.14 km / sqrt(min)
   qVel: 9e-4, // (km/min)^2 per minute: the speed changes by about 1.8 km/h / sqrt(min)
-  etaSigmaMin: 1, // the announced delay is rounded to the minute
+  etaSigmaMin: 1.8, // spread of the announced arrival (robust spread ~1.5 min, a little more for the heavy tails)
   ageGain: 0.5, // extra minutes of doubt per minute since the last detection
   detectionKm: 0.4, // a detection point is known to about 400 m
   departureKm: 0.1
@@ -2054,7 +2068,9 @@ function kalmanRun(d, here, next, t0, now, stepMs = 0) {
   const L = realKm || schedMin // without coordinates: 1 pseudo-km per minute
   // state: position x (km) and speed v (km/min); the timetable gives the prior speed
   let x = 0
-  let v = L / schedMin
+  // expected travel time: the timetable, corrected by what trains typically gain on the way when they are late
+  const priorMin = Math.max(0.5 * schedMin, schedMin + delayDrift(here.ritardoPartenza ?? (d.ritardo || 0)))
+  let v = L / priorMin
   let P = [[0.05 ** 2, 0], [0, (0.3 * v) ** 2]]
   const predict = dtMs => {
     const dt = dtMs / KALMAN_MINUTE
@@ -2073,7 +2089,7 @@ function kalmanRun(d, here, next, t0, now, stepMs = 0) {
     v = Math.max(0, v + k1 * y)
     P = [[(1 - k0) * P[0][0], (1 - k0) * P[0][1]], [P[1][0] - k1 * P[0][0], P[1][1] - k1 * P[0][1]]]
   }
-  const etaNow = schedArr + Math.max(d.ritardo || 0, 0) * KALMAN_MINUTE
+  const etaNow = schedArr + adjustedDelay(d.ritardo || 0) * KALMAN_MINUTE
   const vAvg = L / Math.max(1, (etaNow - t0) / KALMAN_MINUTE) // km/min implied by the announced arrival
   // measurements, each at the instant it applies to
   const events = [{ t: t0, z: 0, R: KALMAN.departureKm ** 2 }]
@@ -2084,8 +2100,9 @@ function kalmanRun(d, here, next, t0, now, stepMs = 0) {
   // each refresh: where the announced arrival time says the train is; a timing error counts for speed x error km
   const implied = (t, etaMs) => Math.min(0.99, Math.max(0, (t - t0) / Math.max(KALMAN_MINUTE, etaMs - t0))) * L
   trackHist.fetches.filter(f => f.t > t0).forEach(f => {
-    const sigmaMin = Math.hypot(KALMAN.etaSigmaMin, KALMAN.ageGain * (f.age ?? 2))
-    events.push({ t: f.t, z: implied(f.t, schedArr + Math.max(f.delay, 0) * KALMAN_MINUTE), R: (vAvg * sigmaMin) ** 2 })
+    // the announced arrival is itself uncertain: about 1.8 min, growing with the length of the segment and the age of the detection
+    const sigmaMin = Math.hypot(KALMAN.etaSigmaMin, 0.09 * schedMin, KALMAN.ageGain * (f.age ?? 2))
+    events.push({ t: f.t, z: implied(f.t, schedArr + adjustedDelay(f.delay) * KALMAN_MINUTE), R: (vAvg * sigmaMin) ** 2 })
   })
   events.sort((a, b) => a.t - b.t)
 
@@ -2192,13 +2209,13 @@ function trackingModel(d, now) {
   if (d.arrivato || lastPassed >= stops.length - 1) return { kind: 'arrived', last: stops[stops.length - 1] }
   const here = stops[Math.max(lastPassed, 0)]
   const next = stops[Math.max(lastPassed, 0) + 1]
-  const eta = sched(next, 'arr') + extra
+  const eta = sched(next, 'arr') + adjustedDelay(delay) * 60000
   if (lastPassed < 0 || d.nonPartito) {
     return { kind: 'waiting', here, next, segKey: 'wait', p: 0, ghost: 0, target: sched(here, 'dep') + extra, eta }
   }
   if (!here.partenzaReale) {
     // arrived and not left yet (or no departure time recorded): in the station
-    return { kind: 'station', here, next, segKey: `s${lastPassed}`, p: 0, ghost: 0, target: sched(here, 'dep') + extra, eta }
+    return { kind: 'station', here, next, segKey: `s${lastPassed}`, p: 0, ghost: 0, target: sched(here, 'dep') + extra + DWELL_EXTRA_MIN * 60000, eta: sched(next, 'arr') + (adjustedDelay(delay) + DWELL_EXTRA_MIN) * 60000 }
   }
   const t0 = here.partenzaReale
   const span = eta - t0
