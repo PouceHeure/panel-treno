@@ -1793,10 +1793,14 @@ function nerdTrackChart(d) {
   const TOP = 14
   // the vertical axis follows the scheduled travel time between stations (dwell times left out), or the distance
   const cum = [0]
-  const kmOk = stops.every((st, i) => !i || segmentKm(stops, i - 1) !== null)
+  // only the stops on screen need coordinates; the others are spaced by time
+  const kmOk = stops.every((st, i) => i <= lo || i > hi || segmentKm(stops, i - 1) !== null)
   const useKm = trackAxis === 'km' && kmOk
   stops.forEach((st, i) => {
-    if (i) cum[i] = cum[i - 1] + (useKm ? Math.max(0.2, segmentKm(stops, i - 1)) : Math.max(0.5, (arrOf(st) - depOf(stops[i - 1])) / 60000))
+    if (!i) return
+    const minutes = Math.max(0.5, (arrOf(st) - depOf(stops[i - 1])) / 60000)
+    const km = segmentKm(stops, i - 1)
+    cum[i] = cum[i - 1] + (useKm && km !== null ? Math.max(0.2, km) : minutes)
   })
   const minAt = v => {
     const c = Math.min(Math.max(v, 0), stops.length - 1)
@@ -1821,6 +1825,8 @@ function nerdTrackChart(d) {
   rows.forEach((f, i) => {
     const y = yAt(lo + i)
     svg.append(svgEl('line', { x1: LEFT, y1: y, x2: W - RIGHT, y2: y, class: 'tl-grid' }))
+    // the scale of the vertical axis: distance or scheduled time since the first stop shown
+    svg.append(svgEl('text', { x: W - RIGHT, y: y - 3, class: 'tk-axis-scale', 'text-anchor': 'end' }, useKm ? `${(cum[lo + i] - cum[lo]).toFixed(1)} km` : `${Math.round(cum[lo + i] - cum[lo])} min`))
     if (y - lastLabelY < 22) return // too close to the previous name: the line stays, the label is skipped
     lastLabelY = y
     // station names wrap on two lines instead of being cut: "genova piazza / principe"
