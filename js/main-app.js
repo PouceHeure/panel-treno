@@ -2182,7 +2182,6 @@ function nerdTrackKin(d, cur, now) {
     // the segment as a 1D rail: the train stays at "now" (same place as in the other charts), the rail slides
     const plotW1 = VW - LEFT - RIGHT
     const xNow = LEFT + NOW_FRAC * plotW1
-    const winKm = Math.min(Math.max(2, (k.km / (cur.eta - cur.since) * 60000) * 10), Math.max(2, k.km)) // about 10 min of travel
     const posKm = k.km * cur.p
     const xOfKm = km => xNow + ((km - posKm) / winKm) * plotW1
     const sch = Math.max(60000, (cur.next.arrivo_teorico || cur.next.programmata) - (cur.here.partenza_teorica || cur.here.programmata))
@@ -2191,10 +2190,12 @@ function nerdTrackKin(d, cur, now) {
     const phaseOf = f => k.prof.timeAt(f) / k.prof.total
     const pSched = fracOf(uSched)
     const gapKm = (pSched - cur.p) * k.km
+    // the window holds both trains: the real one stays at "now", the timetable one is ahead (30 % of the width) or behind (70 %)
+    const winKm = Math.max(1.5, gapKm >= 0 ? gapKm / 0.2 : -gapKm / 0.6)
     // the delay the position implies: now minus the instant the timetable has the train there
     const schedAtPos = (cur.here.partenza_teorica || cur.here.programmata) + phaseOf(cur.p) * sch
     const gapMin = (now - schedAtPos) / 60000
-    const Hl = 112
+    const Hl = 126
     const svg = svgChart(Hl, 'The train on the segment, now and as the timetable has it', VW)
     const yLine = 50
     const clampX = x => Math.min(LEFT + plotW1, Math.max(LEFT, x))
@@ -2210,9 +2211,7 @@ function nerdTrackKin(d, cur, now) {
       const x = xOfKm(km)
       if (x >= LEFT && x <= LEFT + plotW1) {
         svg.append(svgEl('line', { x1: x, x2: x, y1: yLine - 12, y2: yLine + 12, class: 'tk-1d-station' }))
-        svg.append(svgEl('text', { x, y: yLine + 36, class: 'tl-label', 'text-anchor': 'middle' }, name.slice(0, 26)))
-      } else {
-        svg.append(svgEl('text', { x: right ? LEFT + plotW1 : LEFT, y: yLine - 14, class: 'tl-label', 'text-anchor': right ? 'end' : 'start' }, right ? `${name.slice(0, 22)} ${(k.km - posKm).toFixed(1)} km →` : `← ${name.slice(0, 22)} ${posKm.toFixed(1)} km`))
+        svg.append(svgEl('text', { x, y: yLine + 52, class: 'tl-label', 'text-anchor': 'middle' }, name.slice(0, 26)))
       }
     }
     endLabel(0, cur.here.stazione.toLowerCase(), false)
@@ -2227,13 +2226,16 @@ function nerdTrackKin(d, cur, now) {
     })
     // the timetable ghost, and the gap between the two
     const xSched = xOfKm(pSched * k.km)
-    if (xSched >= LEFT && xSched <= LEFT + plotW1) {
-      svg.append(svgEl('line', { x1: xNow, x2: xSched, y1: yLine - 18, y2: yLine - 18, class: 'tk-1d-gap' }))
-      svg.append(svgEl('circle', { cx: xSched, cy: yLine, r: 7, class: 'tk-1d-sched' }))
-      svg.append(svgEl('text', { x: xSched, y: yLine - 26, class: 'tl-label', 'text-anchor': 'middle' }, 'timetable'))
-    } else svg.append(svgEl('text', { x: xSched < LEFT ? LEFT : LEFT + plotW1, y: yLine - 26, class: 'tl-label', 'text-anchor': xSched < LEFT ? 'start' : 'end' }, xSched < LEFT ? '← timetable' : 'timetable →'))
+    const gapY = yLine - 20
+    if (Math.abs(xSched - xNow) > 12) {
+      svg.append(svgEl('line', { x1: xNow, x2: xSched, y1: gapY, y2: gapY, class: 'tk-1d-gap' }))
+      ;[xNow, xSched].forEach(x => svg.append(svgEl('line', { x1: x, x2: x, y1: gapY - 4, y2: gapY + 4, class: 'tk-1d-gap' })))
+      svg.append(svgEl('text', { x: (xNow + xSched) / 2, y: gapY - 6, class: 'tl-label', 'text-anchor': 'middle' }, `${Math.abs(gapKm).toFixed(1)} km · ${Math.abs(gapMin).toFixed(1)} min`))
+    }
+    svg.append(svgEl('circle', { cx: xSched, cy: yLine, r: 7, class: 'tk-1d-sched' }))
+    svg.append(svgEl('text', { x: xSched, y: yLine + 36, class: 'tl-label', 'text-anchor': 'middle' }, 'timetable'))
     svg.append(svgEl('circle', { cx: xNow, cy: yLine, r: 7, class: 'tk-kin-dot' }))
-    svg.append(svgEl('text', { x: xNow, y: yLine - 26 - (Math.abs(xNow - xSched) < 70 ? 12 : 0), class: 'tk-dwell-state is-here', 'text-anchor': 'middle' }, 'NOW'))
+    svg.append(svgEl('text', { x: xNow, y: yLine + 36 + (Math.abs(xNow - xSched) < 70 ? 12 : 0), class: 'tk-dwell-state is-here', 'text-anchor': 'middle' }, 'NOW'))
     const verdict = Math.abs(gapMin) < 0.5 ? 'on time' : gapMin > 0 ? `${gapMin.toFixed(1)} min late · ${Math.abs(gapKm).toFixed(2)} km behind the timetable` : `${(-gapMin).toFixed(1)} min early · ${Math.abs(gapKm).toFixed(2)} km ahead of the timetable`
     svg.append(svgEl('text', { x: LEFT, y: Hl - 4, class: 'tl-label' }, verdict))
     panel.append(svg)
