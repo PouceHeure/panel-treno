@@ -2097,6 +2097,7 @@ function kinematics(d, cur, now) {
 }
 
 function nerdTrackKin(d, cur, now) {
+  dwellCursors = []
   const k = kinematics(d, cur, now)
   const panel = el('div', ['nerd-panel'])
   const head = el('div', ['nerd-panel-head'])
@@ -2111,7 +2112,8 @@ function nerdTrackKin(d, cur, now) {
   const H = 150
   const drawDwell = g => {
     const maxMin = Math.max(g.exp.hi * 1.6, g.sched * 1.6, (g.elapsed || 0) / 60 * 1.15, 3)
-    const xOf = m => LEFT + (Math.min(m, maxMin) / maxMin) * (VW - LEFT - RIGHT)
+    const pre = g.upcoming ? 3 : 0 // minutes before the arrival shown on the left of the gauge
+    const xOf = m => LEFT + ((Math.min(Math.max(m, -pre), maxMin) + pre) / (maxMin + pre)) * (VW - LEFT - RIGHT)
     const Hs = 56
     const svg = svgChart(Hs + 34, 'Time spent in the station against the expected stop', VW)
     const bar = 22
@@ -2122,7 +2124,20 @@ function nerdTrackKin(d, cur, now) {
     svg.append(svgEl('line', { x1: xOf(g.sched), x2: xOf(g.sched), y1: TOP + bar - 2, y2: TOP + bar + 8, class: 'tk-plot-pred' }))
     svg.append(svgEl('text', { x: xOf(g.sched), y: TOP + bar + 20, class: 'tl-label', 'text-anchor': 'middle' }, 'timetable'))
     svg.append(svgEl('text', { x: xOf(g.exp.mid), y: TOP + bar + 20, class: 'tl-label', 'text-anchor': 'middle', dy: g.sched && Math.abs(xOf(g.sched) - xOf(g.exp.mid)) < 60 ? 12 : 0 }, 'expected'))
-    ;[0, maxMin].forEach(m => svg.append(svgEl('text', { x: xOf(m), y: TOP + bar + 20, class: 'tl-label', 'text-anchor': m === 0 ? 'start' : 'end' }, `${m.toFixed(0)} min`)))
+    ;[0, maxMin].forEach(m => svg.append(svgEl('text', { x: xOf(m), y: TOP + bar + 20, class: 'tl-label', 'text-anchor': m === 0 && !pre ? 'start' : m === 0 ? 'middle' : 'end', dy: m === 0 && pre ? 12 : 0 }, m === 0 && pre ? 'arrival' : `${m.toFixed(0)} min`)))
+    if (pre) svg.append(svgEl('text', { x: LEFT, y: TOP + bar + 20, class: 'tl-label', 'text-anchor': 'start' }, `-${pre} min`))
+    // a cursor on "now", relative to the arrival: it moves every second
+    const cur = svgEl('line', { y1: TOP - 6, y2: TOP + bar + 6, class: 'tk-dwell-cursor' })
+    const dot = svgEl('circle', { r: 4, cy: TOP - 6, class: 'tk-dwell-cursor-dot' })
+    svg.append(cur, dot)
+    const moveCursor = nowMs => {
+      if (!g.arrivalMs) { cur.style.display = dot.style.display = 'none'; return }
+      const x = xOf((nowMs - g.arrivalMs) / 60000)
+      cur.setAttribute('x1', x); cur.setAttribute('x2', x); dot.setAttribute('cx', x)
+      cur.style.display = dot.style.display = ''
+    }
+    moveCursor(now)
+    dwellCursors.push(moveCursor)
     panel.append(svg)
     const left = g.leaveMs ? (g.leaveMs - now) / 1000 : null
     const text = [
@@ -2170,10 +2185,10 @@ function nerdTrackKin(d, cur, now) {
     if (nextIdx < stops.length - 1) {
       const sched = Math.max(0, ((cur.next.partenza_teorica || cur.next.programmata) - (cur.next.arrivo_teorico || cur.next.programmata)) / 60000)
       { const sub = el('div', ['nerd-panel-head', 'tk-kin-sub']); sub.append(el('span', [], `time in station · ${cur.next.stazione.toLowerCase()}`)); panel.append(sub) }
-      drawDwell({ sched, exp: dwellExpected(sched, cls), elapsed: null, leaveMs: nextPred ? nextPred.depMs : null, upcoming: true, name: cur.next.stazione.toLowerCase(), nextKm: null, nextProfile: null })
+      drawDwell({ sched, exp: dwellExpected(sched, cls), elapsed: null, arrivalMs: cur.eta, leaveMs: nextPred ? nextPred.depMs : null, upcoming: true, name: cur.next.stazione.toLowerCase(), nextKm: null, nextProfile: null })
     }
   } else if (k.kind === 'station') {
-    drawDwell(k)
+    drawDwell(Object.assign({ arrivalMs: cur.here.arrivoReale || null }, k))
   } else {
     panel.append(el('p', ['nerd-dim'], 'nothing to estimate: the train is not running'))
   }
@@ -2210,6 +2225,7 @@ function dashboardTiles(d, now) {
 }
 
 let dashboardEls = null
+let dwellCursors = [] // moves the cursors of the time-in-station gauges
 function nerdDashboard(d) {
   const box = el('div', ['kin-dash'])
   dashboardEls = { box, tiles: [] }
@@ -2219,6 +2235,7 @@ function nerdDashboard(d) {
 
 function updateDashboard(d) {
   if (!dashboardEls || !dashboardEls.box.isConnected) return
+  dwellCursors.forEach(fn => fn(Date.now()))
   const tiles = dashboardTiles(d, Date.now())
   const { box } = dashboardEls
   if (box.children.length !== tiles.length) {

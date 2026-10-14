@@ -977,3 +977,6 @@ body.view-train .source-switch { display: none; }
 .kin-bar { height: 4px; margin: 0.45rem 0 0.35rem; border-radius: 2px; background: var(--line); overflow: hidden; }
 .kin-bar::after { content: ""; display: block; height: 100%; width: var(--fill, 0); background: var(--accent); transition: width 0.9s linear; }
 .tk-kin-sub { margin-top: 1rem; }
+
+.tk-dwell-cursor { stroke: var(--text, #fff); stroke-width: 2; }
+.tk-dwell-cursor-dot { fill: var(--text, #fff); }
