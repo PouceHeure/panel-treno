@@ -2132,7 +2132,8 @@ function nerdTrackKin(d, cur, now) {
     const mark = svgEl('line', { x1: markX, x2: markX, y1: TOP + 4, y2: TOP + 14 + bar + 8, class: 'tk-dwell-cursor' })
     const dot = svgEl('circle', { cx: markX, cy: TOP + 4, r: 4, class: 'tk-dwell-cursor-dot' })
     const state = svgEl('text', { x: markX, y: TOP - 2, class: 'tk-dwell-state', 'text-anchor': 'middle' }, '')
-    svg.append(mark, dot, state)
+    const hintEl = svgEl('text', { x: LEFT, y: TOP - 2, class: 'tk-axis-scale' }, '')
+    svg.append(mark, dot, state, hintEl)
     const paint = nowMs => {
       const t0 = nowMs - BEFORE
       const xOf = t => LEFT + ((t - t0) / SPAN) * plotW
@@ -2143,6 +2144,7 @@ function nerdTrackKin(d, cur, now) {
         kids.push(svgEl('text', { x: xOf(t), y: TOP + 14 + bar + 16, class: 'tl-label', 'text-anchor': 'middle' }, formatEpochHHMM(t)))
       }
       let here = false
+      let hint = ''
       g.blocks.forEach(b => {
         const x1 = Math.max(LEFT, xOf(b.arr))
         const x2 = Math.min(LEFT + plotW, xOf(Math.max(b.dep, b.arr + 20000)))
@@ -2158,25 +2160,16 @@ function nerdTrackKin(d, cur, now) {
           if (b.sched && xOf(b.sched) >= LEFT && xOf(b.sched) <= LEFT + plotW) kids.push(svgEl('line', { x1: xOf(b.sched), x2: xOf(b.sched), y1: TOP + 14 + bar - 2, y2: TOP + 14 + bar + 6, class: 'tk-plot-pred' }))
           const label = svgEl('text', { x: Math.min(Math.max((x1 + x2) / 2, LEFT + 30), LEFT + plotW - 30), y: TOP + 14 + bar + 30, class: 'tl-label', 'text-anchor': 'middle' }, b.name.length > 24 ? `${b.name.slice(0, 23)}…` : b.name)
           kids.push(label)
-        } else if (b.kind === 'next' && x1 >= LEFT + plotW) {
-          kids.push(svgEl('text', { x: LEFT + plotW - 4, y: TOP + 14 + bar / 2 + 4, class: 'tl-label', 'text-anchor': 'end' }, `${b.name} in ${clockLeft(b.arr, nowMs)} →`))
-        }
+        } else if (b.kind === 'next' && x1 >= LEFT + plotW) hint = `next · ${b.name.slice(0, 24)} in ${clockLeft(b.arr, nowMs)}`
       })
       bg.replaceChildren(...kids)
+      hintEl.textContent = hint
       state.textContent = here ? 'IN STATION' : 'BETWEEN STATIONS'
       state.setAttribute('class', here ? 'tk-dwell-state is-here' : 'tk-dwell-state')
     }
     paint(now)
     dwellCursors.push(paint)
     panel.append(svg)
-    const left = g.leaveMs ? (g.leaveMs - now) / 1000 : null
-    const text = [
-      g.upcoming ? `next stop, ${g.name}: not there yet` : g.atOrigin ? 'at its origin: departs on the timetable plus the announced delay' : `in station ${Math.floor(g.elapsed / 60)} min ${String(Math.floor(g.elapsed % 60)).padStart(2, '0')} s`,
-      `stop expected ${g.exp.mid.toFixed(1)} min (typically ${g.exp.lo.toFixed(1)}–${g.exp.hi.toFixed(1)}) for ${g.sched.toFixed(1)} scheduled`,
-      left === null ? '' : left > 0 ? `leaves in ~${clockLeft(g.leaveMs, now)}` : 'should be leaving now',
-      g.nextProfile ? `next: ${g.nextKm.toFixed(1)} km, ${g.nextProfile.cruises ? `cruise ${Math.round(g.nextProfile.peakKmh)} km/h` : `peak ${Math.round(g.nextProfile.peakKmh)} km/h`} (~${g.nextProfile.minutes.toFixed(1)} min)` : ''
-    ].filter(Boolean).join(' · ')
-    panel.append(el('p', ['nerd-dim', 'tk-kin-note'], text))
   }
   if (k.kind === 'between' && k.km) {
     // the segment as a 1D rail: the train stays at "now" (same place as in the other charts), the rail slides
@@ -2239,12 +2232,6 @@ function nerdTrackKin(d, cur, now) {
     const verdict = Math.abs(gapMin) < 0.5 ? 'on time' : gapMin > 0 ? `${gapMin.toFixed(1)} min late · ${Math.abs(gapKm).toFixed(2)} km behind the timetable` : `${(-gapMin).toFixed(1)} min early · ${Math.abs(gapKm).toFixed(2)} km ahead of the timetable`
     svg.append(svgEl('text', { x: LEFT, y: Hl - 4, class: 'tl-label' }, verdict))
     panel.append(svg)
-    panel.append(el('p', ['nerd-dim', 'tk-kin-note'], [
-      `${cur.here.stazione.toLowerCase()} → ${cur.next.stazione.toLowerCase()}`,
-      `${k.prof.cruises ? `cruising at ${Math.round(k.peak)} km/h after ${Math.round(k.prof.tAcc)} s` : `too short to cruise: peaks at ${Math.round(k.peak)} km/h`}`,
-      `now ~${Math.round(k.now)} km/h (${Math.round(k.lo)}–${Math.round(k.hi)}) · ${k.remainingKm.toFixed(1)} km to go`,
-      `trip ${k.tripMin.toFixed(1)} min: timetable ${k.schedMin.toFixed(1)}, kinematic ${k.kinMin.toFixed(1)}`
-    ].join(' · ')))
     // the stops around the train, on the sliding axis
     const nextIdx = stops.indexOf(cur.next)
     if (nextIdx < stops.length - 1) {
@@ -2255,7 +2242,7 @@ function nerdTrackKin(d, cur, now) {
       const blocks = [{ name: cur.here.stazione.toLowerCase(), kind: 'past', arr: cur.here.arrivoReale || cur.since, dep: cur.since }]
       blocks.push({ name: cur.next.stazione.toLowerCase(), kind: 'next', arr: cur.eta, dep: np ? np.depMs : cur.eta + exp.mid * 60000, lo: cur.eta + exp.lo * 60000, hi: cur.eta + exp.hi * 60000, sched: cur.next.partenza_teorica || cur.next.programmata })
       const sub = el('div', ['nerd-panel-head', 'tk-kin-sub'])
-      sub.append(el('span', [], 'time in station · the train stays, the axis moves'))
+      sub.append(el('span', [], 'time in station'))
       panel.append(sub)
       drawDwell({ sched, exp, elapsed: null, leaveMs: np ? np.depMs : null, upcoming: true, name: cur.next.stazione.toLowerCase(), nextKm: null, nextProfile: null, blocks })
     }
@@ -2352,7 +2339,7 @@ function kinTile(d, cur, now) {
 function nerdTrackBars(d, cur, now) {
   const panel = el('div', ['nerd-panel'])
   const head = el('div', ['nerd-panel-head'])
-  head.append(el('span', [], 'delay by stop · timetable / raw / model'), el('span', [], 'minutes'))
+  head.append(el('span', [], 'arrival at each stop'), el('span', [], 'value = delay (min)'))
   panel.append(head)
   const stops = d.fermate || []
   const first = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1) + 1
@@ -2364,41 +2351,45 @@ function nerdTrackBars(d, cur, now) {
   }
   const raw = withTimesMode('raw', () => predOf(d, now))
   const mod = withTimesMode('model', () => predOf(d, now))
-  const rows = idx.map(i => ({ name: stops[i].stazione.toLowerCase(), raw: (raw.get(i) || {}).arrDelay, model: (mod.get(i) || {}).arrDelay }))
-  const vals = rows.flatMap(r => [r.raw, r.model]).filter(Number.isFinite)
+  const rows = idx.map(i => {
+    const sched = stops[i].arrivo_teorico || stops[i].programmata
+    return { name: stops[i].stazione.toLowerCase(), sched, raw: (raw.get(i) || {}).arrMs, model: (mod.get(i) || {}).arrMs }
+  })
+  const ends = rows.flatMap(r => [r.sched, r.raw, r.model]).filter(Number.isFinite)
+  const tEnd = Math.max(...ends, now + 60000)
+  const tStart = Math.min(now, ...rows.map(r => r.sched).filter(Number.isFinite)) - 30000 // a late train: the timetable is behind now
   const W = chartWidth()
   const LEFT = 150
-  const RIGHT = 40
-  const TOP = 8
+  const RIGHT = 44
+  const TOP = 16
   const group = 34
   const H = TOP + rows.length * group + 22
-  const lo = Math.min(0, Math.floor(Math.min(...vals)))
-  const hi = Math.max(3, Math.ceil(Math.max(...vals)))
-  const xOf = v => LEFT + ((v - lo) / (hi - lo)) * (W - LEFT - RIGHT)
-  const svg = svgChart(H, 'Predicted delay at each stop ahead: timetable, raw and model', W)
-  const step = hi - lo > 20 ? 10 : hi - lo > 8 ? 5 : 2
-  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
-    svg.append(svgEl('line', { x1: xOf(v), x2: xOf(v), y1: TOP, y2: H - 18, class: 'tl-vgrid' }))
-    svg.append(svgEl('text', { x: xOf(v), y: H - 4, class: 'tl-label', 'text-anchor': 'middle' }, `${v > 0 ? '+' : ''}${v}`))
+  const xOf = t => LEFT + (Math.max(0, t - tStart) / (tEnd - tStart)) * (W - LEFT - RIGHT)
+  const svg = svgChart(H, 'Arrival at each stop at each stop: timetable, raw and model', W)
+  const span = (tEnd - tStart) / 60000
+  const stepMin = span > 90 ? 30 : span > 40 ? 10 : span > 15 ? 5 : 2
+  for (let t = Math.ceil(tStart / (stepMin * 60000)) * stepMin * 60000; t <= tEnd; t += stepMin * 60000) {
+    svg.append(svgEl('line', { x1: xOf(t), x2: xOf(t), y1: TOP, y2: H - 18, class: 'tl-vgrid' }))
+    svg.append(svgEl('text', { x: xOf(t), y: H - 4, class: 'tl-label', 'text-anchor': 'middle' }, formatEpochHHMM(t)))
   }
+  svg.append(svgEl('line', { x1: xOf(now), x2: xOf(now), y1: TOP, y2: H - 18, class: 'tl-now' }))
+  svg.append(svgEl('text', { x: xOf(now), y: TOP - 1, class: 'tk-dwell-state is-here', 'text-anchor': 'middle' }, 'NOW'))
   rows.forEach((r, i) => {
     const y = TOP + i * group
     svg.append(svgEl('text', { x: LEFT - 8, y: y + 17, class: 'tl-label', 'text-anchor': 'end' }, r.name.length > 20 ? `${r.name.slice(0, 19)}…` : r.name))
-    ;[['timetable', 0, 'tk-bar-sched'], ['raw', r.raw, 'tk-bar-raw'], ['model', r.model, 'tk-bar-model']].forEach(([label, v, cls], k) => {
-      if (!Number.isFinite(v)) return
-      const x0 = xOf(0)
-      const x1 = xOf(v)
-      const bar = svgEl('rect', { x: Math.min(x0, x1), y: y + 3 + k * 9, width: Math.max(2, Math.abs(x1 - x0)), height: 7, rx: 1.5, class: cls })
-      bar.append(svgEl('title', {}, `${label}: ${v > 0 ? '+' : ''}${v.toFixed(1)} min`))
+    ;[['timetable', r.sched, 'tk-bar-sched', formatEpochHHMM(r.sched)], ['raw', r.raw, 'tk-bar-raw', null], ['model', r.model, 'tk-bar-model', null]].forEach(([label, t, cls, text], k) => {
+      if (!Number.isFinite(t)) return
+      const late = (t - r.sched) / 60000
+      const bar = svgEl('rect', { x: LEFT, y: y + 3 + k * 9, width: Math.max(2, xOf(t) - LEFT), height: 7, rx: 1.5, class: cls })
+      bar.append(svgEl('title', {}, `${label}: ${formatEpochHHMM(t)}${k ? ` (${late > 0 ? '+' : ''}${late.toFixed(1)} min)` : ''}`))
       svg.append(bar)
-      if (label !== 'timetable') svg.append(svgEl('text', { x: Math.max(x0, x1) + 4, y: y + 10 + k * 9, class: 'tk-axis-scale' }, `${v > 0 ? '+' : ''}${v.toFixed(1)}`))
+      svg.append(svgEl('text', { x: xOf(t) + 4, y: y + 10 + k * 9, class: 'tk-axis-scale' }, text || `${late > 0 ? '+' : ''}${late.toFixed(1)}`))
     })
   })
-  svg.append(svgEl('line', { x1: xOf(0), x2: xOf(0), y1: TOP, y2: H - 18, class: 'tl-grid' }))
   panel.append(svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
   const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
-  legend.append(item('k-bar-sched', 'timetable'), item('k-bar-raw', 'raw (announced delay held)'), item('k-bar-model', 'model'))
+  legend.append(item('k-bar-sched', 'timetable'), item('k-bar-raw', 'raw (delay held)'), item('k-bar-model', 'model'))
   panel.append(legend)
   return panel
 }
