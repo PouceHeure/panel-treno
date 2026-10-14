@@ -2109,6 +2109,30 @@ function nerdTrackKin(d, cur, now) {
   const RIGHT = 12
   const TOP = 12
   const H = 150
+  const drawDwell = g => {
+    const maxMin = Math.max(g.exp.hi * 1.6, g.sched * 1.6, (g.elapsed || 0) / 60 * 1.15, 3)
+    const xOf = m => LEFT + (Math.min(m, maxMin) / maxMin) * (VW - LEFT - RIGHT)
+    const Hs = 56
+    const svg = svgChart(Hs + 34, 'Time spent in the station against the expected stop', VW)
+    const bar = 22
+    svg.append(svgEl('rect', { x: LEFT, y: TOP, width: VW - LEFT - RIGHT, height: bar, class: 'tk-dwell-track' }))
+    svg.append(svgEl('rect', { x: xOf(g.exp.lo), y: TOP, width: xOf(g.exp.hi) - xOf(g.exp.lo), height: bar, class: 'tk-dwell-range' }))
+    if (g.elapsed !== null) svg.append(svgEl('rect', { x: LEFT, y: TOP + 6, width: Math.max(2, xOf(g.elapsed / 60) - LEFT), height: bar - 12, class: 'tk-dwell-elapsed' }))
+    svg.append(svgEl('line', { x1: xOf(g.exp.mid), x2: xOf(g.exp.mid), y1: TOP - 4, y2: TOP + bar + 4, class: 'tl-now' }))
+    svg.append(svgEl('line', { x1: xOf(g.sched), x2: xOf(g.sched), y1: TOP + bar - 2, y2: TOP + bar + 8, class: 'tk-plot-pred' }))
+    svg.append(svgEl('text', { x: xOf(g.sched), y: TOP + bar + 20, class: 'tl-label', 'text-anchor': 'middle' }, 'timetable'))
+    svg.append(svgEl('text', { x: xOf(g.exp.mid), y: TOP + bar + 20, class: 'tl-label', 'text-anchor': 'middle', dy: g.sched && Math.abs(xOf(g.sched) - xOf(g.exp.mid)) < 60 ? 12 : 0 }, 'expected'))
+    ;[0, maxMin].forEach(m => svg.append(svgEl('text', { x: xOf(m), y: TOP + bar + 20, class: 'tl-label', 'text-anchor': m === 0 ? 'start' : 'end' }, `${m.toFixed(0)} min`)))
+    panel.append(svg)
+    const left = g.leaveMs ? (g.leaveMs - now) / 1000 : null
+    const text = [
+      g.upcoming ? `next stop, ${g.name}: not there yet` : g.atOrigin ? 'at its origin: departs on the timetable plus the announced delay' : `in station ${Math.floor(g.elapsed / 60)} min ${String(Math.floor(g.elapsed % 60)).padStart(2, '0')} s`,
+      `stop expected ${g.exp.mid.toFixed(1)} min (typically ${g.exp.lo.toFixed(1)}–${g.exp.hi.toFixed(1)}) for ${g.sched.toFixed(1)} scheduled`,
+      left === null ? '' : left > 0 ? `leaves in ~${clockLeft(g.leaveMs, now)}` : 'should be leaving now',
+      g.nextProfile ? `next: ${g.nextKm.toFixed(1)} km, ${g.nextProfile.cruises ? `cruise ${Math.round(g.nextProfile.peakKmh)} km/h` : `peak ${Math.round(g.nextProfile.peakKmh)} km/h`} (~${g.nextProfile.minutes.toFixed(1)} min)` : ''
+    ].filter(Boolean).join(' · ')
+    panel.append(el('p', ['nerd-dim', 'tk-kin-note'], text))
+  }
   if (k.kind === 'between' && k.km) {
     const vTop = Math.max(40, Math.ceil((k.prof.peakKmh / k.dilation * 1.15) / 20) * 20)
     const xOf = f => LEFT + f * (VW - LEFT - RIGHT)
@@ -2140,29 +2164,16 @@ function nerdTrackKin(d, cur, now) {
       `now ~${Math.round(k.now)} km/h (${Math.round(k.lo)}–${Math.round(k.hi)}) · ${k.remainingKm.toFixed(1)} km to go`,
       `trip ${k.tripMin.toFixed(1)} min: timetable ${k.schedMin.toFixed(1)}, kinematic ${k.kinMin.toFixed(1)}`
     ].join(' · ')))
+    // the stop at the end of the segment, drawn the same way: it fills once the train is in the station
+    const nextIdx = stops.indexOf(cur.next)
+    const nextPred = predOf(d, now).get(nextIdx)
+    if (nextIdx < stops.length - 1) {
+      const sched = Math.max(0, ((cur.next.partenza_teorica || cur.next.programmata) - (cur.next.arrivo_teorico || cur.next.programmata)) / 60000)
+      { const sub = el('div', ['nerd-panel-head', 'tk-kin-sub']); sub.append(el('span', [], `time in station · ${cur.next.stazione.toLowerCase()}`)); panel.append(sub) }
+      drawDwell({ sched, exp: dwellExpected(sched, cls), elapsed: null, leaveMs: nextPred ? nextPred.depMs : null, upcoming: true, name: cur.next.stazione.toLowerCase(), nextKm: null, nextProfile: null })
+    }
   } else if (k.kind === 'station') {
-    const maxMin = Math.max(k.exp.hi * 1.6, k.sched * 1.6, (k.elapsed || 0) / 60 * 1.15, 3)
-    const xOf = m => LEFT + (Math.min(m, maxMin) / maxMin) * (VW - LEFT - RIGHT)
-    const Hs = 56
-    const svg = svgChart(Hs + 34, 'Time spent in the station against the expected stop', VW)
-    const bar = 22
-    svg.append(svgEl('rect', { x: LEFT, y: TOP, width: VW - LEFT - RIGHT, height: bar, class: 'tk-dwell-track' }))
-    svg.append(svgEl('rect', { x: xOf(k.exp.lo), y: TOP, width: xOf(k.exp.hi) - xOf(k.exp.lo), height: bar, class: 'tk-dwell-range' }))
-    if (k.elapsed !== null) svg.append(svgEl('rect', { x: LEFT, y: TOP + 6, width: Math.max(2, xOf(k.elapsed / 60) - LEFT), height: bar - 12, class: 'tk-dwell-elapsed' }))
-    svg.append(svgEl('line', { x1: xOf(k.exp.mid), x2: xOf(k.exp.mid), y1: TOP - 4, y2: TOP + bar + 4, class: 'tl-now' }))
-    svg.append(svgEl('line', { x1: xOf(k.sched), x2: xOf(k.sched), y1: TOP + bar - 2, y2: TOP + bar + 8, class: 'tk-plot-pred' }))
-    svg.append(svgEl('text', { x: xOf(k.sched), y: TOP + bar + 20, class: 'tl-label', 'text-anchor': 'middle' }, 'timetable'))
-    svg.append(svgEl('text', { x: xOf(k.exp.mid), y: TOP + bar + 20, class: 'tl-label', 'text-anchor': 'middle', dy: k.sched && Math.abs(xOf(k.sched) - xOf(k.exp.mid)) < 60 ? 12 : 0 }, 'expected'))
-    ;[0, maxMin].forEach(m => svg.append(svgEl('text', { x: xOf(m), y: TOP + bar + 20, class: 'tl-label', 'text-anchor': m === 0 ? 'start' : 'end' }, `${m.toFixed(0)} min`)))
-    panel.append(svg)
-    const left = k.leaveMs ? (k.leaveMs - now) / 1000 : null
-    const text = [
-      k.atOrigin ? 'at its origin: departs on the timetable plus the announced delay' : `in station ${Math.floor(k.elapsed / 60)} min ${String(Math.floor(k.elapsed % 60)).padStart(2, '0')} s`,
-      `stop expected ${k.exp.mid.toFixed(1)} min (typically ${k.exp.lo.toFixed(1)}–${k.exp.hi.toFixed(1)}) for ${k.sched.toFixed(1)} scheduled`,
-      left === null ? '' : left > 0 ? `leaves in ~${clockLeft(k.leaveMs, now)}` : 'should be leaving now',
-      k.nextProfile ? `next: ${k.nextKm.toFixed(1)} km, ${k.nextProfile.cruises ? `cruise ${Math.round(k.nextProfile.peakKmh)} km/h` : `peak ${Math.round(k.nextProfile.peakKmh)} km/h`} (~${k.nextProfile.minutes.toFixed(1)} min)` : ''
-    ].filter(Boolean).join(' · ')
-    panel.append(el('p', ['nerd-dim', 'tk-kin-note'], text))
+    drawDwell(k)
   } else {
     panel.append(el('p', ['nerd-dim'], 'nothing to estimate: the train is not running'))
   }
