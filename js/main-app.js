@@ -2348,6 +2348,61 @@ function kinTile(d, cur, now) {
   return statTile('speed', '–', cur.kind === 'between' ? 'needs the station coordinates' : '')
 }
 
+// Delay at each stop ahead, three ways: the timetable (no delay), "raw" (the announced delay held) and "model".
+function nerdTrackBars(d, cur, now) {
+  const panel = el('div', ['nerd-panel'])
+  const head = el('div', ['nerd-panel-head'])
+  head.append(el('span', [], 'delay by stop · timetable / raw / model'), el('span', [], 'minutes'))
+  panel.append(head)
+  const stops = d.fermate || []
+  const first = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1) + 1
+  const idx = []
+  for (let i = Math.max(first, 1); i < stops.length && idx.length < 8; i++) idx.push(i)
+  if (!idx.length || cur.kind === 'arrived' || cur.kind === 'cancelled') {
+    panel.append(el('p', ['nerd-dim'], 'no stop ahead'))
+    return panel
+  }
+  const raw = withTimesMode('raw', () => predOf(d, now))
+  const mod = withTimesMode('model', () => predOf(d, now))
+  const rows = idx.map(i => ({ name: stops[i].stazione.toLowerCase(), raw: (raw.get(i) || {}).arrDelay, model: (mod.get(i) || {}).arrDelay }))
+  const vals = rows.flatMap(r => [r.raw, r.model]).filter(Number.isFinite)
+  const W = chartWidth()
+  const LEFT = 150
+  const RIGHT = 40
+  const TOP = 8
+  const group = 34
+  const H = TOP + rows.length * group + 22
+  const lo = Math.min(0, Math.floor(Math.min(...vals)))
+  const hi = Math.max(3, Math.ceil(Math.max(...vals)))
+  const xOf = v => LEFT + ((v - lo) / (hi - lo)) * (W - LEFT - RIGHT)
+  const svg = svgChart(H, 'Predicted delay at each stop ahead: timetable, raw and model', W)
+  const step = hi - lo > 20 ? 10 : hi - lo > 8 ? 5 : 2
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    svg.append(svgEl('line', { x1: xOf(v), x2: xOf(v), y1: TOP, y2: H - 18, class: 'tl-vgrid' }))
+    svg.append(svgEl('text', { x: xOf(v), y: H - 4, class: 'tl-label', 'text-anchor': 'middle' }, `${v > 0 ? '+' : ''}${v}`))
+  }
+  rows.forEach((r, i) => {
+    const y = TOP + i * group
+    svg.append(svgEl('text', { x: LEFT - 8, y: y + 17, class: 'tl-label', 'text-anchor': 'end' }, r.name.length > 20 ? `${r.name.slice(0, 19)}…` : r.name))
+    ;[['timetable', 0, 'tk-bar-sched'], ['raw', r.raw, 'tk-bar-raw'], ['model', r.model, 'tk-bar-model']].forEach(([label, v, cls], k) => {
+      if (!Number.isFinite(v)) return
+      const x0 = xOf(0)
+      const x1 = xOf(v)
+      const bar = svgEl('rect', { x: Math.min(x0, x1), y: y + 3 + k * 9, width: Math.max(2, Math.abs(x1 - x0)), height: 7, rx: 1.5, class: cls })
+      bar.append(svgEl('title', {}, `${label}: ${v > 0 ? '+' : ''}${v.toFixed(1)} min`))
+      svg.append(bar)
+      if (label !== 'timetable') svg.append(svgEl('text', { x: Math.max(x0, x1) + 4, y: y + 10 + k * 9, class: 'tk-axis-scale' }, `${v > 0 ? '+' : ''}${v.toFixed(1)}`))
+    })
+  })
+  svg.append(svgEl('line', { x1: xOf(0), x2: xOf(0), y1: TOP, y2: H - 18, class: 'tl-grid' }))
+  panel.append(svg)
+  const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
+  const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
+  legend.append(item('k-bar-sched', 'timetable'), item('k-bar-raw', 'raw (announced delay held)'), item('k-bar-model', 'model'))
+  panel.append(legend)
+  return panel
+}
+
 function renderTrackNerd(d) {
   const now = Date.now()
   const wrap = el('div', ['nerd-wrap'])
@@ -2366,7 +2421,7 @@ function renderTrackNerd(d) {
     statTile('uncertainty', unc ? `±${unc}m` : '–', unc ? `1σ on the next arrival · ${cur.kal.sigmaKm.toFixed(2)} km` : 'in a station'),
     statTile('last detection', rel ? rel.text : '–', d.oraUltimoRilevamento ? `${Math.max(0, Math.round((now - d.oraUltimoRilevamento) / 60000))} min ago` : '')
   )
-  wrap.append(nerdDashboard(d), grid, nerdTrackKin(d, cur, now), nerdTrackChart(d), nerdTrackDelay(d))
+  wrap.append(nerdDashboard(d), grid, nerdTrackKin(d, cur, now), nerdTrackBars(d, cur, now), nerdTrackChart(d), nerdTrackDelay(d))
   $('trainInfo').replaceChildren(wrap)
 }
 

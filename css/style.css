@@ -994,3 +994,10 @@ body.view-train .source-switch { display: none; }
 .tk-axis-scale { fill: var(--muted); font-family: var(--font); font-size: 10px; opacity: 0.8; }
 
 .tk-1d-station { stroke: var(--muted); stroke-width: 2; }
+
+.tk-bar-sched { fill: var(--muted); opacity: 0.5; }
+.tk-bar-raw { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 3 2; }
+.tk-bar-model { fill: var(--accent); }
+.k-bar-sched { width: 16px; height: 6px; background: var(--muted); opacity: 0.5; display: inline-block; }
+.k-bar-raw { width: 16px; height: 6px; border: 1.5px dashed var(--accent); display: inline-block; box-sizing: border-box; }
+.k-bar-model { width: 16px; height: 6px; background: var(--accent); display: inline-block; }

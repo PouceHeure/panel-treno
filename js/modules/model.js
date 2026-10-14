@@ -150,3 +150,10 @@ function predictStopTimes(stops, delayNow, lastPassed, opts = {}) {
   }
   return out
 }
+
+// Runs `fn` as if the times mode were `mode`, to compare the two on the same train.
+function withTimesMode(mode, fn) {
+  const previous = timesMode
+  timesMode = mode
+  try { return fn() } finally { timesMode = previous }
+}
