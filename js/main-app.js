@@ -2415,7 +2415,14 @@ function renderTrackNerd(d) {
     statTile('last detection', rel ? rel.text : '–', d.oraUltimoRilevamento ? `${Math.max(0, Math.round((now - d.oraUltimoRilevamento) / 60000))} min ago` : '')
   )
   wrap.append(nerdDashboard(d), grid, nerdTrackKin(d, cur, now), nerdTrackBars(d, cur, now), nerdTrackChart(d), nerdTrackDelay(d))
-  $('trainInfo').replaceChildren(wrap)
+  // redrawn every few seconds: the page keeps at least its previous height and scroll position, so it does not jump
+  const host = $('trainInfo')
+  const scroller = document.scrollingElement || document.documentElement
+  const scrollY = scroller.scrollTop
+  const before = host.firstElementChild && host.firstElementChild.classList.contains('nerd-wrap') ? host.firstElementChild.offsetHeight : 0
+  if (before) wrap.style.minHeight = `${before}px`
+  host.replaceChildren(wrap)
+  if (before) scroller.scrollTop = scrollY
 }
 
 // Live | Nerd, at the top of the Tracking view.
