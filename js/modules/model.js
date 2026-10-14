@@ -1,27 +1,28 @@
 // The prediction model shared by every view: where a train will be, and when, from what is known now.
 //
 // "raw" keeps the announced delay unchanged on every following stop (scheduled time + delay).
-// "model" combines three things, all calibrated on 535 trains / 8 300 segments collected over two days
-// (Liguria and a few long-distance runs, mostly regional trains):
+// "model" predicts each stop directly from the last real datum (the real departure, or the real arrival when
+// the train is in a station) and the scheduled time between that datum and the stop. A prediction never
+// depends on the prediction made for the stop before it. Calibrated on 535 trains / 33 000 (datum, stop)
+// pairs collected over two days (Liguria and a few long-distance runs, mostly regional trains):
 //
-// 1. the timetable, corrected for the delay trains typically recover on a segment (median 0 min when on time,
-//    -1 at +1..2 min, -2 at +2..4 min, -3 beyond +6 min);
-// 2. a kinematic trip: the train accelerates, cruises and brakes between two stations, so the time needed
-//    depends on their distance (trapezoid speed profile, about 105 km/h and 0.22 m/s^2 for regional trains);
-// 3. a dwell model: a train stays about 1.7 + 0.8 x the scheduled stop, not the scheduled stop.
+// 1. delay at a stop = last real delay - what trains typically recover, + a small offset: they recover about
+//    half of their delay, up to ~4.4 min, the more the longer the way (saturating with a 25 min time constant);
+// 2. a train stays about 1.7 + 0.8 x the scheduled stop (regional), so its departure is later than the timetable.
 //
-// The arrival is 25 % the kinematic trip and 75 % the corrected timetable. Measured against real arrival
-// times, chained from a real departure, the mean error is 1.8 min at the next stop and 3.0 min three stops
-// ahead, against 2.4 and 3.6 min for "raw" (the corrected timetable alone, with a flat +1 min per stop, was
-// worse than raw beyond two stops). Calibrated and measured on the same two days: the gain on another day
-// is probably a bit smaller (fitting on one day and testing on the other gave the same ranking).
+// Measured against real arrival times, the mean error is 1.8 min at the next stop and 3.0 min three stops
+// ahead, against 2.4 and 3.6 min for "raw" (the same ranking holds fitting on one day and testing on the other).
+//
+// The kinematics (speed profile between two stations, from their distance) do not predict arrivals any better
+// than that; they give the shape of the movement between two stations (position and speed).
 const TIMES_KEY = 'panelTreno.times'
 
 const KINEMATICS = {
   reg: { kmh: 105, acc: 0.22 }, // regional trains
   long: { kmh: 100, acc: 0.2 } // intercity, high speed and the others (few samples)
 }
-const KINEMATIC_WEIGHT = 0.25
+// delay at a stop = max(-0.5, r0 - min(RHO x r0, CAP x (1 - exp(-H / TAU))) + OFFSET), r0 = last real delay, H = scheduled min since
+const RECOVERY = { rho: 0.5, cap: 4.4, tau: 25, offset: -0.75 }
 const DWELL = { reg: [1.7, 0.8], long: [1.0, 1.0] } // expected stop (min) = a + b x scheduled stop
 const DWELL_SPREAD = { reg: [-0.5, 0.5], long: [-0.5, 1.0] } // 25 % / 75 % of the difference, in min
 
@@ -101,24 +102,25 @@ function dwellExpected(schedMin, cls = 'reg') {
   return { mid, lo: Math.max(0.3, mid + lo), hi: mid + hi }
 }
 
-// When a train that left at `depMs` arrives at the next stop (ms): the corrected timetable, pulled towards
-// the kinematic trip when the distance is known.
-function predictArrival(depMs, schedDepMs, schedArrMs, km, cls) {
-  const lateMin = Math.max((depMs - schedDepMs) / 60000, 0)
-  if (!modelOn()) return schedArrMs + lateMin * 60000
-  const travel = Math.max(0.5, (schedArrMs - schedDepMs) / 60000)
-  const timetable = schedArrMs + (lateMin + delayDrift(lateMin, travel)) * 60000
-  const guess = Number.isFinite(km) && km > 0.05
-    ? KINEMATIC_WEIGHT * (depMs + motionProfile(km, cls).minutes * 60000) + (1 - KINEMATIC_WEIGHT) * timetable
-    : timetable
-  return Math.max(guess, schedArrMs - 30000)
+// The delay (min) at a stop, from the last real delay `r0` (min) and the scheduled minutes `h` from that datum.
+function delayAt(r0, h) {
+  const late = Math.max(r0, 0)
+  if (!modelOn()) return late
+  const { rho, cap, tau, offset } = RECOVERY
+  return Math.max(-0.5, late - Math.min(late * rho, cap * (1 - Math.exp(-Math.max(h, 0) / tau))) + offset)
+}
+
+// When a train whose last real datum is a delay of `r0` min, measured at the scheduled time `baseMs`, reaches
+// a stop scheduled at `schedArrMs`.
+function predictArrival(r0, baseMs, schedArrMs) {
+  return schedArrMs + delayAt(r0, (schedArrMs - baseMs) / 60000) * 60000
 }
 
 // Predicted times for the stops after `lastPassed`: Map(stop index -> { arrDelay, depDelay, arrMs, depMs })
 // (delays in min against the timetable), and `leaveMs`, when the train leaves `lastPassed`.
-// opts: { inStation, distKm(i) (km between stop i and i + 1, or null), cls, nowMs }
+// opts: { inStation, cls, nowMs }. Each stop is predicted on its own, from the last real datum only.
 function predictStopTimes(stops, delayNow, lastPassed, opts = {}) {
-  const { inStation = false, distKm = () => null, cls = 'reg', nowMs = Date.now() } = opts
+  const { inStation = false, cls = 'reg', nowMs = Date.now() } = opts
   const arr = f => f.arrivo_teorico || f.programmata
   const dep = f => f.partenza_teorica || f.programmata
   const out = new Map()
@@ -127,26 +129,27 @@ function predictStopTimes(stops, delayNow, lastPassed, opts = {}) {
   if (!here) return out
   const late = Math.max(delayNow, 0)
 
-  // when the train leaves the stop it is at (or has left)
+  // the last real datum: its delay (min) and the scheduled time it refers to
+  let r0 = late
+  let baseMs = dep(here)
   let depMs
-  if (lastPassed >= 0 && here.partenzaReale) depMs = here.partenzaReale
-  else if (!modelOn()) depMs = dep(here) + late * 60000
-  else if (inStation && here.arrivoReale) {
+  if (lastPassed >= 0 && here.partenzaReale) {
+    r0 = Math.max((here.partenzaReale - dep(here)) / 60000, 0)
+    depMs = here.partenzaReale
+  } else if (inStation && here.arrivoReale) {
+    r0 = Math.max((here.arrivoReale - arr(here)) / 60000, 0)
+    baseMs = arr(here)
     const sched = Math.max(0, (dep(here) - arr(here)) / 60000)
-    depMs = Math.max(dep(here), here.arrivoReale + dwellExpected(sched, cls).mid * 60000)
-    depMs = Math.max(depMs, nowMs + 30000) // it is still here: it leaves at any moment
+    depMs = !modelOn() ? dep(here) + late * 60000 : Math.max(dep(here), here.arrivoReale + dwellExpected(sched, cls).mid * 60000, nowMs + 30000)
   } else depMs = dep(here) + late * 60000
   out.leaveMs = depMs
 
   for (let i = from + 1; i < stops.length; i++) {
-    const prev = stops[i - 1]
-    const arrMs = predictArrival(depMs, dep(prev), arr(stops[i]), distKm(i - 1), cls)
-    const isLast = i === stops.length - 1
-    let nextDep = depMs
-    if (!modelOn()) nextDep = dep(stops[i]) + late * 60000
-    else if (!isLast) nextDep = Math.max(dep(stops[i]), arrMs + dwellExpected((dep(stops[i]) - arr(stops[i])) / 60000, cls).mid * 60000)
+    const arrMs = predictArrival(r0, baseMs, arr(stops[i]))
+    let nextDep = dep(stops[i]) + late * 60000
+    if (modelOn()) nextDep = Math.max(dep(stops[i]), arrMs + dwellExpected((dep(stops[i]) - arr(stops[i])) / 60000, cls).mid * 60000)
+    else nextDep = dep(stops[i]) + r0 * 60000
     out.set(i, { arrDelay: (arrMs - arr(stops[i])) / 60000, depDelay: (nextDep - dep(stops[i])) / 60000, arrMs, depMs: nextDep })
-    depMs = nextDep
   }
   return out
 }

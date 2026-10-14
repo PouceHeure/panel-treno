@@ -360,7 +360,7 @@ function predOf(d, nowMs = Date.now()) {
   const lastPassed = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
   const here = stops[lastPassed]
   return predictStopTimes(stops, d.ritardo || 0, lastPassed, {
-    inStation: !!here && !here.partenzaReale, distKm: i => segmentKm(stops, i), cls: trainClass(d), nowMs
+    inStation: !!here && !here.partenzaReale, cls: trainClass(d), nowMs
   })
 }
 
@@ -2476,7 +2476,7 @@ function kalmanRun(d, here, next, t0, now, stepMs = 0) {
   const anchors = [{ t: t0, x: 0, sigmaKm: KALMAN.departureKm }]
   trackHist.detections.filter(m => m.t > t0 && m.s > hereI && m.s < hereI + 1).sort((a, b) => a.t - b.t)
     .forEach(m => anchors.push({ t: m.t, x: (m.s - hereI) * L, sigmaKm: KALMAN.detectionKm }))
-  const etaPrior = predictArrival(t0, schedDep, schedArr, realKm, cls)
+  const etaPrior = predictArrival(Math.max((t0 - schedDep) / 60000, 0), schedDep, schedArr)
 
   // the trip duration, given the anchors known at `until`: the model's arrival, or the one that makes the
   // train pass through the latest detection
