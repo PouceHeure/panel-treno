@@ -2103,7 +2103,7 @@ function nerdTrackKin(d, cur, now) {
   const head = el('div', ['nerd-panel-head'])
   const stops = d.fermate || []
   const cls = trainClass(d)
-  head.append(el('span', [], k.kind === 'station' ? 'time in station' : 'speed along the segment'), el('span', [], k.kind === 'between' && k.km ? `${k.km.toFixed(1)} km` : ''))
+  head.append(el('span', [], k.kind === 'station' ? 'time in station' : 'on the segment: now vs timetable'), el('span', [], k.kind === 'between' && k.km ? `${k.km.toFixed(1)} km` : ''))
   panel.append(head)
   const VW = chartWidth()
   const LEFT = 150
@@ -2172,29 +2172,42 @@ function nerdTrackKin(d, cur, now) {
     panel.append(el('p', ['nerd-dim', 'tk-kin-note'], text))
   }
   if (k.kind === 'between' && k.km) {
-    const vTop = Math.max(40, Math.ceil((k.prof.peakKmh / k.dilation * 1.15) / 20) * 20)
-    const xOf = f => LEFT + f * (VW - LEFT - RIGHT)
-    const yOf = v => TOP + (1 - Math.min(v, vTop) / vTop) * H
-    const svg = svgChart(TOP + H + 22, 'Expected speed profile between the two stations, and where the train is', VW)
-    for (let v = 0; v <= vTop; v += vTop / 4) {
-      svg.append(svgEl('line', { x1: LEFT, x2: VW - RIGHT, y1: yOf(v), y2: yOf(v), class: 'tl-grid' }))
-      svg.append(svgEl('text', { x: LEFT - 6, y: yOf(v) + 4, class: 'tl-label', 'text-anchor': 'end' }, String(Math.round(v))))
+    // the segment as a 1D line: where the train is now, and where the timetable says it should be
+    const xOf = f => LEFT + Math.min(1, Math.max(0, f)) * (VW - LEFT - RIGHT)
+    const sch = Math.max(60000, (cur.next.arrivo_teorico || cur.next.programmata) - (cur.here.partenza_teorica || cur.here.programmata))
+    const uSched = Math.min(1, Math.max(0, (now - (cur.here.partenza_teorica || cur.here.programmata)) / sch))
+    const fracOf = u => k.prof.at(u * k.prof.total).x / (k.km * 1000)
+    const phaseOf = f => k.prof.timeAt(f) / k.prof.total
+    const pSched = fracOf(uSched)
+    const gapKm = (pSched - cur.p) * k.km
+    // the delay the position implies: now minus the instant the timetable has the train there
+    const schedAtPos = (cur.here.partenza_teorica || cur.here.programmata) + phaseOf(cur.p) * sch
+    const gapMin = (now - schedAtPos) / 60000
+    const Hl = 96
+    const svg = svgChart(Hl, 'The train on the segment, now and as the timetable has it', VW)
+    const yLine = 50
+    svg.append(svgEl('line', { x1: xOf(0), x2: xOf(1), y1: yLine, y2: yLine, class: 'tk-1d-rail' }))
+    for (let km = 0; km <= k.km + 1e-6; km += k.km > 12 ? 5 : k.km > 4 ? 2 : 1) {
+      svg.append(svgEl('line', { x1: xOf(km / k.km), x2: xOf(km / k.km), y1: yLine - 4, y2: yLine + 4, class: 'tl-grid' }))
+      svg.append(svgEl('text', { x: xOf(km / k.km), y: yLine + 20, class: 'tl-label', 'text-anchor': 'middle' }, `${km} km`))
     }
-    const N = 80
-    const pts = Array.from({ length: N + 1 }, (_, i) => [xOf(i / N), yOf(k.speedAt(i / N))])
-    const line = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
-    // what is behind the train: filled; the +-sigma band around its position
-    const behind = pts.filter((_, i) => i / N <= cur.p)
-    behind.push([xOf(cur.p), yOf(k.now)])
-    svg.append(svgEl('polygon', { points: `${xOf(0)},${yOf(0)} ${behind.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')} ${xOf(cur.p)},${yOf(0)}`, class: 'tk-plot-band' }))
-    svg.append(svgEl('polyline', { points: line, class: 'tk-plot-est' }))
+    svg.append(svgEl('text', { x: LEFT - 8, y: yLine + 4, class: 'tl-label', 'text-anchor': 'end' }, cur.here.stazione.toLowerCase().slice(0, 18)))
+    svg.append(svgEl('text', { x: VW - RIGHT, y: yLine - 14, class: 'tl-label', 'text-anchor': 'end' }, cur.next.stazione.toLowerCase().slice(0, 28)))
+    // +-2 sigma around the estimate
     const sg = cur.kal && Number.isFinite(cur.kal.sigma) ? cur.kal.sigma : 0
-    svg.append(svgEl('rect', { x: xOf(Math.max(0, cur.p - 2 * sg)), y: TOP, width: Math.max(1, xOf(Math.min(1, cur.p + 2 * sg)) - xOf(Math.max(0, cur.p - 2 * sg))), height: H, class: 'tk-kin-sigma' }))
-    svg.append(svgEl('line', { x1: xOf(cur.p), x2: xOf(cur.p), y1: TOP, y2: TOP + H, class: 'tl-now' }))
-    svg.append(svgEl('circle', { cx: xOf(cur.p), cy: yOf(k.now), r: 5, class: 'tk-kin-dot' }))
-    svg.append(svgEl('line', { x1: LEFT, x2: VW - RIGHT, y1: yOf(k.mean), y2: yOf(k.mean), class: 'tk-plot-pred' }))
-    svg.append(svgEl('text', { x: VW - RIGHT, y: yOf(k.mean) - 4, class: 'tl-label', 'text-anchor': 'end' }, `mean ${Math.round(k.mean)} km/h`))
-    ;[0, 0.25, 0.5, 0.75, 1].forEach(f => svg.append(svgEl('text', { x: xOf(f), y: TOP + H + 16, class: 'tl-label', 'text-anchor': f === 0 ? 'start' : f === 1 ? 'end' : 'middle' }, `${(k.km * f).toFixed(1)} km`)))
+    svg.append(svgEl('rect', { x: xOf(cur.p - 2 * sg), y: yLine - 9, width: Math.max(2, xOf(cur.p + 2 * sg) - xOf(cur.p - 2 * sg)), height: 18, rx: 4, class: 'tk-kin-sigma' }))
+    // the real detections inside the segment
+    trackHist.detections.filter(m => m.s > stops.indexOf(cur.here) && m.s < stops.indexOf(cur.here) + 1).forEach(m => {
+      svg.append(svgEl('path', { d: `M${xOf(m.s - stops.indexOf(cur.here))},${yLine + 7} l-4,7 h8 z`, class: 'tk-1d-det' }))
+    })
+    // the gap between the two
+    svg.append(svgEl('line', { x1: xOf(cur.p), x2: xOf(pSched), y1: yLine - 18, y2: yLine - 18, class: 'tk-1d-gap' }))
+    svg.append(svgEl('circle', { cx: xOf(pSched), cy: yLine, r: 7, class: 'tk-1d-sched' }))
+    svg.append(svgEl('circle', { cx: xOf(cur.p), cy: yLine, r: 7, class: 'tk-kin-dot' }))
+    svg.append(svgEl('text', { x: xOf(pSched), y: yLine - 26, class: 'tl-label', 'text-anchor': 'middle' }, 'timetable'))
+    svg.append(svgEl('text', { x: xOf(cur.p), y: yLine - 26 - (Math.abs(xOf(cur.p) - xOf(pSched)) < 70 ? 12 : 0), class: 'tk-dwell-state is-here', 'text-anchor': 'middle' }, 'NOW'))
+    const verdict = Math.abs(gapMin) < 0.5 ? 'on time' : gapMin > 0 ? `${gapMin.toFixed(1)} min late · ${Math.abs(gapKm).toFixed(2)} km behind the timetable` : `${(-gapMin).toFixed(1)} min early · ${Math.abs(gapKm).toFixed(2)} km ahead of the timetable`
+    svg.append(svgEl('text', { x: LEFT, y: Hl - 4, class: 'tl-label' }, verdict))
     panel.append(svg)
     panel.append(el('p', ['nerd-dim', 'tk-kin-note'], [
       `${cur.here.stazione.toLowerCase()} → ${cur.next.stazione.toLowerCase()}`,
@@ -2357,13 +2370,14 @@ async function setNerdTrack(on) {
 // time (noise grows with the age of the last detection); the real departure time pins p = 0 at its
 // real instant, even when it is only learnt later. Everything is replayed from the departure, so a
 // late-arriving measurement is applied where it belongs.
-// Physical units: x in km along the segment, v in km/min. The noise is physical too, so the same uncertainty
-// means the same thing on a 2 km and on a 50 km segment (a timing error is turned into km by the speed).
+// Dead reckoning from the last real data. Nothing here depends on an earlier prediction: the position is the
+// speed profile between the two stations (accelerate, cruise, brake, see js/modules/model.js), started from the
+// real departure and, when a train went through a station without stopping, re-timed so that it passes
+// through that real detection. The doubt only grows with the time since the nearest real datum, and drops
+// when a new one arrives. The announced delays are predictions, not data: they are not used here.
 const KALMAN = {
-  qPos: 0.02, // km^2 per minute: the position drifts away from "constant speed" by about 0.14 km / sqrt(min)
-  qVel: 9e-4, // (km/min)^2 per minute: the speed changes by about 1.8 km/h / sqrt(min)
-  etaSigmaMin: 1.8, // spread of the announced arrival (robust spread ~1.5 min, a little more for the heavy tails)
-  ageGain: 0.5, // extra minutes of doubt per minute since the last detection
+  etaSigmaMin: 1.8, // spread of the arrival time (robust spread of the model, ~1.5 min, a bit more for the heavy tails)
+  floorMin: 0.3, // timing doubt right on a real datum
   detectionKm: 0.4, // a detection point is known to about 400 m
   departureKm: 0.1
 }
@@ -2377,120 +2391,70 @@ function kalmanRun(d, here, next, t0, now, stepMs = 0) {
   const schedMin = Math.max(1, (schedArr - schedDep) / KALMAN_MINUTE)
   const realKm = segmentKm(stops, hereI)
   const L = realKm || schedMin // without coordinates: 1 pseudo-km per minute
-  // state: position x (km) and speed v (km/min); the timetable gives the prior speed
-  let x = 0
-  // expected travel time (see js/modules/model.js): corrected timetable and kinematic trip
   const cls = trainClass(d)
-  const etaNow = predictArrival(t0, schedDep, schedArr, realKm, cls)
-  const priorMin = Math.max(0.5 * schedMin, (etaNow - t0) / KALMAN_MINUTE)
-  let v = L / priorMin
-  let P = [[0.05 ** 2, 0], [0, (0.3 * v) ** 2]]
-  const predict = dtMs => {
-    const dt = dtMs / KALMAN_MINUTE
-    if (dt <= 0) return
-    x += v * dt
-    const p00 = P[0][0] + dt * (P[1][0] + P[0][1]) + dt * dt * P[1][1] + KALMAN.qPos * dt
-    const p01 = P[0][1] + dt * P[1][1]
-    P = [[p00, p01], [p01, P[1][1] + KALMAN.qVel * dt]]
-  }
-  const update = (z, R) => {
-    const S = P[0][0] + R
-    const k0 = P[0][0] / S
-    const k1 = P[1][0] / S
-    const y = z - x
-    x += k0 * y
-    v = Math.max(0, v + k1 * y)
-    P = [[(1 - k0) * P[0][0], (1 - k0) * P[0][1]], [P[1][0] - k1 * P[0][0], P[1][1] - k1 * P[0][1]]]
-  }
-  const vAvg = L / Math.max(1, (etaNow - t0) / KALMAN_MINUTE) // km/min implied by the announced arrival
-  // measurements, each at the instant it applies to
-  const events = [{ t: t0, z: 0, R: KALMAN.departureKm ** 2 }]
-  // a detection at a station the train goes through without stopping: a real position
-  trackHist.detections.filter(m => m.t > t0 && m.s > hereI && m.s < hereI + 1).forEach(m => {
-    events.push({ t: m.t, z: (m.s - hereI) * L, R: KALMAN.detectionKm ** 2 })
-  })
-  // each refresh: where the announced arrival time says the train is; a timing error counts for speed x error km
-  const implied = (t, etaMs) => Math.min(0.99, Math.max(0, (t - t0) / Math.max(KALMAN_MINUTE, etaMs - t0))) * L
-  trackHist.fetches.filter(f => f.t > t0).forEach(f => {
-    // the announced arrival is itself uncertain: about 1.8 min, growing with the length of the segment and the age of the detection
-    const sigmaMin = Math.hypot(KALMAN.etaSigmaMin, 0.09 * schedMin, KALMAN.ageGain * (f.age ?? 2))
-    events.push({ t: f.t, z: implied(f.t, schedArr + adjustedDelay(f.delay, schedMin) * KALMAN_MINUTE), R: (vAvg * sigmaMin) ** 2 })
-  })
-  events.sort((a, b) => a.t - b.t)
+  const prof = realKm ? motionProfile(realKm, cls) : null
+  const fracAt = u => (prof ? prof.at(Math.min(1, Math.max(0, u)) * prof.total).x / (realKm * 1000) : Math.min(1, Math.max(0, u)))
+  const phaseOf = f => (prof ? prof.timeAt(f) / prof.total : f)
 
-  const fraction = () => Math.min(0.98, Math.max(0, x / L))
-  // forward pass over a time grid that also contains every measurement instant, remembering each step
-  // so that the past can be revised afterwards (Rauch-Tung-Striebel smoother)
-  const times = new Set([t0, now])
-  events.forEach(e => { if (e.t >= t0 && e.t <= now) times.add(e.t) })
-  if (stepMs) for (let g = t0 + stepMs; g < now; g += stepMs) times.add(g)
-  const ticks = [...times].sort((a, b) => a - b)
-  const steps = []
-  let i = 0
-  let prevT = t0
-  ticks.forEach((tk, k) => {
-    let F = null
-    let xp = null
-    let Pp = null
-    if (k > 0) {
-      const dt = (tk - prevT) / KALMAN_MINUTE
-      F = [[1, dt], [0, 1]]
-      predict(tk - prevT)
-      xp = [x, v]
-      Pp = [[P[0][0], P[0][1]], [P[1][0], P[1][1]]]
+  // the real data inside the segment: the departure and the stations passed without stopping
+  const anchors = [{ t: t0, x: 0, sigmaKm: KALMAN.departureKm }]
+  trackHist.detections.filter(m => m.t > t0 && m.s > hereI && m.s < hereI + 1).sort((a, b) => a.t - b.t)
+    .forEach(m => anchors.push({ t: m.t, x: (m.s - hereI) * L, sigmaKm: KALMAN.detectionKm }))
+  const etaPrior = predictArrival(t0, schedDep, schedArr, realKm, cls)
+
+  // the trip duration, given the anchors known at `until`: the model's arrival, or the one that makes the
+  // train pass through the latest detection
+  const tripMs = until => {
+    const known = anchors.filter(a => a.t <= until && a.t > t0)
+    const last = known[known.length - 1]
+    if (last) {
+      const u = phaseOf(Math.min(0.98, Math.max(0.02, last.x / L)))
+      if (u > 0.02) return Math.max(60000, (last.t - t0) / u)
     }
-    while (i < events.length && events[i].t <= tk) update(events[i].z, events[i++].R)
-    steps.push({ t: tk, F, xp, Pp, xf: [x, v], Pf: [[P[0][0], P[0][1]], [P[1][0], P[1][1]]] })
-    prevT = tk
-  })
+    return Math.max(60000, etaPrior - t0)
+  }
+  const meanKmMin = ms => L / Math.max(1, ms / KALMAN_MINUTE)
+  const sigmaEnd = Math.hypot(KALMAN.etaSigmaMin, 0.09 * schedMin)
+  // position and doubt at an instant; `causal`: only the data known by then
+  const at = (t, causal = false, tripFor = causal ? t : now) => {
+    const trip = tripMs(tripFor)
+    const p = Math.min(0.98, fracAt((t - t0) / trip))
+    const pool = causal ? anchors.filter(a => a.t <= t) : anchors
+    const near = pool.reduce((best, a) => (Math.abs(a.t - t) < Math.abs(best.t - t) ? a : best), pool[0])
+    const ageMin = Math.abs(t - near.t) / KALMAN_MINUTE
+    const sigmaMin = Math.hypot(KALMAN.floorMin, (sigmaEnd - KALMAN.floorMin) * Math.sqrt(ageMin / (trip / KALMAN_MINUTE)))
+    const sigmaKm = Math.hypot(near.sigmaKm, meanKmMin(trip) * sigmaMin)
+    return { p, sigmaKm, sigma: sigmaKm / L, sigmaMin, trip }
+  }
+
   const samples = []
   if (stepMs) {
-    const mul = (A, B) => [[A[0][0] * B[0][0] + A[0][1] * B[1][0], A[0][0] * B[0][1] + A[0][1] * B[1][1]], [A[1][0] * B[0][0] + A[1][1] * B[1][0], A[1][0] * B[0][1] + A[1][1] * B[1][1]]]
-    const tr = A => [[A[0][0], A[1][0]], [A[0][1], A[1][1]]]
-    const inv = A => { const det = A[0][0] * A[1][1] - A[0][1] * A[1][0] || 1e-12; return [[A[1][1] / det, -A[0][1] / det], [-A[1][0] / det, A[0][0] / det]] }
-    let xs = steps[steps.length - 1].xf
-    let Ps = steps[steps.length - 1].Pf
-    const smooth = new Array(steps.length)
-    smooth[steps.length - 1] = { x: xs[0], var: Ps[0][0] }
-    for (let k = steps.length - 2; k >= 0; k--) {
-      const cur = steps[k]
-      const nxt = steps[k + 1]
-      const C = mul(mul(cur.Pf, tr(nxt.F)), inv(nxt.Pp))
-      const dx = [xs[0] - nxt.xp[0], xs[1] - nxt.xp[1]]
-      xs = [cur.xf[0] + C[0][0] * dx[0] + C[0][1] * dx[1], cur.xf[1] + C[1][0] * dx[0] + C[1][1] * dx[1]]
-      const dP = [[Ps[0][0] - nxt.Pp[0][0], Ps[0][1] - nxt.Pp[0][1]], [Ps[1][0] - nxt.Pp[1][0], Ps[1][1] - nxt.Pp[1][1]]]
-      const CdP = mul(mul(C, dP), tr(C))
-      Ps = [[cur.Pf[0][0] + CdP[0][0], cur.Pf[0][1] + CdP[0][1]], [cur.Pf[1][0] + CdP[1][0], cur.Pf[1][1] + CdP[1][1]]]
-      smooth[k] = { x: xs[0], var: Ps[0][0] }
-    }
-    steps.forEach((st, k) => {
-      samples.push({
-        t: st.t,
-        p: Math.min(0.98, Math.max(0, smooth[k].x / L)), sigma: Math.sqrt(Math.max(smooth[k].var, 0)) / L, // revised with everything known now
-        pf: Math.min(0.98, Math.max(0, st.xf[0] / L)) // what the filter alone said at that instant
-      })
+    const times = new Set([t0, now])
+    anchors.forEach(a => { if (a.t <= now) times.add(a.t) })
+    for (let g = t0 + stepMs; g < now; g += stepMs) times.add(g)
+    ;[...times].sort((x, y) => x - y).forEach(t => {
+      const r = at(t)
+      samples.push({ t, p: r.p, sigma: r.sigma, pf: at(t, true).p })
     })
   }
-  const sigmaKm = Math.sqrt(Math.max(P[0][0], 0))
+  const r = at(now)
+  const dt = 5000
+  const v = Math.max(0, (at(now + dt).p - r.p) * L / (dt / KALMAN_MINUTE)) // km/min, slope of the profile
+  const arrivalMs = t0 + r.trip
   return {
-    p: fraction(), x, v, P, L, km: realKm, sigma: sigmaKm / L, sigmaKm,
-    sigmaMin: v > 1e-3 ? sigmaKm / v : null, // the same doubt, as a time
-    minToGo: v > 1e-3 ? Math.max(0, (L - x) / v) : Infinity,
+    p: r.p, x: r.p * L, v, L, km: realKm, sigma: r.sigma, sigmaKm: r.sigmaKm, at,
+    sigmaMin: r.sigmaKm / Math.max(1e-3, meanKmMin(r.trip)), // the same doubt, as a time
+    minToGo: Math.max(0, (arrivalMs - now) / KALMAN_MINUTE),
     speedKmh: realKm ? v * 60 : null, samples, tseg: schedMin
   }
 }
 
-// Where the filter expects the train, and how unsure it is, until `untilMs` (no new measurement).
+// Where the estimate expects the train until `untilMs`, and how unsure it is (no new datum).
 function kalmanForecast(state, fromMs, untilMs, stepMs = 15000) {
-  let { x, v, P, L } = state
-  const out = [{ t: fromMs, p: Math.min(1, x / L), sigma: Math.sqrt(Math.max(P[0][0], 0)) / L }]
-  for (let t = fromMs; t < untilMs; t += stepMs) {
-    const dt = stepMs / KALMAN_MINUTE
-    x += v * dt
-    const p00 = P[0][0] + dt * (P[1][0] + P[0][1]) + dt * dt * P[1][1] + KALMAN.qPos * dt
-    const p01 = P[0][1] + dt * P[1][1]
-    P = [[p00, p01], [p01, P[1][1] + KALMAN.qVel * dt]]
-    out.push({ t: t + stepMs, p: Math.min(1, x / L), sigma: Math.sqrt(Math.max(P[0][0], 0)) / L })
+  const out = []
+  for (let t = fromMs; t <= untilMs + stepMs; t += stepMs) {
+    const r = state.at(t)
+    out.push({ t, p: Math.min(1, r.p), sigma: r.sigma })
   }
   return out
 }
