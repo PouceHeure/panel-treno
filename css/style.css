@@ -992,3 +992,5 @@ body.view-train .source-switch { display: none; }
 .tk-1d-det { fill: var(--accent); opacity: 0.8; }
 
 .tk-axis-scale { fill: var(--muted); font-family: var(--font); font-size: 10px; opacity: 0.8; }
+
+.tk-1d-station { stroke: var(--muted); stroke-width: 2; }

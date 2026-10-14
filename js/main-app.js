@@ -1609,6 +1609,7 @@ let nerdTrack = false
 let trackWin = '10' // minutes shown by the position plot: '5', '10', '30' or 'all'
 let trackAxis = 'min' // vertical axis of the plot: 'min' (scheduled travel time) or 'km' (distance)
 const TRACK_TICK_MS = 5000
+const NOW_FRAC = 0.7 // where "now" is, as a share of the plot width, in every nerd chart
 const TRACK_KEEP = 360
 
 function trackCoord(d, model) {
@@ -1750,7 +1751,7 @@ function nerdTrackChart(d) {
     return panel
   }
   const winMs = trackWin === 'all' ? null : Number(trackWin) * 60000
-  const winStart = winMs ? now - winMs * 0.7 : 0
+  const winStart = winMs ? now - winMs * NOW_FRAC : 0
   const samples = trackHist.ticks.concat(trackHist.fetches.map(f => ({ t: f.t, s: f.s }))).filter(x => !winMs || (x.t >= winStart - winMs && x.t <= winStart + 2 * winMs))
   const all = samples.map(x => x.s).concat([sNow])
   let lo
@@ -2119,8 +2120,8 @@ function nerdTrackKin(d, cur, now) {
   // A 1D train: the marker stays in place, the axis (the stops) slides under it. It says whether the train
   // is in a station, and when the stops start and end.
   const drawDwell = g => {
-    const BEFORE = 2 * 60000
-    const SPAN = 8 * 60000
+    const SPAN = 10 * 60000
+    const BEFORE = NOW_FRAC * SPAN // "now" sits at the same place in every chart of the page
     const Hs = 74
     const svg = svgChart(Hs + 34, 'The train as a marker on a time axis that slides: stops come towards it', VW)
     const plotW = VW - LEFT - RIGHT
@@ -2178,8 +2179,12 @@ function nerdTrackKin(d, cur, now) {
     panel.append(el('p', ['nerd-dim', 'tk-kin-note'], text))
   }
   if (k.kind === 'between' && k.km) {
-    // the segment as a 1D line: where the train is now, and where the timetable says it should be
-    const xOf = f => LEFT + Math.min(1, Math.max(0, f)) * (VW - LEFT - RIGHT)
+    // the segment as a 1D rail: the train stays at "now" (same place as in the other charts), the rail slides
+    const plotW1 = VW - LEFT - RIGHT
+    const xNow = LEFT + NOW_FRAC * plotW1
+    const winKm = Math.min(Math.max(2, (k.km / (cur.eta - cur.since) * 60000) * 10), Math.max(2, k.km)) // about 10 min of travel
+    const posKm = k.km * cur.p
+    const xOfKm = km => xNow + ((km - posKm) / winKm) * plotW1
     const sch = Math.max(60000, (cur.next.arrivo_teorico || cur.next.programmata) - (cur.here.partenza_teorica || cur.here.programmata))
     const uSched = Math.min(1, Math.max(0, (now - (cur.here.partenza_teorica || cur.here.programmata)) / sch))
     const fracOf = u => k.prof.at(u * k.prof.total).x / (k.km * 1000)
@@ -2189,29 +2194,46 @@ function nerdTrackKin(d, cur, now) {
     // the delay the position implies: now minus the instant the timetable has the train there
     const schedAtPos = (cur.here.partenza_teorica || cur.here.programmata) + phaseOf(cur.p) * sch
     const gapMin = (now - schedAtPos) / 60000
-    const Hl = 96
+    const Hl = 112
     const svg = svgChart(Hl, 'The train on the segment, now and as the timetable has it', VW)
     const yLine = 50
-    svg.append(svgEl('line', { x1: xOf(0), x2: xOf(1), y1: yLine, y2: yLine, class: 'tk-1d-rail' }))
-    for (let km = 0; km <= k.km + 1e-6; km += k.km > 12 ? 5 : k.km > 4 ? 2 : 1) {
-      svg.append(svgEl('line', { x1: xOf(km / k.km), x2: xOf(km / k.km), y1: yLine - 4, y2: yLine + 4, class: 'tl-grid' }))
-      svg.append(svgEl('text', { x: xOf(km / k.km), y: yLine + 20, class: 'tl-label', 'text-anchor': 'middle' }, `${km} km`))
+    const clampX = x => Math.min(LEFT + plotW1, Math.max(LEFT, x))
+    svg.append(svgEl('line', { x1: clampX(xOfKm(0)), x2: clampX(xOfKm(k.km)), y1: yLine, y2: yLine, class: 'tk-1d-rail' }))
+    const step = winKm > 12 ? 5 : winKm > 5 ? 2 : 1
+    for (let km = Math.ceil((posKm - 0.7 * winKm) / step) * step; km <= posKm + 0.3 * winKm; km += step) {
+      if (km < 0 || km > k.km) continue
+      svg.append(svgEl('line', { x1: xOfKm(km), x2: xOfKm(km), y1: yLine - 4, y2: yLine + 4, class: 'tl-grid' }))
+      svg.append(svgEl('text', { x: xOfKm(km), y: yLine + 20, class: 'tl-label', 'text-anchor': 'middle' }, `${km} km`))
     }
-    svg.append(svgEl('text', { x: LEFT - 8, y: yLine + 4, class: 'tl-label', 'text-anchor': 'end' }, cur.here.stazione.toLowerCase().slice(0, 18)))
-    svg.append(svgEl('text', { x: VW - RIGHT, y: yLine - 14, class: 'tl-label', 'text-anchor': 'end' }, cur.next.stazione.toLowerCase().slice(0, 28)))
+    // the two stations: where they are when in view, otherwise an arrow with the distance
+    const endLabel = (km, name, right) => {
+      const x = xOfKm(km)
+      if (x >= LEFT && x <= LEFT + plotW1) {
+        svg.append(svgEl('line', { x1: x, x2: x, y1: yLine - 12, y2: yLine + 12, class: 'tk-1d-station' }))
+        svg.append(svgEl('text', { x, y: yLine + 36, class: 'tl-label', 'text-anchor': 'middle' }, name.slice(0, 26)))
+      } else {
+        svg.append(svgEl('text', { x: right ? LEFT + plotW1 : LEFT, y: yLine - 14, class: 'tl-label', 'text-anchor': right ? 'end' : 'start' }, right ? `${name.slice(0, 22)} ${(k.km - posKm).toFixed(1)} km →` : `← ${name.slice(0, 22)} ${posKm.toFixed(1)} km`))
+      }
+    }
+    endLabel(0, cur.here.stazione.toLowerCase(), false)
+    endLabel(k.km, cur.next.stazione.toLowerCase(), true)
     // +-2 sigma around the estimate
     const sg = cur.kal && Number.isFinite(cur.kal.sigma) ? cur.kal.sigma : 0
-    svg.append(svgEl('rect', { x: xOf(cur.p - 2 * sg), y: yLine - 9, width: Math.max(2, xOf(cur.p + 2 * sg) - xOf(cur.p - 2 * sg)), height: 18, rx: 4, class: 'tk-kin-sigma' }))
+    svg.append(svgEl('rect', { x: clampX(xOfKm(posKm - 2 * sg * k.km)), y: yLine - 9, width: Math.max(2, clampX(xOfKm(posKm + 2 * sg * k.km)) - clampX(xOfKm(posKm - 2 * sg * k.km))), height: 18, rx: 4, class: 'tk-kin-sigma' }))
     // the real detections inside the segment
     trackHist.detections.filter(m => m.s > stops.indexOf(cur.here) && m.s < stops.indexOf(cur.here) + 1).forEach(m => {
-      svg.append(svgEl('path', { d: `M${xOf(m.s - stops.indexOf(cur.here))},${yLine + 7} l-4,7 h8 z`, class: 'tk-1d-det' }))
+      const x = xOfKm((m.s - stops.indexOf(cur.here)) * k.km)
+      if (x >= LEFT && x <= LEFT + plotW1) svg.append(svgEl('path', { d: `M${x},${yLine + 7} l-4,7 h8 z`, class: 'tk-1d-det' }))
     })
-    // the gap between the two
-    svg.append(svgEl('line', { x1: xOf(cur.p), x2: xOf(pSched), y1: yLine - 18, y2: yLine - 18, class: 'tk-1d-gap' }))
-    svg.append(svgEl('circle', { cx: xOf(pSched), cy: yLine, r: 7, class: 'tk-1d-sched' }))
-    svg.append(svgEl('circle', { cx: xOf(cur.p), cy: yLine, r: 7, class: 'tk-kin-dot' }))
-    svg.append(svgEl('text', { x: xOf(pSched), y: yLine - 26, class: 'tl-label', 'text-anchor': 'middle' }, 'timetable'))
-    svg.append(svgEl('text', { x: xOf(cur.p), y: yLine - 26 - (Math.abs(xOf(cur.p) - xOf(pSched)) < 70 ? 12 : 0), class: 'tk-dwell-state is-here', 'text-anchor': 'middle' }, 'NOW'))
+    // the timetable ghost, and the gap between the two
+    const xSched = xOfKm(pSched * k.km)
+    if (xSched >= LEFT && xSched <= LEFT + plotW1) {
+      svg.append(svgEl('line', { x1: xNow, x2: xSched, y1: yLine - 18, y2: yLine - 18, class: 'tk-1d-gap' }))
+      svg.append(svgEl('circle', { cx: xSched, cy: yLine, r: 7, class: 'tk-1d-sched' }))
+      svg.append(svgEl('text', { x: xSched, y: yLine - 26, class: 'tl-label', 'text-anchor': 'middle' }, 'timetable'))
+    } else svg.append(svgEl('text', { x: xSched < LEFT ? LEFT : LEFT + plotW1, y: yLine - 26, class: 'tl-label', 'text-anchor': xSched < LEFT ? 'start' : 'end' }, xSched < LEFT ? '← timetable' : 'timetable →'))
+    svg.append(svgEl('circle', { cx: xNow, cy: yLine, r: 7, class: 'tk-kin-dot' }))
+    svg.append(svgEl('text', { x: xNow, y: yLine - 26 - (Math.abs(xNow - xSched) < 70 ? 12 : 0), class: 'tk-dwell-state is-here', 'text-anchor': 'middle' }, 'NOW'))
     const verdict = Math.abs(gapMin) < 0.5 ? 'on time' : gapMin > 0 ? `${gapMin.toFixed(1)} min late · ${Math.abs(gapKm).toFixed(2)} km behind the timetable` : `${(-gapMin).toFixed(1)} min early · ${Math.abs(gapKm).toFixed(2)} km ahead of the timetable`
     svg.append(svgEl('text', { x: LEFT, y: Hl - 4, class: 'tl-label' }, verdict))
     panel.append(svg)
