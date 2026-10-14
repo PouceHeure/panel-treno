@@ -1912,11 +1912,14 @@ function nerdTrackChart(d) {
     dot.append(svgEl('title', {}, `${r.f.stazione}: ${r.kind === 'arr' ? 'arrived' : 'left'} ${formatEpochHHMM(r.t)}`))
     plot.append(dot)
   })
+  const estPts = (revised ? samples.filter(x => x.t < model.since).concat(revised) : samples.concat([{ t: now, s: sNow }])).sort(sortT)
+  trackView = { tMin, tMax, LEFT, RIGHT, W, winMs, now, est: estPts, cursors: [], readouts: [] }
   // hover (or touch) the plot to read the estimated position at that instant
   const readout = el('p', ['tk-readout', 'nerd-dim'], winMs ? 'touch or hover the plot to read the position at that time' : '')
   const cursor = svgEl('line', { y1: TOP, y2: TOP + plotH, class: 'tk-cursor' })
   cursor.style.display = 'none'
   svg.append(cursor)
+  trackView.cursors.push(cursor)
   const describe = v => {
     const i = Math.min(stops.length - 1, Math.floor(v))
     const frac = v - i
@@ -1928,15 +1931,13 @@ function nerdTrackChart(d) {
     const x = (clientX - rect.left) * (W / rect.width)
     if (x < LEFT || x > W - RIGHT) return
     const t = tMin + ((x - LEFT) / plotW) * (tMax - tMin)
-    cursor.setAttribute('x1', x)
-    cursor.setAttribute('x2', x)
-    cursor.style.display = ''
+    syncCursors(x)
     readout.textContent = `${formatTime(new Date(t), true)} · ${t > now ? 'in the future' : describe(posAt(t))}`
   }
   if (winMs) {
     svg.addEventListener('pointerdown', e => showAt(e.clientX))
     svg.addEventListener('pointermove', e => showAt(e.clientX))
-    svg.addEventListener('pointerleave', () => { cursor.style.display = 'none' })
+    svg.addEventListener('pointerleave', () => syncCursors(null))
   }
   panel.append(readout, svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
@@ -1946,52 +1947,114 @@ function nerdTrackChart(d) {
   return panel
 }
 
-// How the reported delay evolved, refresh after refresh.
-function nerdTrackDelay() {
+// The cursor of every chart that shares the time axis moves together.
+let trackView = null
+function syncCursors(x) {
+  if (!trackView) return
+  trackView.cursors.forEach(c => {
+    if (x === null) { c.style.display = 'none'; return }
+    c.setAttribute('x1', x)
+    c.setAttribute('x2', x)
+    c.style.display = ''
+  })
+}
+
+// The delay over time on the same time axis as the position chart: the delay the estimate implies (a
+// continuous curve: it shrinks as the train makes up time), the forecast, and what ViaggiaTreno reported.
+function nerdTrackDelay(d) {
   const panel = el('div', ['nerd-panel'])
   const head = el('div', ['nerd-panel-head'])
   head.append(el('span', [], 'delay vs time'), el('span', [], 'minutes'))
   panel.append(head)
-  const winMs = trackWin === 'all' ? null : Number(trackWin) * 60000
-  const f = trackHist.fetches.filter(x => !winMs || (x.t >= Date.now() - winMs * 0.7))
-  if (f.length < 2) {
+  if (!trackView) {
+    panel.append(el('p', ['nerd-dim'], 'no position yet'))
+    return panel
+  }
+  const { tMin, tMax, LEFT, RIGHT, W, winMs, now } = trackView
+  const stops = d.fermate || []
+  const schedAt = v => {
+    const i = Math.min(stops.length - 1, Math.floor(v))
+    const a = stops[i].partenza_teorica || stops[i].programmata
+    if (i >= stops.length - 1) return stops[i].arrivo_teorico || stops[i].programmata
+    const b = stops[i + 1].arrivo_teorico || stops[i + 1].programmata
+    return a + (v - i) * (b - a)
+  }
+  // implied delay, only where the train is between two stops (in a station the position says nothing)
+  const implied = trackView.est
+    .filter(x => { const f = x.s - Math.floor(x.s); return f > 0.02 && f < 0.98 && x.t <= now })
+    .map(x => ({ t: x.t, v: (x.t - schedAt(x.s)) / 60000 }))
+  const reported = trackHist.fetches.map(x => ({ t: x.t, v: x.delay }))
+  // forecast from the model: the delay at each stop ahead
+  const pred = predOf(d, now)
+  const ahead = []
+  pred.forEach(x => { ahead.push({ t: x.arrMs, v: x.arrDelay }, { t: x.depMs, v: x.depDelay }) })
+  const lastImplied = implied[implied.length - 1] || reported[reported.length - 1]
+  const forecast = (lastImplied ? [{ t: now, v: lastImplied.v }] : []).concat(ahead.filter(x => x.t > now && x.t <= tMax + 60000))
+  const all = implied.concat(reported, forecast).filter(x => x.t >= tMin - 60000 && x.t <= tMax + 60000)
+  if (all.length < 2) {
     panel.append(el('p', ['nerd-dim'], 'needs two refreshes (about 16 s) to draw a curve'))
     return panel
   }
-  const LEFT = 40
-  const RIGHT = 12
   const TOP = 12
-  const H = 130
+  const H = 150
   const plotH = H - TOP - 24
-  const W = chartWidth()
   const plotW = W - LEFT - RIGHT
-  const t0 = f[0].t
-  const t1 = Math.max(f[f.length - 1].t, t0 + 60000)
-  const vals = f.map(x => x.delay)
-  const yMax = Math.max(5, Math.ceil(Math.max(...vals) / 5) * 5)
-  const yMin = Math.min(0, Math.floor(Math.min(...vals) / 5) * 5)
-  const xOf = ms => LEFT + ((ms - t0) / (t1 - t0)) * plotW
+  const yMax = Math.max(3, Math.ceil(Math.max(...all.map(x => x.v)) / 2) * 2)
+  const yMin = Math.min(0, Math.floor(Math.min(...all.map(x => x.v)) / 2) * 2)
+  const xOf = ms => LEFT + ((ms - tMin) / (tMax - tMin)) * plotW
   const yOf = v => TOP + plotH - ((v - yMin) / (yMax - yMin)) * plotH
-  const svg = svgChart(H, 'Reported delay against time', W)
+  const svg = svgChart(H, 'Delay against time: implied by the estimate, forecast, and as reported', W)
   ;[yMin, 0, yMax].filter((v, i, a) => a.indexOf(v) === i).forEach(v => {
     svg.append(svgEl('line', { x1: LEFT, y1: yOf(v), x2: W - RIGHT, y2: yOf(v), class: 'tl-grid' }))
-    svg.append(svgEl('text', { x: 4, y: yOf(v) + 4, class: 'tl-label' }, `${v > 0 ? '+' : ''}${v}`))
+    svg.append(svgEl('text', { x: LEFT - 6, y: yOf(v) + 4, class: 'tl-label', 'text-anchor': 'end' }, `${v > 0 ? '+' : ''}${v} min`))
   })
-  ;[t0, t1].forEach((t, i) => svg.append(svgEl('text', { x: i ? W - RIGHT : LEFT, y: H - 6, class: 'tl-label', 'text-anchor': i ? 'end' : 'start' }, formatTime(new Date(t)))))
-  // a step line: the delay holds until the next refresh changes it
-  const steps = series => {
-    const pts = []
-    series.forEach((p, i) => {
-      if (i) pts.push([xOf(p.t), yOf(series[i - 1].v)])
-      pts.push([xOf(p.t), yOf(p.v)])
-    })
-    return pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+  const clipId = 'kdclip'
+  const defs = svgEl('defs', {})
+  const clip = svgEl('clipPath', { id: clipId })
+  clip.append(svgEl('rect', { x: LEFT, y: TOP - 4, width: plotW, height: plotH + 8 }))
+  defs.append(clip)
+  svg.append(defs)
+  const plot = svgEl('g', { 'clip-path': `url(#${clipId})` })
+  const line = (pts, cls) => plot.append(svgEl('polyline', { points: pts.map(x => `${xOf(x.t).toFixed(1)},${yOf(x.v).toFixed(1)}`).join(' '), class: cls }))
+  // what ViaggiaTreno reported: it holds until the next refresh
+  const steps = []
+  reported.forEach((p, i) => { if (i) steps.push({ t: p.t, v: reported[i - 1].v }); steps.push(p) })
+  if (steps.length) { steps.push({ t: now, v: steps[steps.length - 1].v }); line(steps, 'tk-plot-belief') }
+  if (implied.length > 1) line(implied, 'tk-plot-est')
+  if (forecast.length > 1) line(forecast, 'tk-plot-pred')
+  plot.append(svgEl('line', { x1: xOf(now), x2: xOf(now), y1: TOP, y2: TOP + plotH, class: 'tl-now' }))
+  svg.append(plot)
+  ;[tMin, tMax].forEach((t, i) => svg.append(svgEl('text', { x: i ? W - RIGHT : LEFT, y: H - 6, class: 'tl-label', 'text-anchor': i ? 'end' : 'start' }, formatTime(new Date(t)))))
+  const cursor = svgEl('line', { y1: TOP, y2: TOP + plotH, class: 'tk-cursor' })
+  cursor.style.display = 'none'
+  svg.append(cursor)
+  trackView.cursors.push(cursor)
+  const readout = el('p', ['tk-readout', 'nerd-dim'], winMs ? 'hover to read the delay; the cursor follows the position chart' : '')
+  const valueAt = t => {
+    const pts = (t > now ? forecast : implied.length > 1 ? implied : reported)
+    if (!pts.length) return null
+    let best = pts[0]
+    pts.forEach(p => { if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p })
+    return best.v
   }
-  svg.append(svgEl('polyline', { points: steps(f.map(x => ({ t: x.t, v: x.delay }))), class: 'tk-plot-est' }))
-  panel.append(svg)
+  const showAt = clientX => {
+    const rect = svg.getBoundingClientRect()
+    const x = (clientX - rect.left) * (W / rect.width)
+    if (x < LEFT || x > W - RIGHT) return
+    const t = tMin + ((x - LEFT) / plotW) * (tMax - tMin)
+    syncCursors(x)
+    const v = valueAt(t)
+    readout.textContent = `${formatTime(new Date(t), true)} · ${t > now ? 'forecast ' : ''}${v === null ? '–' : `${v > 0 ? '+' : ''}${v.toFixed(1)} min`}`
+  }
+  if (winMs) {
+    svg.addEventListener('pointerdown', e => showAt(e.clientX))
+    svg.addEventListener('pointermove', e => showAt(e.clientX))
+    svg.addEventListener('pointerleave', () => syncCursors(null))
+  }
+  panel.append(readout, svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
   const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
-  legend.append(item('k-est', 'Viaggia'))
+  legend.append(item('k-est', 'implied by the estimate'), item('k-pred', 'forecast'), item('k-belief', 'reported'))
   panel.append(legend)
   return panel
 }
@@ -2041,8 +2104,8 @@ function nerdTrackKin(d, cur, now) {
   const cls = trainClass(d)
   head.append(el('span', [], k.kind === 'station' ? 'time in station' : 'speed along the segment'), el('span', [], k.kind === 'between' && k.km ? `${k.km.toFixed(1)} km` : ''))
   panel.append(head)
-  const VW = 640
-  const LEFT = 40
+  const VW = chartWidth()
+  const LEFT = 150
   const RIGHT = 12
   const TOP = 12
   const H = 150
@@ -2050,8 +2113,7 @@ function nerdTrackKin(d, cur, now) {
     const vTop = Math.max(40, Math.ceil((k.prof.peakKmh / k.dilation * 1.15) / 20) * 20)
     const xOf = f => LEFT + f * (VW - LEFT - RIGHT)
     const yOf = v => TOP + (1 - Math.min(v, vTop) / vTop) * H
-    const svg = svgEl('svg', { viewBox: `0 0 ${VW} ${TOP + H + 22}`, class: 'timeline-svg', role: 'img' })
-    svg.append(svgEl('title', {}, 'Expected speed profile between the two stations, and where the train is'))
+    const svg = svgChart(TOP + H + 22, 'Expected speed profile between the two stations, and where the train is', VW)
     for (let v = 0; v <= vTop; v += vTop / 4) {
       svg.append(svgEl('line', { x1: LEFT, x2: VW - RIGHT, y1: yOf(v), y2: yOf(v), class: 'tl-grid' }))
       svg.append(svgEl('text', { x: LEFT - 6, y: yOf(v) + 4, class: 'tl-label', 'text-anchor': 'end' }, String(Math.round(v))))
@@ -2082,8 +2144,7 @@ function nerdTrackKin(d, cur, now) {
     const maxMin = Math.max(k.exp.hi * 1.6, k.sched * 1.6, (k.elapsed || 0) / 60 * 1.15, 3)
     const xOf = m => LEFT + (Math.min(m, maxMin) / maxMin) * (VW - LEFT - RIGHT)
     const Hs = 56
-    const svg = svgEl('svg', { viewBox: `0 0 ${VW} ${Hs + 34}`, class: 'timeline-svg', role: 'img' })
-    svg.append(svgEl('title', {}, 'Time spent in the station against the expected stop'))
+    const svg = svgChart(Hs + 34, 'Time spent in the station against the expected stop', VW)
     const bar = 22
     svg.append(svgEl('rect', { x: LEFT, y: TOP, width: VW - LEFT - RIGHT, height: bar, class: 'tk-dwell-track' }))
     svg.append(svgEl('rect', { x: xOf(k.exp.lo), y: TOP, width: xOf(k.exp.hi) - xOf(k.exp.lo), height: bar, class: 'tk-dwell-range' }))
@@ -2106,33 +2167,6 @@ function nerdTrackKin(d, cur, now) {
     panel.append(el('p', ['nerd-dim'], 'nothing to estimate: the train is not running'))
   }
 
-  // the segments ahead: what the distance says, against the timetable and the model
-  const hereIdx = cur.here ? stops.indexOf(cur.here) : -1
-  if (hereIdx >= 0 && cur.kind !== 'arrived') {
-    const pred = predOf(d, now)
-    const rows = []
-    for (let i = (cur.kind === 'between' ? hereIdx + 1 : hereIdx); i < stops.length - 1 && rows.length < 5; i++) {
-      const km = segmentKm(stops, i)
-      if (!km) continue
-      const prof = motionProfile(km, cls)
-      const sched = ((stops[i + 1].arrivo_teorico || stops[i + 1].programmata) - (stops[i].partenza_teorica || stops[i].programmata)) / 60000
-      const a = pred.get(i)
-      const b = pred.get(i + 1)
-      const model = a && b ? (b.arrMs - a.depMs) / 60000 : null
-      const sched_dwell = ((stops[i].partenza_teorica || stops[i].programmata) - (stops[i].arrivo_teorico || stops[i].programmata)) / 60000
-      rows.push({ name: `${stops[i].stazione} → ${stops[i + 1].stazione}`, km, prof, sched, model, dwell: dwellExpected(sched_dwell, cls).mid })
-    }
-    if (rows.length) {
-      const table = el('div', ['tk-kin-table'])
-      table.append(...[['segment', 'next segments'], ['km', 'distance'], ['peak', 'cruising speed reached, km/h'], ['kin', 'kinematic trip time, min'], ['sched', 'timetable trip time, min'], ['model', 'predicted trip time, min'], ['stop', 'expected stop, min']].map(([h, tip]) => { const c = el('span', ['tk-kin-h'], h); c.title = tip; return c }))
-      rows.forEach(r => table.append(
-        el('span', ['tk-kin-name'], r.name.toLowerCase()), el('span', [], r.km.toFixed(1)),
-        el('span', [], `${Math.round(r.prof.peakKmh)}`), el('span', [], `${r.prof.minutes.toFixed(1)}′`),
-        el('span', [], `${r.sched.toFixed(1)}′`), el('span', [], r.model === null ? '–' : `${r.model.toFixed(1)}′`), el('span', [], `${r.dwell.toFixed(1)}′`)
-      ))
-      panel.append(table)
-    }
-  }
   return panel
 }
 
@@ -2221,7 +2255,7 @@ function renderTrackNerd(d) {
     statTile('uncertainty', unc ? `±${unc}m` : '–', unc ? `1σ on the next arrival · ${cur.kal.sigmaKm.toFixed(2)} km` : 'in a station'),
     statTile('last detection', rel ? rel.text : '–', d.oraUltimoRilevamento ? `${Math.max(0, Math.round((now - d.oraUltimoRilevamento) / 60000))} min ago` : '')
   )
-  wrap.append(nerdDashboard(d), grid, nerdTrackKin(d, cur, now), nerdTrackChart(d), nerdTrackDelay())
+  wrap.append(nerdDashboard(d), grid, nerdTrackKin(d, cur, now), nerdTrackChart(d), nerdTrackDelay(d))
   $('trainInfo').replaceChildren(wrap)
 }
 
