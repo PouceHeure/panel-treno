@@ -980,3 +980,8 @@ body.view-train .source-switch { display: none; }
 
 .tk-dwell-cursor { stroke: var(--text, #fff); stroke-width: 2; }
 .tk-dwell-cursor-dot { fill: var(--text, #fff); }
+
+.tk-dwell-block { fill: var(--accent); opacity: 0.55; }
+.tk-dwell-block.is-past { opacity: 0.2; }
+.tk-dwell-state { fill: var(--muted); font-family: var(--font); font-size: 11px; letter-spacing: 0.08em; }
+.tk-dwell-state.is-here { fill: var(--accent); font-weight: 700; }
