@@ -1949,7 +1949,7 @@ function nerdTrackChart(d) {
   panel.append(readout, svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
   const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
-  legend.append(item('k-est', 'revised estimate'), item('k-belief', 'believed then'), item('k-band', '±2σ'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-fix', 'correction'), item('k-real', 'real times'), item('k-det', 'passed, no stop'))
+  legend.append(item('k-est', 'revised estimate'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-belief', 'believed then'), item('k-band', '±2σ'), item('k-fix', 'correction'), item('k-real', 'real times'), item('k-det', 'passed, no stop'))
   panel.append(legend)
   return panel
 }
@@ -2010,7 +2010,7 @@ function nerdTrackDelay(d) {
   const yMin = Math.min(0, Math.floor(Math.min(...all.map(x => x.v)) / 2) * 2)
   const xOf = ms => LEFT + ((ms - tMin) / (tMax - tMin)) * plotW
   const yOf = v => TOP + plotH - ((v - yMin) / (yMax - yMin)) * plotH
-  const svg = svgChart(H, 'Delay against time: implied by the estimate, forecast, and as reported', W)
+  const svg = svgChart(H, 'Delay against time: revised estimate, predicted, timetable and announced', W)
   ;[yMin, 0, yMax].filter((v, i, a) => a.indexOf(v) === i).forEach(v => {
     svg.append(svgEl('line', { x1: LEFT, y1: yOf(v), x2: W - RIGHT, y2: yOf(v), class: 'tl-grid' }))
     svg.append(svgEl('text', { x: LEFT - 6, y: yOf(v) + 4, class: 'tl-label', 'text-anchor': 'end' }, `${v > 0 ? '+' : ''}${v} min`))
@@ -2026,6 +2026,8 @@ function nerdTrackDelay(d) {
   // what ViaggiaTreno reported: it holds until the next refresh
   const steps = []
   reported.forEach((p, i) => { if (i) steps.push({ t: p.t, v: reported[i - 1].v }); steps.push(p) })
+  // the timetable: no delay (dashed grey, as in the position chart)
+  plot.append(svgEl('line', { x1: LEFT, x2: W - RIGHT, y1: yOf(0), y2: yOf(0), class: 'tk-plot-sched' }))
   if (steps.length) { steps.push({ t: now, v: steps[steps.length - 1].v }); line(steps, 'tk-plot-belief') }
   if (implied.length > 1) line(implied, 'tk-plot-est')
   if (forecast.length > 1) line(forecast, 'tk-plot-pred')
@@ -2061,7 +2063,7 @@ function nerdTrackDelay(d) {
   panel.append(readout, svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
   const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
-  legend.append(item('k-est', 'implied by the estimate'), item('k-pred', 'forecast'), item('k-belief', 'reported'))
+  legend.append(item('k-est', 'revised estimate'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-belief', 'announced'))
   panel.append(legend)
   return panel
 }
