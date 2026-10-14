@@ -955,3 +955,24 @@ body.view-train .source-switch { display: none; }
 .times-switch button { height: 100%; padding: 0 0.6rem; border: none; border-left: 1px solid var(--line); background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
 .times-switch button.is-active { background: var(--accent); color: var(--bg); font-weight: 700; }
 @media (max-width: 520px) { .times-label { display: none; } }
+
+/* kinematics panel */
+.tk-kin-sigma { fill: var(--accent); opacity: 0.1; stroke: none; }
+.tk-kin-dot { fill: var(--accent); stroke: var(--bg); stroke-width: 2; }
+.tk-kin-note { margin: 0.4rem 0 0; line-height: 1.5; }
+.tk-dwell-track { fill: var(--tile); stroke: var(--line); }
+.tk-dwell-range { fill: var(--accent); opacity: 0.22; }
+.tk-dwell-elapsed { fill: var(--accent); }
+.tk-kin-table { display: grid; grid-template-columns: minmax(0, 2.4fr) repeat(6, minmax(0, 1fr)); gap: 0.15rem 0.5rem; margin-top: 0.7rem; font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.tk-kin-table span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.tk-kin-table .tk-kin-name, .tk-kin-table .tk-kin-h:first-child { text-align: left; }
+.tk-kin-h { color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 0.2rem; }
+@media (max-width: 520px) { .tk-kin-table { grid-template-columns: minmax(0, 1.6fr) repeat(6, minmax(0, 1fr)); font-size: 0.64rem; gap: 0.15rem 0.3rem; } }
+
+/* live dashboard */
+.kin-dash { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.6rem; margin-bottom: 0.8rem; }
+.kin-tile { padding: 0.7rem 0.8rem; border: 1px solid var(--line); border-radius: 10px; background: var(--tile); min-width: 0; }
+.kin-value { margin-top: 0.15rem; font-size: 1.6rem; font-weight: 700; line-height: 1.1; color: var(--accent); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kin-value small { font-size: 0.75rem; font-weight: 400; color: var(--muted); }
+.kin-bar { height: 4px; margin: 0.45rem 0 0.35rem; border-radius: 2px; background: var(--line); overflow: hidden; }
+.kin-bar::after { content: ""; display: block; height: 100%; width: var(--fill, 0); background: var(--accent); transition: width 0.9s linear; }

@@ -355,11 +355,13 @@ function trackReliability(lastSeenMs, now = Date.now()) {
 }
 
 // Predicted times (see js/modules/model.js) for the stops of a train detail still ahead.
-function predOf(d) {
+function predOf(d, nowMs = Date.now()) {
   const stops = d.fermate || []
   const lastPassed = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
   const here = stops[lastPassed]
-  return predictStopTimes(stops, d.ritardo || 0, lastPassed, !!here && !here.partenzaReale)
+  return predictStopTimes(stops, d.ritardo || 0, lastPassed, {
+    inStation: !!here && !here.partenzaReale, distKm: i => segmentKm(stops, i), cls: trainClass(d), nowMs
+  })
 }
 
 // Where a train is right now, read from the times recorded at its last stops:
@@ -1555,6 +1557,7 @@ let stationBook = null // code -> [lat, lon, name]
 let stationNames = null // NAME -> code
 let stationsReady = Promise.resolve()
 function loadStations() {
+  if (stationBook) return
   stationsReady = fetch('data/stations.json')
     .then(r => r.json())
     .then(book => {
@@ -1993,6 +1996,213 @@ function nerdTrackDelay() {
   return panel
 }
 
+// "kinematics": what the model derives from the distance between two stations, shown for the segment the
+// train is in (speed profile, position, speed now) or for the stop it is at (time in station).
+function kinematics(d, cur, now) {
+  const stops = d.fermate || []
+  const cls = trainClass(d)
+  if (cur.kind === 'between') {
+    const hereI = stops.indexOf(cur.here)
+    const km = segmentKm(stops, hereI)
+    if (!km) return { kind: 'between', km: null }
+    const prof = motionProfile(km, cls)
+    const total = Math.max(60, (cur.eta - cur.since) / 1000) // s the train is expected to take
+    const dilation = total / prof.total // > 1: slower than the profile, on the whole
+    const speedAt = f => (prof.at(prof.timeAt(f)).v / dilation) * 3.6
+    const sigma = cur.kal && Number.isFinite(cur.kal.sigma) ? cur.kal.sigma : 0
+    const lo = speedAt(Math.max(0, cur.p - sigma))
+    const hi = speedAt(Math.min(1, cur.p + sigma))
+    const schedMin = (cur.next.arrivo_teorico || cur.next.programmata) - (cur.here.partenza_teorica || cur.here.programmata)
+    return {
+      kind: 'between', km, prof, dilation, speedAt, now: speedAt(cur.p), lo: Math.min(lo, hi), hi: Math.max(lo, hi),
+      peak: prof.peakKmh / dilation, mean: (km / total) * 3600, remainingKm: km * (1 - cur.p),
+      tripMin: total / 60, schedMin: schedMin / 60000, kinMin: prof.minutes
+    }
+  }
+  if ((cur.kind === 'station' || cur.kind === 'waiting') && cur.here) {
+    const arrMs = cur.here.arrivoReale
+    const sched = Math.max(0, ((cur.here.partenza_teorica || cur.here.programmata) - (cur.here.arrivo_teorico || cur.here.programmata)) / 60000)
+    const exp = dwellExpected(sched, cls)
+    const elapsed = arrMs ? Math.max(0, (now - arrMs) / 1000) : null
+    const nextKm = segmentKm(stops, stops.indexOf(cur.here))
+    return {
+      kind: 'station', sched, exp, elapsed, leaveMs: cur.target, nextKm,
+      nextProfile: nextKm ? motionProfile(nextKm, cls) : null, atOrigin: !arrMs
+    }
+  }
+  return { kind: cur.kind }
+}
+
+function nerdTrackKin(d, cur, now) {
+  const k = kinematics(d, cur, now)
+  const panel = el('div', ['nerd-panel'])
+  const head = el('div', ['nerd-panel-head'])
+  const stops = d.fermate || []
+  const cls = trainClass(d)
+  head.append(el('span', [], k.kind === 'station' ? 'time in station' : 'speed along the segment'), el('span', [], k.kind === 'between' && k.km ? `${k.km.toFixed(1)} km` : ''))
+  panel.append(head)
+  const VW = 640
+  const LEFT = 40
+  const RIGHT = 12
+  const TOP = 12
+  const H = 150
+  if (k.kind === 'between' && k.km) {
+    const vTop = Math.max(40, Math.ceil((k.prof.peakKmh / k.dilation * 1.15) / 20) * 20)
+    const xOf = f => LEFT + f * (VW - LEFT - RIGHT)
+    const yOf = v => TOP + (1 - Math.min(v, vTop) / vTop) * H
+    const svg = svgEl('svg', { viewBox: `0 0 ${VW} ${TOP + H + 22}`, class: 'timeline-svg', role: 'img' })
+    svg.append(svgEl('title', {}, 'Expected speed profile between the two stations, and where the train is'))
+    for (let v = 0; v <= vTop; v += vTop / 4) {
+      svg.append(svgEl('line', { x1: LEFT, x2: VW - RIGHT, y1: yOf(v), y2: yOf(v), class: 'tl-grid' }))
+      svg.append(svgEl('text', { x: LEFT - 6, y: yOf(v) + 4, class: 'tl-label', 'text-anchor': 'end' }, String(Math.round(v))))
+    }
+    const N = 80
+    const pts = Array.from({ length: N + 1 }, (_, i) => [xOf(i / N), yOf(k.speedAt(i / N))])
+    const line = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+    // what is behind the train: filled; the +-sigma band around its position
+    const behind = pts.filter((_, i) => i / N <= cur.p)
+    behind.push([xOf(cur.p), yOf(k.now)])
+    svg.append(svgEl('polygon', { points: `${xOf(0)},${yOf(0)} ${behind.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')} ${xOf(cur.p)},${yOf(0)}`, class: 'tk-plot-band' }))
+    svg.append(svgEl('polyline', { points: line, class: 'tk-plot-est' }))
+    const sg = cur.kal && Number.isFinite(cur.kal.sigma) ? cur.kal.sigma : 0
+    svg.append(svgEl('rect', { x: xOf(Math.max(0, cur.p - 2 * sg)), y: TOP, width: Math.max(1, xOf(Math.min(1, cur.p + 2 * sg)) - xOf(Math.max(0, cur.p - 2 * sg))), height: H, class: 'tk-kin-sigma' }))
+    svg.append(svgEl('line', { x1: xOf(cur.p), x2: xOf(cur.p), y1: TOP, y2: TOP + H, class: 'tl-now' }))
+    svg.append(svgEl('circle', { cx: xOf(cur.p), cy: yOf(k.now), r: 5, class: 'tk-kin-dot' }))
+    svg.append(svgEl('line', { x1: LEFT, x2: VW - RIGHT, y1: yOf(k.mean), y2: yOf(k.mean), class: 'tk-plot-pred' }))
+    svg.append(svgEl('text', { x: VW - RIGHT, y: yOf(k.mean) - 4, class: 'tl-label', 'text-anchor': 'end' }, `mean ${Math.round(k.mean)} km/h`))
+    ;[0, 0.25, 0.5, 0.75, 1].forEach(f => svg.append(svgEl('text', { x: xOf(f), y: TOP + H + 16, class: 'tl-label', 'text-anchor': f === 0 ? 'start' : f === 1 ? 'end' : 'middle' }, `${(k.km * f).toFixed(1)} km`)))
+    panel.append(svg)
+    panel.append(el('p', ['nerd-dim', 'tk-kin-note'], [
+      `${cur.here.stazione.toLowerCase()} → ${cur.next.stazione.toLowerCase()}`,
+      `${k.prof.cruises ? `cruising at ${Math.round(k.peak)} km/h after ${Math.round(k.prof.tAcc)} s` : `too short to cruise: peaks at ${Math.round(k.peak)} km/h`}`,
+      `now ~${Math.round(k.now)} km/h (${Math.round(k.lo)}–${Math.round(k.hi)}) · ${k.remainingKm.toFixed(1)} km to go`,
+      `trip ${k.tripMin.toFixed(1)} min: timetable ${k.schedMin.toFixed(1)}, kinematic ${k.kinMin.toFixed(1)}`
+    ].join(' · ')))
+  } else if (k.kind === 'station') {
+    const maxMin = Math.max(k.exp.hi * 1.6, k.sched * 1.6, (k.elapsed || 0) / 60 * 1.15, 3)
+    const xOf = m => LEFT + (Math.min(m, maxMin) / maxMin) * (VW - LEFT - RIGHT)
+    const Hs = 56
+    const svg = svgEl('svg', { viewBox: `0 0 ${VW} ${Hs + 34}`, class: 'timeline-svg', role: 'img' })
+    svg.append(svgEl('title', {}, 'Time spent in the station against the expected stop'))
+    const bar = 22
+    svg.append(svgEl('rect', { x: LEFT, y: TOP, width: VW - LEFT - RIGHT, height: bar, class: 'tk-dwell-track' }))
+    svg.append(svgEl('rect', { x: xOf(k.exp.lo), y: TOP, width: xOf(k.exp.hi) - xOf(k.exp.lo), height: bar, class: 'tk-dwell-range' }))
+    if (k.elapsed !== null) svg.append(svgEl('rect', { x: LEFT, y: TOP + 6, width: Math.max(2, xOf(k.elapsed / 60) - LEFT), height: bar - 12, class: 'tk-dwell-elapsed' }))
+    svg.append(svgEl('line', { x1: xOf(k.exp.mid), x2: xOf(k.exp.mid), y1: TOP - 4, y2: TOP + bar + 4, class: 'tl-now' }))
+    svg.append(svgEl('line', { x1: xOf(k.sched), x2: xOf(k.sched), y1: TOP + bar - 2, y2: TOP + bar + 8, class: 'tk-plot-pred' }))
+    svg.append(svgEl('text', { x: xOf(k.sched), y: TOP + bar + 20, class: 'tl-label', 'text-anchor': 'middle' }, 'timetable'))
+    svg.append(svgEl('text', { x: xOf(k.exp.mid), y: TOP + bar + 20, class: 'tl-label', 'text-anchor': 'middle', dy: k.sched && Math.abs(xOf(k.sched) - xOf(k.exp.mid)) < 60 ? 12 : 0 }, 'expected'))
+    ;[0, maxMin].forEach(m => svg.append(svgEl('text', { x: xOf(m), y: TOP + bar + 20, class: 'tl-label', 'text-anchor': m === 0 ? 'start' : 'end' }, `${m.toFixed(0)} min`)))
+    panel.append(svg)
+    const left = k.leaveMs ? (k.leaveMs - now) / 1000 : null
+    const text = [
+      k.atOrigin ? 'at its origin: departs on the timetable plus the announced delay' : `in station ${Math.floor(k.elapsed / 60)} min ${String(Math.floor(k.elapsed % 60)).padStart(2, '0')} s`,
+      `stop expected ${k.exp.mid.toFixed(1)} min (typically ${k.exp.lo.toFixed(1)}–${k.exp.hi.toFixed(1)}) for ${k.sched.toFixed(1)} scheduled`,
+      left === null ? '' : left > 0 ? `leaves in ~${clockLeft(k.leaveMs, now)}` : 'should be leaving now',
+      k.nextProfile ? `next: ${k.nextKm.toFixed(1)} km, ${k.nextProfile.cruises ? `cruise ${Math.round(k.nextProfile.peakKmh)} km/h` : `peak ${Math.round(k.nextProfile.peakKmh)} km/h`} (~${k.nextProfile.minutes.toFixed(1)} min)` : ''
+    ].filter(Boolean).join(' · ')
+    panel.append(el('p', ['nerd-dim', 'tk-kin-note'], text))
+  } else {
+    panel.append(el('p', ['nerd-dim'], 'nothing to estimate: the train is not running'))
+  }
+
+  // the segments ahead: what the distance says, against the timetable and the model
+  const hereIdx = cur.here ? stops.indexOf(cur.here) : -1
+  if (hereIdx >= 0 && cur.kind !== 'arrived') {
+    const pred = predOf(d, now)
+    const rows = []
+    for (let i = (cur.kind === 'between' ? hereIdx + 1 : hereIdx); i < stops.length - 1 && rows.length < 5; i++) {
+      const km = segmentKm(stops, i)
+      if (!km) continue
+      const prof = motionProfile(km, cls)
+      const sched = ((stops[i + 1].arrivo_teorico || stops[i + 1].programmata) - (stops[i].partenza_teorica || stops[i].programmata)) / 60000
+      const a = pred.get(i)
+      const b = pred.get(i + 1)
+      const model = a && b ? (b.arrMs - a.depMs) / 60000 : null
+      const sched_dwell = ((stops[i].partenza_teorica || stops[i].programmata) - (stops[i].arrivo_teorico || stops[i].programmata)) / 60000
+      rows.push({ name: `${stops[i].stazione} → ${stops[i + 1].stazione}`, km, prof, sched, model, dwell: dwellExpected(sched_dwell, cls).mid })
+    }
+    if (rows.length) {
+      const table = el('div', ['tk-kin-table'])
+      table.append(...[['segment', 'next segments'], ['km', 'distance'], ['peak', 'cruising speed reached, km/h'], ['kin', 'kinematic trip time, min'], ['sched', 'timetable trip time, min'], ['model', 'predicted trip time, min'], ['stop', 'expected stop, min']].map(([h, tip]) => { const c = el('span', ['tk-kin-h'], h); c.title = tip; return c }))
+      rows.forEach(r => table.append(
+        el('span', ['tk-kin-name'], r.name.toLowerCase()), el('span', [], r.km.toFixed(1)),
+        el('span', [], `${Math.round(r.prof.peakKmh)}`), el('span', [], `${r.prof.minutes.toFixed(1)}′`),
+        el('span', [], `${r.sched.toFixed(1)}′`), el('span', [], r.model === null ? '–' : `${r.model.toFixed(1)}′`), el('span', [], `${r.dwell.toFixed(1)}′`)
+      ))
+      panel.append(table)
+    }
+  }
+  return panel
+}
+
+// Live dashboard at the top of the nerd view: refreshed every second from the model, without redrawing the page.
+function dashboardTiles(d, now) {
+  const cur = trackingModel(d, now)
+  const k = kinematics(d, cur, now)
+  const tiles = []
+  if (cur.kind === 'between' && k.km) {
+    const t = k.prof.timeAt(cur.p)
+    const phase = t < k.prof.tAcc ? 'accelerating' : t <= k.prof.tAcc + k.prof.tCruise ? 'cruising' : 'braking'
+    tiles.push(
+      { name: 'speed now', value: `${Math.round(k.now)}`, unit: 'km/h', sub: `${Math.round(k.lo)}–${Math.round(k.hi)} · peak ${Math.round(k.peak)}`, bar: k.now / Math.max(1, k.peak) },
+      { name: 'phase', value: phase, sub: `${k.prof.cruises ? `cruise after ${Math.round(k.prof.tAcc)} s` : 'short hop, no cruise'}` },
+      { name: 'progress', value: `${(k.km * cur.p).toFixed(1)}`, unit: `/ ${k.km.toFixed(1)} km`, sub: `${Math.round(cur.p * 100)} % · ${k.remainingKm.toFixed(1)} km to go`, bar: cur.p },
+      { name: `next · ${cur.next.stazione.toLowerCase()}`, value: clockLeft(cur.eta, now), sub: `${formatEpochHHMM(cur.eta)} · ±${cur.kal && cur.kal.sigmaMin !== null ? cur.kal.sigmaMin.toFixed(1) : '?'} min` }
+    )
+  } else if (k.kind === 'station') {
+    const left = k.leaveMs ? (k.leaveMs - now) / 1000 : null
+    tiles.push(
+      { name: 'in station', value: k.elapsed === null ? '–' : `${Math.floor(k.elapsed / 60)}:${String(Math.floor(k.elapsed % 60)).padStart(2, '0')}`, sub: `expected ${k.exp.mid.toFixed(1)} min · timetable ${k.sched.toFixed(1)}`, bar: k.elapsed === null ? 0 : k.elapsed / 60 / Math.max(0.5, k.exp.mid) },
+      { name: 'leaves', value: left === null ? '–' : left > 0 ? clockLeft(k.leaveMs, now) : 'now', sub: k.leaveMs ? formatEpochHHMM(k.leaveMs) : '' },
+      { name: 'next segment', value: k.nextKm ? k.nextKm.toFixed(1) : '–', unit: 'km', sub: k.nextProfile ? `~${k.nextProfile.minutes.toFixed(1)} min · peak ${Math.round(k.nextProfile.peakKmh)} km/h` : 'needs the station coordinates' }
+    )
+  } else {
+    tiles.push({ name: 'status', value: cur.kind, sub: '' })
+  }
+  tiles.push({ name: 'delay', value: `${(d.ritardo || 0) > 0 ? '+' : ''}${d.ritardo || 0}`, unit: 'min', sub: `model ${modelOn() ? 'on' : 'off (raw)'}` })
+  return tiles
+}
+
+let dashboardEls = null
+function nerdDashboard(d) {
+  const box = el('div', ['kin-dash'])
+  dashboardEls = { box, tiles: [] }
+  updateDashboard(d)
+  return box
+}
+
+function updateDashboard(d) {
+  if (!dashboardEls || !dashboardEls.box.isConnected) return
+  const tiles = dashboardTiles(d, Date.now())
+  const { box } = dashboardEls
+  if (box.children.length !== tiles.length) {
+    box.replaceChildren(...tiles.map(() => {
+      const t = el('div', ['kin-tile'])
+      t.append(el('div', ['stat-name']), el('div', ['kin-value']), el('div', ['kin-bar']), el('div', ['stat-sub']))
+      return t
+    }))
+  }
+  tiles.forEach((t, i) => {
+    const node = box.children[i]
+    node.children[0].textContent = t.name
+    node.children[1].replaceChildren(document.createTextNode(t.value), ...(t.unit ? [el('small', [], ` ${t.unit}`)] : []))
+    node.children[2].hidden = t.bar === undefined
+    node.children[2].style.setProperty('--fill', `${Math.round(Math.min(1, Math.max(0, t.bar || 0)) * 100)}%`)
+    node.children[3].textContent = t.sub
+  })
+}
+
+function kinTile(d, cur, now) {
+  const k = kinematics(d, cur, now)
+  if (k.kind === 'between' && k.km) return statTile('speed now', `~${Math.round(k.now)}`, `km/h · mean ${Math.round(k.mean)} · peak ${Math.round(k.peak)}`)
+  if (k.kind === 'station') {
+    const left = k.leaveMs ? Math.round((k.leaveMs - now) / 1000) : null
+    return statTile('in station', k.elapsed === null ? '–' : `${Math.floor(k.elapsed / 60)}:${String(Math.floor(k.elapsed % 60)).padStart(2, '0')}`, left === null ? '' : left > 0 ? `leaves in ~${Math.max(1, Math.round(left / 6) / 10)} min · expected ${k.exp.mid.toFixed(1)}` : `expected ${k.exp.mid.toFixed(1)} min · leaving now`)
+  }
+  return statTile('speed', '–', cur.kind === 'between' ? 'needs the station coordinates' : '')
+}
+
 function renderTrackNerd(d) {
   const now = Date.now()
   const wrap = el('div', ['nerd-wrap'])
@@ -2008,12 +2218,10 @@ function renderTrackNerd(d) {
   const grid = el('div', ['stat-grid'])
   grid.append(
     statTile('refreshes', String(trackHist.fetches.length), `${trackHist.ticks.length} position samples`),
-    statTile('speed', cur.kind === 'between' && cur.speedKmh ? `~${Math.round(cur.speedKmh)}` : '–', cur.kind === 'between' && cur.km ? `km/h · ${cur.km.toFixed(1)} km segment` : 'needs the station coordinates'),
     statTile('uncertainty', unc ? `±${unc}m` : '–', unc ? `1σ on the next arrival · ${cur.kal.sigmaKm.toFixed(2)} km` : 'in a station'),
-    statTile('delay', `${(d.ritardo || 0) > 0 ? '+' : ''}${d.ritardo || 0}m`, `${Math.max(0, Math.round((now - (d.oraUltimoRilevamento || now)) / 60000))} min since last detection`, (d.ritardo || 0) >= LATE_THRESHOLD ? 'is-late' : ''),
     statTile('last detection', rel ? rel.text : '–', d.oraUltimoRilevamento ? `${Math.max(0, Math.round((now - d.oraUltimoRilevamento) / 60000))} min ago` : '')
   )
-  wrap.append(grid, nerdTrackChart(d), nerdTrackDelay())
+  wrap.append(nerdDashboard(d), grid, nerdTrackKin(d, cur, now), nerdTrackChart(d), nerdTrackDelay())
   $('trainInfo').replaceChildren(wrap)
 }
 
@@ -2069,8 +2277,10 @@ function kalmanRun(d, here, next, t0, now, stepMs = 0) {
   const L = realKm || schedMin // without coordinates: 1 pseudo-km per minute
   // state: position x (km) and speed v (km/min); the timetable gives the prior speed
   let x = 0
-  // expected travel time: the timetable, corrected by what trains typically gain on the way when they are late
-  const priorMin = Math.max(0.5 * schedMin, schedMin + delayDrift(here.ritardoPartenza ?? (d.ritardo || 0), schedMin))
+  // expected travel time (see js/modules/model.js): corrected timetable and kinematic trip
+  const cls = trainClass(d)
+  const etaNow = predictArrival(t0, schedDep, schedArr, realKm, cls)
+  const priorMin = Math.max(0.5 * schedMin, (etaNow - t0) / KALMAN_MINUTE)
   let v = L / priorMin
   let P = [[0.05 ** 2, 0], [0, (0.3 * v) ** 2]]
   const predict = dtMs => {
@@ -2090,7 +2300,6 @@ function kalmanRun(d, here, next, t0, now, stepMs = 0) {
     v = Math.max(0, v + k1 * y)
     P = [[(1 - k0) * P[0][0], (1 - k0) * P[0][1]], [P[1][0] - k1 * P[0][0], P[1][1] - k1 * P[0][1]]]
   }
-  const etaNow = schedArr + adjustedDelay(d.ritardo || 0, schedMin) * KALMAN_MINUTE
   const vAvg = L / Math.max(1, (etaNow - t0) / KALMAN_MINUTE) // km/min implied by the announced arrival
   // measurements, each at the instant it applies to
   const events = [{ t: t0, z: 0, R: KALMAN.departureKm ** 2 }]
@@ -2210,7 +2419,7 @@ function trackingModel(d, now) {
   if (d.arrivato || lastPassed >= stops.length - 1) return { kind: 'arrived', last: stops[stops.length - 1] }
   const here = stops[Math.max(lastPassed, 0)]
   const next = stops[Math.max(lastPassed, 0) + 1]
-  const pred = predictStopTimes(stops, delay, lastPassed, lastPassed >= 0 && !here.partenzaReale)
+  const pred = predOf(d, now)
   const nextIdx = Math.max(lastPassed, 0) + 1
   const eta = (pred.get(nextIdx) || {}).arrMs || sched(next, 'arr') + extra
   if (lastPassed < 0 || d.nonPartito) {
@@ -2629,6 +2838,7 @@ function initTrainPage() {
   loadStations()
   loadTrackHist()
   setInterval(recordTick, TRACK_TICK_MS)
+  setInterval(() => { if (nerdTrack && trainDetail) updateDashboard(trainDetail) }, 1000)
   const trackBtn = $('trackToggle')
   trackBtn.hidden = false
   const applyTrackToggle = () => {
@@ -2689,6 +2899,7 @@ function initTimesSwitch() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  loadStations() // distances feed the prediction model on every page
   initTimesSwitch()
   renderRequestStrip()
   if ((getParam('view') || '').toLowerCase() === 'train') {
