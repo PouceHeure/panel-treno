@@ -55,7 +55,7 @@ function resultLink(href, name, extra, iconName) {
   const nameEl = document.createElement('strong')
   const icon = document.createElement('i')
   icon.className = `bi ${iconName}`
-  nameEl.append(icon, ` ${name}`)
+  nameEl.append(icon, ` ${niceName(name)}`)
   const extraEl = document.createElement('small')
   extraEl.textContent = extra
   link.append(nameEl, extraEl)
@@ -77,7 +77,7 @@ function stationRow(id, name, extra = '', iconName = 'bi-geo-alt') {
     star.title = star.getAttribute('aria-label')
     star.replaceChildren(Object.assign(document.createElement('i'), { className: `bi ${on ? 'bi-star-fill' : 'bi-star'}` }))
   }
-  star.addEventListener('click', () => { toggleFavorite(id, name); paint(); renderFavorites() })
+  star.addEventListener('click', () => { toggleFavorite(id, name); paint(); renderFavorites(); renderMajor() })
   paint()
   row.append(resultLink(recentHref(stationRecent(id, name)), name, extra, iconName), star)
   return row
@@ -166,7 +166,8 @@ function renderMajor() {
   head.append(title)
   const grid = document.createElement('div')
   grid.className = 'major-grid'
-  grid.append(...MAJOR_STATIONS.map(([name, id]) => stationRow(id, name, '', 'bi-building')))
+  grid.append(...MAJOR_STATIONS.filter(([, id]) => !isFavorite(id)).map(([name, id]) => stationRow(id, name, '', 'bi-building')))
+  head.hidden = !grid.children.length
   $('major').replaceChildren(head, grid)
 }
 
@@ -203,7 +204,7 @@ function summarizeTrain(d, now) {
   const next = pred.get(nextIndex)
   return {
     ...base,
-    state: lastPassed < 0 ? 'Not departed yet' : inStation ? `In ${here.stazione.toLowerCase()}` : 'Running',
+    state: lastPassed < 0 ? 'Not departed yet' : inStation ? `In ${niceName(here.stazione)}` : 'Running',
     arrivalMs: final ? final.arrMs : null,
     nextName: stops[nextIndex].stazione,
     nextMs: next ? next.arrMs : null
@@ -245,7 +246,7 @@ async function renderFollowing() {
       const top = document.createElement('div')
       top.className = 'follow-top'
       const name = document.createElement('strong')
-      name.textContent = `${sum.label} → ${sum.destination.toLowerCase()}`
+      name.textContent = `${sum.label} → ${niceName(sum.destination)}`
       const chip = document.createElement('span')
       chip.className = `follow-chip ${sum.delay >= 5 ? 'is-late' : sum.delay > 0 ? 'is-slight' : 'is-ok'}`
       chip.textContent = sum.delay > 0 ? `+${sum.delay} min` : sum.state === 'Cancelled' ? 'Cancelled' : 'On time'
@@ -255,10 +256,10 @@ async function renderFollowing() {
       big.textContent = sum.arrivalMs ? `Arrives ${clockOf(sum.arrivalMs)}` : sum.state
       const sub = document.createElement('div')
       sub.className = 'follow-sub'
-      sub.textContent = [sum.arrivalMs ? sum.state : '', sum.nextMs ? `next: ${sum.nextName.toLowerCase()} in ${minutesUntil(sum.nextMs)} min` : '', `updated ${clockOf(Date.now())}`].filter(Boolean).join(' · ')
+      sub.textContent = [sum.arrivalMs ? sum.state : '', sum.nextMs ? `next: ${niceName(sum.nextName)} in ${minutesUntil(sum.nextMs)} min` : '', `updated ${clockOf(Date.now())}`].filter(Boolean).join(' · ')
       const links = document.createElement('div')
       links.className = 'follow-links'
-      ;[['Details', href], ['Tracking', `${href}&track=1`]].forEach(([text, url]) => {
+      ;[['Now', `${href}&tab=now`], ['Route', `${href}&tab=route`], ['Charts', `${href}&tab=charts`]].forEach(([text, url]) => {
         const a = document.createElement('a')
         a.className = 'route-open'
         a.href = url

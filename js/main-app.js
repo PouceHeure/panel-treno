@@ -457,7 +457,7 @@ function routeStopEl(stop, delay) {
   node.append(
     times,
     el('span', ['route-dot']),
-    el('span', ['route-name'], stop.name),
+    el('span', ['route-name'], niceName(stop.name)),
     el('span', ['route-plt'], stop.platform ? `${label('platform').toLowerCase()} ${stop.platform}` : '')
   )
   return node
@@ -475,7 +475,7 @@ function routePanel(train) {
   const panel = el('div', ['route-panel'])
   // two ways in: the details page, or straight to the live Tracking view
   const actions = el('div', ['route-actions'])
-  ;[['Details', 'bi-list-ul', trainPageUrl(train)], ['Tracking', 'bi-broadcast', `${trainPageUrl(train)}&track=1`]].forEach(([text, iconName, href]) => {
+  ;[['Now', 'bi-broadcast', `${trainPageUrl(train)}&tab=now`], ['Route', 'bi-list-ul', `${trainPageUrl(train)}&tab=route`], ['Charts', 'bi-graph-up', `${trainPageUrl(train)}&tab=charts`]].forEach(([text, iconName, href]) => {
     const link = el('a', ['route-open'])
     link.href = href
     link.append(icon(iconName), text)
@@ -491,7 +491,7 @@ function routePanel(train) {
   }
   pin.addEventListener('click', e => {
     e.stopPropagation()
-    togglePinned(pinnedEntry(train.numeroTreno, train.codOrigine, train.dataPartenzaTreno, `${(train.categoria || '').trim()} ${train.numeroTreno} → ${String(train.destinazione || '').toLowerCase()}`.trim()))
+    togglePinned(pinnedEntry(train.numeroTreno, train.codOrigine, train.dataPartenzaTreno, `${(train.categoria || '').trim()} ${train.numeroTreno} → ${niceName(train.destinazione)}`.trim()))
     paintPin()
   })
   paintPin()
@@ -619,7 +619,7 @@ function boardRow(train, now) {
   }
 
   const dest = el('span', ['flap-dest'])
-  dest.append(el('span', ['flap-dest-name'], train.destinazione || '—'))
+  dest.append(el('span', ['flap-dest-name'], niceName(train.destinazione) || '—'))
   const meta = el('span', ['flap-meta'], trainLabel(train))
   if (cancelled) {
     meta.append(' · ', el('span', ['is-late', 'cancel-flag'], label('cancelled')))
@@ -682,7 +682,7 @@ function directionChips(trainData) {
     b.addEventListener('click', () => { destFilter = key; syncStateToURL(); rerender() })
     return b
   }
-  wrap.append(chip('', 'All directions'), ...[...seen.entries()].slice(0, 8).map(([key, name]) => chip(key, `to ${name.toLowerCase()}`)))
+  wrap.append(chip('', 'All directions'), ...[...seen.entries()].slice(0, 8).map(([key, name]) => chip(key, `to ${niceName(name)}`)))
   if (destFilter && !seen.has(destFilter)) wrap.append(chip(destFilter, `to ${destFilter}`))
   return wrap
 }
@@ -1193,7 +1193,7 @@ function initTrainPin() {
   }
   btn.addEventListener('click', () => {
     const d = trainDetail
-    const name = d ? `${(d.categoria || '').trim()} ${d.numeroTreno} → ${String(d.destinazione || '').toLowerCase()}`.trim() : `Train ${number}`
+    const name = d ? `${(d.categoria || '').trim()} ${d.numeroTreno} → ${niceName(d.destinazione)}`.trim() : `Train ${number}`
     togglePinned(pinnedEntry(number, from, date, name))
     paint()
   })
@@ -1202,8 +1202,8 @@ function initTrainPin() {
 
 function updateHeader() {
   updateClock()
-  $('stationTitle').textContent = stationName || label('connecting')
-  document.title = stationName ? `${stationName} · Panel Treno` : 'Panel Treno'
+  $('stationTitle').textContent = niceName(stationName) || label('connecting')
+  document.title = stationName ? `${niceName(stationName)} · Panel Treno` : 'Panel Treno'
   syncHeaderSpacerHeight()
 }
 
@@ -1507,7 +1507,7 @@ function trainStopEl(f, index, stops, detail, lastPassedIndex, pred) {
   const depCell = isLast ? el('span', ['tv-cell']) : tvTimeCell(depSched, f.partenzaReale, guess ? guess.depDelay : delayNow, passed)
 
   const info = el('div', ['tv-info'])
-  const stationLink = el('a', ['tv-name'], f.stazione)
+  const stationLink = el('a', ['tv-name'], niceName(f.stazione))
   if (f.id) {
     stationLink.href = `index.html?${new URLSearchParams({ stationID: f.id, stationName: f.stazione })}`
     stationLink.title = `Departures at ${f.stazione}`
@@ -1598,7 +1598,7 @@ function betweenEl(position, next, delay, now) {
   train.append(icon('bi-train-front-fill'))
   train.style.top = `calc((100% - 24px) * ${position.progress === null ? 0.5 : position.progress})`
   const text = el('div', ['tv-between-text'])
-  text.append(el('strong', [], 'Between stations'), el('span', [], `left ${Math.max(0, Math.round((now - position.since) / 60000))} min ago · ${untilLabel(eta, now) === 'now' ? 'arriving' : `reaches ${next.stazione.toLowerCase()} ${untilLabel(eta, now)}`}`))
+  text.append(el('strong', [], 'Between stations'), el('span', [], `left ${Math.max(0, Math.round((now - position.since) / 60000))} min ago · ${untilLabel(eta, now) === 'now' ? 'arriving' : `reaches ${niceName(next.stazione)} ${untilLabel(eta, now)}`}`))
   row.append(train, text)
   return row
 }
@@ -1631,7 +1631,7 @@ function positionEl(position, now, lastSeenMs, here, next, delay) {
   // how long until the next stop (or until the train leaves, when it is in a station)
   const when = position.kind === 'station'
     ? { name: 'departs', ms: predOf(trainDetail).leaveMs || (here.partenza_teorica || here.programmata) + Math.max(delay, 0) * 60000 }
-    : { name: `reaches ${next.stazione.toLowerCase()}`, ms: (predOf(trainDetail).get(trainDetail.fermate.indexOf(next)) || {}).arrMs || (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000 }
+    : { name: `reaches ${niceName(next.stazione)}`, ms: (predOf(trainDetail).get(trainDetail.fermate.indexOf(next)) || {}).arrMs || (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000 }
   const left = untilLabel(when.ms, now)
   const eta = el('p', ['tv-position-eta'])
   eta.append(icon('bi-stopwatch'), el('strong', [], ` ${left === 'now' ? 'due now' : left}`), ` · ${when.name} ~${formatEpochHHMM(when.ms)}`)
@@ -2008,7 +2008,7 @@ function nerdTrackChart(d) {
       const x = xOf(r.t)
       const y = yRaw(r.s)
       const mark = svgEl('path', { d: `M${x},${y - 5} L${x + 5},${y} L${x},${y + 5} L${x - 5},${y} Z`, class: 'tk-plot-det' })
-      mark.append(svgEl('title', {}, `${r.f.stazione.toLowerCase()}: passed ${formatEpochHHMM(r.t)} without stopping`))
+      mark.append(svgEl('title', {}, `${niceName(r.f.stazione)}: passed ${formatEpochHHMM(r.t)} without stopping`))
       plot.append(mark)
       return
     }
@@ -2027,8 +2027,8 @@ function nerdTrackChart(d) {
   const describe = v => {
     const i = Math.min(stops.length - 1, Math.floor(v))
     const frac = v - i
-    if (frac < 0.03 || i >= stops.length - 1) return `at ${stops[i].stazione.toLowerCase()}`
-    return `between ${stops[i].stazione.toLowerCase()} and ${stops[i + 1].stazione.toLowerCase()} · ${Math.round(frac * 100)}%`
+    if (frac < 0.03 || i >= stops.length - 1) return `at ${niceName(stops[i].stazione)}`
+    return `between ${niceName(stops[i].stazione)} and ${niceName(stops[i + 1].stazione)} · ${Math.round(frac * 100)}%`
   }
   const showAt = clientX => {
     const rect = svg.getBoundingClientRect()
@@ -2313,8 +2313,8 @@ function nerdTrackKin(d, cur, now) {
         svg.append(svgEl('text', { x, y: yLine + 52, class: 'tl-label', 'text-anchor': 'middle' }, name.slice(0, 26)))
       }
     }
-    endLabel(0, cur.here.stazione.toLowerCase(), false)
-    endLabel(k.km, cur.next.stazione.toLowerCase(), true)
+    endLabel(0, niceName(cur.here.stazione), false)
+    endLabel(k.km, niceName(cur.next.stazione), true)
     // +-2 sigma around the estimate
     const sg = cur.kal && Number.isFinite(cur.kal.sigma) ? cur.kal.sigma : 0
     svg.append(svgEl('rect', { x: clampX(xOfKm(posKm - 2 * sg * k.km)), y: yLine - 9, width: Math.max(2, clampX(xOfKm(posKm + 2 * sg * k.km)) - clampX(xOfKm(posKm - 2 * sg * k.km))), height: 18, rx: 4, class: 'tk-kin-sigma' }))
@@ -2346,25 +2346,25 @@ function nerdTrackKin(d, cur, now) {
       const np = pred.get(nextIdx)
       const sched = Math.max(0, ((cur.next.partenza_teorica || cur.next.programmata) - (cur.next.arrivo_teorico || cur.next.programmata)) / 60000)
       const exp = dwellExpected(sched, cls)
-      const blocks = [{ name: cur.here.stazione.toLowerCase(), kind: 'past', arr: cur.here.arrivoReale || cur.since, dep: cur.since }]
-      blocks.push({ name: cur.next.stazione.toLowerCase(), kind: 'next', arr: cur.eta, dep: np ? np.depMs : cur.eta + exp.mid * 60000, lo: cur.eta + exp.lo * 60000, hi: cur.eta + exp.hi * 60000, sched: cur.next.partenza_teorica || cur.next.programmata })
+      const blocks = [{ name: niceName(cur.here.stazione), kind: 'past', arr: cur.here.arrivoReale || cur.since, dep: cur.since }]
+      blocks.push({ name: niceName(cur.next.stazione), kind: 'next', arr: cur.eta, dep: np ? np.depMs : cur.eta + exp.mid * 60000, lo: cur.eta + exp.lo * 60000, hi: cur.eta + exp.hi * 60000, sched: cur.next.partenza_teorica || cur.next.programmata })
       const sub = el('div', ['nerd-panel-head', 'tk-kin-sub'])
       sub.append(el('span', [], 'time in station'))
       panel.append(sub)
-      drawDwell({ sched, exp, elapsed: null, leaveMs: np ? np.depMs : null, upcoming: true, name: cur.next.stazione.toLowerCase(), nextKm: null, nextProfile: null, blocks })
+      drawDwell({ sched, exp, elapsed: null, leaveMs: np ? np.depMs : null, upcoming: true, name: niceName(cur.next.stazione), nextKm: null, nextProfile: null, blocks })
     }
   } else if (k.kind === 'station') {
     const hereIdx = stops.indexOf(cur.here)
     const pred = predOf(d, now)
     const arr = cur.here.arrivoReale || (cur.target - k.exp.mid * 60000)
-    const blocks = [{ name: cur.here.stazione.toLowerCase(), kind: 'here', arr, dep: cur.target, lo: arr + k.exp.lo * 60000, hi: arr + k.exp.hi * 60000, sched: cur.here.partenza_teorica || cur.here.programmata }]
+    const blocks = [{ name: niceName(cur.here.stazione), kind: 'here', arr, dep: cur.target, lo: arr + k.exp.lo * 60000, hi: arr + k.exp.hi * 60000, sched: cur.here.partenza_teorica || cur.here.programmata }]
     const np = pred.get(hereIdx + 1)
     const nextStop = stops[hereIdx + 1]
     if (np && nextStop && hereIdx + 1 < stops.length - 1) {
       const sched = Math.max(0, ((nextStop.partenza_teorica || nextStop.programmata) - (nextStop.arrivo_teorico || nextStop.programmata)) / 60000)
       const exp = dwellExpected(sched, cls)
-      blocks.push({ name: nextStop.stazione.toLowerCase(), kind: 'next', arr: np.arrMs, dep: np.depMs, lo: np.arrMs + exp.lo * 60000, hi: np.arrMs + exp.hi * 60000, sched: nextStop.partenza_teorica || nextStop.programmata })
-    } else if (np && nextStop) blocks.push({ name: nextStop.stazione.toLowerCase(), kind: 'next', arr: np.arrMs, dep: np.arrMs })
+      blocks.push({ name: niceName(nextStop.stazione), kind: 'next', arr: np.arrMs, dep: np.depMs, lo: np.arrMs + exp.lo * 60000, hi: np.arrMs + exp.hi * 60000, sched: nextStop.partenza_teorica || nextStop.programmata })
+    } else if (np && nextStop) blocks.push({ name: niceName(nextStop.stazione), kind: 'next', arr: np.arrMs, dep: np.arrMs })
     drawDwell(Object.assign({ blocks }, k))
   } else {
     panel.append(el('p', ['nerd-dim'], 'nothing to estimate: the train is not running'))
@@ -2382,7 +2382,7 @@ function dashboardTiles(d, now) {
     tiles.push(
       { name: 'speed now', value: `${Math.round(k.now)}`, unit: 'km/h', sub: `${Math.round(k.lo)}–${Math.round(k.hi)} · peak ${Math.round(k.peak)}`, bar: k.now / Math.max(1, k.peak) },
       { name: 'progress', value: `${(k.km * cur.p).toFixed(1)}`, unit: `/ ${k.km.toFixed(1)} km`, sub: `${Math.round(cur.p * 100)} % · ${k.remainingKm.toFixed(1)} km to go`, bar: cur.p },
-      { name: `next · ${cur.next.stazione.toLowerCase()}`, value: clockLeft(cur.eta, now), sub: `${formatEpochHHMM(cur.eta)} · ±${cur.kal && cur.kal.sigmaMin !== null ? cur.kal.sigmaMin.toFixed(1) : '?'} min` }
+      { name: `next · ${niceName(cur.next.stazione)}`, value: clockLeft(cur.eta, now), sub: `${formatEpochHHMM(cur.eta)} · ±${cur.kal && cur.kal.sigmaMin !== null ? cur.kal.sigmaMin.toFixed(1) : '?'} min` }
     )
   } else if (k.kind === 'station') {
     const left = k.leaveMs ? (k.leaveMs - now) / 1000 : null
@@ -2461,7 +2461,7 @@ function nerdTrackBars(d, cur, now) {
   const mod = withTimesMode('model', () => predOf(d, now))
   const rowsAll = all.map(i => {
     const sched = stops[i].arrivo_teorico || stops[i].programmata
-    return { name: stops[i].stazione.toLowerCase(), sched, raw: (raw.get(i) || {}).arrMs, model: (mod.get(i) || {}).arrMs }
+    return { name: niceName(stops[i].stazione), sched, raw: (raw.get(i) || {}).arrMs, model: (mod.get(i) || {}).arrMs }
   })
   // "now" is at the same place as in the other charts: the future gets the right 30 % of the plot
   const MAX_AHEAD = 40 * 60000
@@ -2550,23 +2550,33 @@ function renderTrackNerd(d) {
 }
 
 // Live | Nerd, at the top of the Tracking view.
+// One train, three views: Now (the live position and countdown), Route (every stop), Charts (the data behind it).
+const TRAIN_TABS = [['now', 'Now'], ['route', 'Route'], ['charts', 'Charts']]
+const currentTrainTab = () => (!trackingMode ? 'route' : nerdTrack ? 'charts' : 'now')
+
 function trackModeBar() {
   const bar = el('div', ['tk-modes'])
-  ;[[false, 'Live'], [true, 'Nerd']].forEach(([nerd, text]) => {
-    const b = el('button', ['tk-mode', nerdTrack === nerd ? 'is-active' : ''], text)
+  bar.setAttribute('role', 'tablist')
+  TRAIN_TABS.forEach(([key, text]) => {
+    const b = el('button', ['tk-mode', currentTrainTab() === key ? 'is-active' : ''], text)
     b.type = 'button'
-    b.addEventListener('click', () => setNerdTrack(nerd))
+    b.setAttribute('role', 'tab')
+    b.setAttribute('aria-selected', String(currentTrainTab() === key))
+    b.addEventListener('click', () => setTrainTab(key))
     bar.append(b)
   })
   return bar
 }
 
-async function setNerdTrack(on) {
-  nerdTrack = on
+function setTrainTab(key) {
+  trackingMode = key !== 'route'
+  nerdTrack = key === 'charts'
   const url = new URLSearchParams(window.location.search)
-  if (on) url.set('nerd', '1')
-  else url.delete('nerd')
+  url.set('tab', key)
+  url.delete('track')
+  url.delete('nerd')
   window.history.replaceState(null, '', `${window.location.pathname}?${url}`)
+  if (!trackingMode) document.body.classList.remove('view-nerd')
   if (trainDetail) renderTrainPage(trainDetail)
 }
 
@@ -2739,9 +2749,17 @@ function renderTracking(d) {
   if (d.provvedimento !== 1 && delay !== 0) top.append(chip(delay > 0 ? `+${delay} min` : `${delay} min`, delay > 0 ? 'is-late' : 'is-early'))
   head.append(top)
   const route = el('h2', ['tv-route'])
-  route.append(el('span', [], d.origine || '—'), icon('bi-arrow-right'), el('span', [], d.destinazione || '—'))
+  route.append(el('span', [], niceName(d.origine) || '—'), icon('bi-arrow-right'), el('span', [], niceName(d.destinazione) || '—'))
   head.append(route)
   root.append(head)
+  {
+    // the terminus at a glance: when, how sure, where it comes from
+    const stopsAll = d.fermate || []
+    const lastIdx = stopsAll.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
+    const predAll = predOf(d)
+    const fin = predAll.get(stopsAll.length - 1)
+    root.append(glanceCard(d, Date.now(), predAll, fin ? fin.arrMs : (d.orarioArrivoZero || d.orarioArrivo), lastIdx))
+  }
 
   if (model.kind === 'cancelled' || model.kind === 'arrived') {
     const done = el('section', ['tv-card', 'tk-card'])
@@ -2803,7 +2821,7 @@ function renderTracking(d) {
     const at = (trackPred.get(i) || {}).arrMs || (f.arrivo_teorico || f.programmata) + Math.max(delay, 0) * 60000
     const row = el('div', ['tk-row', passed ? 'is-passed' : '', i === hereIdx + 1 ? 'is-next' : '', i === stops.length - 1 ? 'is-end' : ''])
     const cell = el('span', ['tk-up-count'])
-    row.append(el('span', ['tk-row-dot']), el('span', ['tk-up-name'], f.stazione), el('span', ['tk-up-time'], formatEpochHHMM(passed ? (f.arrivoReale || f.partenzaReale || at) : at)), cell)
+    row.append(el('span', ['tk-row-dot']), el('span', ['tk-up-name'], niceName(f.stazione)), el('span', ['tk-up-time'], formatEpochHHMM(passed ? (f.arrivoReale || f.partenzaReale || at) : at)), cell)
     row.dataset.at = String(at)
     row.dataset.passed = passed ? '1' : ''
     if (trackZoom === 'close' && stops[i + 1]) {
@@ -2867,7 +2885,7 @@ function tickTracking(ts) {
     place(els.ghost, model.ghost)
   }
   els.label.textContent = 'Next stop'
-  els.name.textContent = model.next.stazione
+  els.name.textContent = niceName(model.next.stazione)
   els.eta.textContent = `~${formatEpochHHMM(model.eta)}`
 
   const ago = ms => {
@@ -2936,10 +2954,10 @@ function glanceCard(d, now, pred, finalMs, lastPassed) {
   }
   if (d.arrivato || lastPassed >= stops.length - 1) {
     const last = stops[stops.length - 1] || {}
-    card.append(el('div', ['glance-label'], `Arrived at ${d.destinazione || 'the terminus'}`), el('div', ['glance-big'], last.arrivoReale ? formatEpochHHMM(last.arrivoReale) : 'Arrived'))
+    card.append(el('div', ['glance-label'], `Arrived at ${niceName(d.destinazione) || 'the terminus'}`), el('div', ['glance-big'], last.arrivoReale ? formatEpochHHMM(last.arrivoReale) : 'Arrived'))
     return card
   }
-  card.append(el('div', ['glance-label'], `Arrives at ${d.destinazione || 'the terminus'}`))
+  card.append(el('div', ['glance-label'], `Arrives at ${niceName(d.destinazione) || 'the terminus'}`))
   const row = el('div', ['glance-row'])
   row.append(el('span', ['glance-big'], finalMs ? formatEpochHHMM(finalMs) : '—'))
   // the range: measured on days the model was not fitted on; only the recovery rules have one
@@ -2950,7 +2968,7 @@ function glanceCard(d, now, pred, finalMs, lastPassed) {
   const chips = el('div', ['glance-chips'])
   if (delay !== 0) chips.append(chip(delay > 0 ? `+${delay} min` : `${delay} min`, delay >= LATE_THRESHOLD ? 'is-late' : delay > 0 ? 'is-slight' : 'is-early'))
   else chips.append(chip('on time', 'is-ok'))
-  if (d.oraUltimoRilevamento) chips.append(chip(`seen ${formatEpochHHMM(d.oraUltimoRilevamento)}${d.stazioneUltimoRilevamento ? ` · ${String(d.stazioneUltimoRilevamento).toLowerCase()}` : ''}`, 'is-seen'))
+  if (d.oraUltimoRilevamento) chips.append(chip(`seen ${formatEpochHHMM(d.oraUltimoRilevamento)}${d.stazioneUltimoRilevamento ? ` · ${niceName(d.stazioneUltimoRilevamento)}` : ''}`, 'is-seen'))
   chips.append(chip(`estimate · ${modelOn() ? 'model' : 'raw'}`, 'is-estimate'))
   card.append(chips)
   return card
@@ -2968,6 +2986,7 @@ function renderTrainPage(d) {
   if (trackingMode) return renderTracking(d)
   stopTracking()
   const root = el('div', ['tv-wrap'])
+  root.append(trackModeBar())
   const category = (d.categoria || d.categoriaDescrizione || '').trim()
   const status = trainStatus(d)
   const delay = d.ritardo || 0
@@ -2985,7 +3004,7 @@ function renderTrainPage(d) {
   summary.append(head)
 
   const route = el('h2', ['tv-route'])
-  route.append(el('span', [], d.origine || '—'), icon('bi-arrow-right'), el('span', [], d.destinazione || '—'))
+  route.append(el('span', [], niceName(d.origine) || '—'), icon('bi-arrow-right'), el('span', [], niceName(d.destinazione) || '—'))
   summary.append(route)
 
   // How far along the journey the train is (by stops reached).
@@ -3147,29 +3166,15 @@ function initTrainPage() {
   $('trainShare').hidden = false
   $('trainShare').addEventListener('click', shareTrain)
   initTrainPin()
-  trackingMode = params.get('track') === '1'
-  nerdTrack = params.get('nerd') === '1'
+  // the tab comes from ?tab=now|route|charts; older links used track=1 (now) and nerd=1 (charts); the default is Now
+  const tab = params.get('tab') || (params.get('nerd') === '1' ? 'charts' : params.get('track') === '1' || !params.has('track') ? 'now' : 'route')
+  trackingMode = tab !== 'route'
+  nerdTrack = tab === 'charts'
   loadStations()
   loadTrackHist()
   setInterval(recordTick, TRACK_TICK_MS)
   setInterval(() => { if (nerdTrack && trainDetail) updateDashboard(trainDetail) }, 1000)
-  const trackBtn = $('trackToggle')
-  trackBtn.hidden = false
-  const applyTrackToggle = () => {
-    $('trackToggleLabel').textContent = trackingMode ? 'Details' : 'Tracking'
-    trackBtn.querySelector('i').className = `bi ${trackingMode ? 'bi-list-ul' : 'bi-broadcast'}`
-    const url = new URLSearchParams(window.location.search)
-    if (trackingMode) url.set('track', '1')
-    else url.delete('track')
-    window.history.replaceState(null, '', `${window.location.pathname}?${url}`)
-  }
-  applyTrackToggle()
-  trackBtn.addEventListener('click', () => {
-    trackingMode = !trackingMode
-    applyTrackToggle()
-    if (!trackingMode) document.body.classList.remove('view-nerd')
-    if (trainDetail) renderTrainPage(trainDetail)
-  })
+  $('trackToggle').hidden = true // the tabs at the top of the page replaced this button
   $('trainShareLabel').textContent = label('share')
   retryLoad = loadTrainPage
 
