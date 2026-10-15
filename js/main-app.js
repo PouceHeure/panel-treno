@@ -2298,18 +2298,17 @@ function dashboardTiles(d, now) {
 
 let dashboardEls = null
 let dwellCursors = [] // moves the cursors of the time-in-station gauges
+
+// The dashboard element is created once and moved into each redraw of the page: it never goes blank and its
+// bars do not restart from zero.
 function nerdDashboard(d) {
-  const box = el('div', ['kin-dash'])
-  dashboardEls = { box, tiles: [] }
-  updateDashboard(d)
-  return box
+  if (!dashboardEls) dashboardEls = { box: el('div', ['kin-dash']) }
+  fillDashboard(dashboardEls.box, d)
+  return dashboardEls.box
 }
 
-function updateDashboard(d) {
-  if (!dashboardEls || !dashboardEls.box.isConnected) return
-  dwellCursors.forEach(fn => fn(Date.now()))
+function fillDashboard(box, d) {
   const tiles = dashboardTiles(d, Date.now())
-  const { box } = dashboardEls
   if (box.children.length !== tiles.length) {
     box.replaceChildren(...tiles.map(() => {
       const t = el('div', ['kin-tile'])
@@ -2325,6 +2324,11 @@ function updateDashboard(d) {
     node.children[2].style.setProperty('--fill', `${Math.round(Math.min(1, Math.max(0, t.bar || 0)) * 100)}%`)
     node.children[3].textContent = t.sub
   })
+}
+
+function updateDashboard(d) {
+  dwellCursors.forEach(fn => fn(Date.now()))
+  if (dashboardEls && dashboardEls.box.isConnected) fillDashboard(dashboardEls.box, d)
 }
 
 function kinTile(d, cur, now) {
