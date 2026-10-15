@@ -1067,3 +1067,13 @@ button.route-open { font: inherit; cursor: pointer; }
 .tv-chip.is-seen, .tv-chip.is-estimate { background: transparent; border: 1px solid var(--line); color: var(--muted); text-transform: lowercase; }
 
 .icon-btn[hidden] { display: none !important; }
+
+/* nerd view: the technical charts fold away */
+.nerd-more { border: 1px solid var(--line); border-radius: 12px; padding: 0 1rem; }
+.nerd-more > summary { padding: 0.8rem 0; color: var(--muted); font-size: 0.85rem; cursor: pointer; list-style: none; }
+.nerd-more > summary::-webkit-details-marker { display: none; }
+.nerd-more > summary::before { content: "+"; display: inline-block; width: 1.1rem; color: var(--faint); }
+.nerd-more[open] > summary::before { content: "\2212"; }
+.nerd-more[open] { padding-bottom: 1rem; }
+.nerd-more > .stat-grid, .nerd-more > .nerd-panel { margin-top: 0.8rem; }
+.tk-hint { min-height: 1.3em; margin: 0.3rem 0 0; font-size: 0.74rem; }

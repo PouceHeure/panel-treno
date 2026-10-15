@@ -837,6 +837,10 @@ function trainsInHorizon(trains, now) {
 function chartWidth() {
   return Math.min(640, Math.max(300, $('trainInfo').clientWidth - 56))
 }
+// Left margin of the nerd charts (station names live there): narrower on a phone, shared so every "now" lines up.
+function chartLeft(width = chartWidth()) {
+  return width < 420 ? 84 : 150
+}
 function svgChart(height, titleText, width = chartWidth()) {
   const svg = svgEl('svg', { viewBox: `0 0 ${width} ${height}`, role: 'img', class: 'timeline-svg' })
   svg.append(svgEl('title', {}, titleText))
@@ -1693,9 +1697,11 @@ let nerdTrack = false
 let trackWin = '10' // minutes shown by the position plot: '5', '10', '30' or 'all'
 let trackAxis = 'min' // vertical axis of the plot: 'min' (scheduled travel time) or 'km' (distance)
 const TRACK_TICK_MS = 5000
+let nerdMoreOpen = false // the folded technical charts of the nerd view, kept open across redraws
 let nerdHoldUntil = 0 // while a finger or the mouse is on a chart, the page is not redrawn under it
 const holdNerd = ms => { nerdHoldUntil = Date.now() + ms }
-const NOW_FRAC = 0.7 // where "now" is, as a share of the plot width, in every nerd chart
+// where "now" is, as a share of the plot width, in every nerd chart: late on a wide screen (history), early on a phone (the future)
+const nowFrac = (width = chartWidth()) => (width < 420 ? 0.3 : 0.7)
 const TRACK_KEEP = 360
 
 function trackCoord(d, model) {
@@ -1837,7 +1843,7 @@ function nerdTrackChart(d) {
     return panel
   }
   const winMs = trackWin === 'all' ? null : Number(trackWin) * 60000
-  const winStart = winMs ? now - winMs * NOW_FRAC : 0
+  const winStart = winMs ? now - winMs * nowFrac() : 0
   const samples = trackHist.ticks.concat(trackHist.fetches.map(f => ({ t: f.t, s: f.s }))).filter(x => !winMs || (x.t >= winStart - winMs && x.t <= winStart + 2 * winMs))
   const all = samples.map(x => x.s).concat([sNow])
   let lo
@@ -1875,7 +1881,7 @@ function nerdTrackChart(d) {
   const nextStop = stops[Math.min(stops.length - 1, Math.floor(sNow) + 1)]
   const tMin = winMs ? winStart : firstT - 2 * 60000
   const tMax = winMs ? winStart + winMs : Math.max(now + 3 * 60000, arrOf(nextStop) + extra + 2 * 60000, tMin + 20 * 60000)
-  const LEFT = 150
+  const LEFT = chartLeft()
   const RIGHT = 12
   const TOP = 14
   // the vertical axis follows the scheduled travel time between stations (dwell times left out), or the distance
@@ -1917,7 +1923,7 @@ function nerdTrackChart(d) {
     if (y - lastLabelY < 22) return // too close to the previous name: the line stays, the label is skipped
     lastLabelY = y
     // station names wrap on two lines instead of being cut: "genova piazza / principe"
-    const lines = wrapLabel(f.stazione, 15)
+    const lines = wrapLabel(f.stazione, Math.floor((LEFT - 12) / 6.6))
     const label = svgEl('text', { x: 4, y: lines.length > 1 ? y - 1 : y + 4, class: 'tl-label' })
     lines.forEach((line, k) => label.append(svgEl('tspan', { x: 4, dy: k ? 11 : 0 }, line)))
     label.append(svgEl('title', {}, f.stazione))
@@ -2201,7 +2207,7 @@ function nerdTrackKin(d, cur, now) {
   head.append(el('span', [], k.kind === 'station' ? 'time in station' : 'on the segment: now vs timetable'), el('span', [], k.kind === 'between' && k.km ? `${k.km.toFixed(1)} km` : ''))
   panel.append(head)
   const VW = chartWidth()
-  const LEFT = 150
+  const LEFT = chartLeft()
   const RIGHT = 12
   const TOP = 12
   const H = 150
@@ -2209,7 +2215,7 @@ function nerdTrackKin(d, cur, now) {
   // is in a station, and when the stops start and end.
   const drawDwell = g => {
     const SPAN = 10 * 60000
-    const BEFORE = NOW_FRAC * SPAN // "now" sits at the same place in every chart of the page
+    const BEFORE = nowFrac() * SPAN // "now" sits at the same place in every chart of the page
     const Hs = 74
     const svg = svgChart(Hs + 34, 'The train as a marker on a time axis that slides: stops come towards it', VW)
     const plotW = VW - LEFT - RIGHT
@@ -2220,19 +2226,21 @@ function nerdTrackKin(d, cur, now) {
     const mark = svgEl('line', { x1: markX, x2: markX, y1: TOP + 4, y2: TOP + 14 + bar + 8, class: 'tk-dwell-cursor' })
     const dot = svgEl('circle', { cx: markX, cy: TOP + 4, r: 4, class: 'tk-dwell-cursor-dot' })
     const state = svgEl('text', { x: markX, y: TOP - 2, class: 'tk-dwell-state', 'text-anchor': 'middle' }, '')
-    const hintEl = svgEl('text', { x: LEFT, y: TOP - 2, class: 'tk-axis-scale' }, '')
-    svg.append(mark, dot, state, hintEl)
+    const hintEl = el('p', ['nerd-dim', 'tk-hint'], '') // outside the drawing, so it never lands on the labels
+    svg.append(mark, dot, state)
     const paint = nowMs => {
       const t0 = nowMs - BEFORE
       const xOf = t => LEFT + ((t - t0) / SPAN) * plotW
       const kids = []
       // a tick every minute, labelled with the clock
-      for (let t = Math.ceil(t0 / 60000) * 60000; t <= t0 + SPAN; t += 60000) {
+      const tickMin = [1, 2, 5, 10].find(m => (m * 60000 * plotW) / SPAN >= 50) || 10 // labels at least ~50 px apart
+      for (let t = Math.ceil(t0 / (tickMin * 60000)) * tickMin * 60000; t <= t0 + SPAN; t += tickMin * 60000) {
         kids.push(svgEl('line', { x1: xOf(t), x2: xOf(t), y1: TOP + 14 + bar, y2: TOP + 14 + bar + 4, class: 'tl-grid' }))
         kids.push(svgEl('text', { x: xOf(t), y: TOP + 14 + bar + 16, class: 'tl-label', 'text-anchor': 'middle' }, formatEpochHHMM(t)))
       }
       let here = false
       let hint = ''
+      let lastLabelX = -Infinity
       g.blocks.forEach(b => {
         const x1 = Math.max(LEFT, xOf(b.arr))
         const x2 = Math.min(LEFT + plotW, xOf(Math.max(b.dep, b.arr + 20000)))
@@ -2246,8 +2254,12 @@ function nerdTrackKin(d, cur, now) {
             if (rx2 > rx1) kids.push(svgEl('rect', { x: rx1, y: TOP + 14, width: rx2 - rx1, height: bar, class: 'tk-dwell-range' }))
           }
           if (b.sched && xOf(b.sched) >= LEFT && xOf(b.sched) <= LEFT + plotW) kids.push(svgEl('line', { x1: xOf(b.sched), x2: xOf(b.sched), y1: TOP + 14 + bar - 2, y2: TOP + 14 + bar + 6, class: 'tk-plot-pred' }))
-          const label = svgEl('text', { x: Math.min(Math.max((x1 + x2) / 2, LEFT + 30), LEFT + plotW - 30), y: TOP + 14 + bar + 30, class: 'tl-label', 'text-anchor': 'middle' }, b.name.length > 24 ? `${b.name.slice(0, 23)}…` : b.name)
-          kids.push(label)
+          const labelX = Math.min(Math.max((x1 + x2) / 2, LEFT + 30), LEFT + plotW - 30)
+          const room = Math.max(10, Math.floor(plotW / 14))
+          if (Math.abs(labelX - lastLabelX) > 8 * Math.min(room, 14)) { // two names never print on top of each other
+            kids.push(svgEl('text', { x: labelX, y: TOP + 14 + bar + 30, class: 'tl-label', 'text-anchor': 'middle' }, b.name.length > room ? `${b.name.slice(0, room - 1)}…` : b.name))
+            lastLabelX = labelX
+          }
         } else if (b.kind === 'next' && x1 >= LEFT + plotW) hint = `next · ${b.name.slice(0, 24)} in ${clockLeft(b.arr, nowMs)}`
       })
       bg.replaceChildren(...kids)
@@ -2257,12 +2269,13 @@ function nerdTrackKin(d, cur, now) {
     }
     paint(now)
     dwellCursors.push(paint)
-    panel.append(svg)
+    panel.append(svg, hintEl)
   }
   if (k.kind === 'between' && k.km) {
     // the segment as a 1D rail: the train stays at "now" (same place as in the other charts), the rail slides
     const plotW1 = VW - LEFT - RIGHT
-    const xNow = LEFT + NOW_FRAC * plotW1
+    const nf = nowFrac()
+    const xNow = LEFT + nf * plotW1
     const posKm = k.km * cur.p
     const xOfKm = km => xNow + ((km - posKm) / winKm) * plotW1
     const sch = Math.max(60000, (cur.next.arrivo_teorico || cur.next.programmata) - (cur.here.partenza_teorica || cur.here.programmata))
@@ -2272,7 +2285,7 @@ function nerdTrackKin(d, cur, now) {
     const pSched = fracOf(uSched)
     const gapKm = (pSched - cur.p) * k.km
     // the window holds both trains: the real one stays at "now", the timetable one is ahead (30 % of the width) or behind (70 %)
-    const winKm = Math.max(1.5, gapKm >= 0 ? gapKm / 0.2 : -gapKm / 0.6)
+    const winKm = Math.max(1.5, gapKm >= 0 ? gapKm / ((1 - nf) * 0.7) : -gapKm / (nf * 0.85))
     // the delay the position implies: now minus the instant the timetable has the train there
     const schedAtPos = (cur.here.partenza_teorica || cur.here.programmata) + phaseOf(cur.p) * sch
     const gapMin = (now - schedAtPos) / 60000
@@ -2282,7 +2295,7 @@ function nerdTrackKin(d, cur, now) {
     const clampX = x => Math.min(LEFT + plotW1, Math.max(LEFT, x))
     svg.append(svgEl('line', { x1: clampX(xOfKm(0)), x2: clampX(xOfKm(k.km)), y1: yLine, y2: yLine, class: 'tk-1d-rail' }))
     const step = winKm > 12 ? 5 : winKm > 5 ? 2 : 1
-    for (let km = Math.ceil((posKm - 0.7 * winKm) / step) * step; km <= posKm + 0.3 * winKm; km += step) {
+    for (let km = Math.ceil((posKm - nf * winKm) / step) * step; km <= posKm + (1 - nf) * winKm; km += step) {
       if (km < 0 || km > k.km) continue
       svg.append(svgEl('line', { x1: xOfKm(km), x2: xOfKm(km), y1: yLine - 4, y2: yLine + 4, class: 'tl-grid' }))
       svg.append(svgEl('text', { x: xOfKm(km), y: yLine + 20, class: 'tl-label', 'text-anchor': 'middle' }, `${km} km`))
@@ -2317,7 +2330,8 @@ function nerdTrackKin(d, cur, now) {
     svg.append(svgEl('text', { x: xSched, y: yLine + 36, class: 'tl-label', 'text-anchor': 'middle' }, 'timetable'))
     svg.append(svgEl('circle', { cx: xNow, cy: yLine, r: 7, class: 'tk-kin-dot' }))
     svg.append(svgEl('text', { x: xNow, y: yLine + 36 + (Math.abs(xNow - xSched) < 70 ? 12 : 0), class: 'tk-dwell-state is-here', 'text-anchor': 'middle' }, 'NOW'))
-    const verdict = Math.abs(gapMin) < 0.5 ? 'on time' : gapMin > 0 ? `${gapMin.toFixed(1)} min late · ${Math.abs(gapKm).toFixed(2)} km behind the timetable` : `${(-gapMin).toFixed(1)} min early · ${Math.abs(gapKm).toFixed(2)} km ahead of the timetable`
+    const tail = VW < 420 ? '' : ' the timetable'
+    const verdict = Math.abs(gapMin) < 0.5 ? 'on time' : gapMin > 0 ? `${gapMin.toFixed(1)} min late · ${Math.abs(gapKm).toFixed(2)} km behind${tail}` : `${(-gapMin).toFixed(1)} min early · ${Math.abs(gapKm).toFixed(2)} km ahead of${tail || ' it'}`
     svg.append(svgEl('text', { x: LEFT, y: Hl - 4, class: 'tl-label' }, verdict))
     panel.append(svg)
     // the stops around the train, on the sliding axis
@@ -2449,12 +2463,12 @@ function nerdTrackBars(d, cur, now) {
   const rows = rowsAll.filter((r, i) => !i || Math.min(r.sched, r.model ?? r.sched) <= now + MAX_AHEAD)
   const span = Math.min(MAX_AHEAD, Math.max(10 * 60000, ...rows.flatMap(r => [r.sched, r.raw, r.model]).filter(Number.isFinite).map(t => t - now)))
   const W = chartWidth()
-  const LEFT = 150
+  const LEFT = chartLeft()
   const RIGHT = 44
   const TOP = 16
   const group = 34
   const H = TOP + rows.length * group + 22
-  const xNow = LEFT + NOW_FRAC * (W - LEFT - 12) // the same place as in the other charts (they keep 12 px on the right)
+  const xNow = LEFT + nowFrac(W) * (W - LEFT - 12) // the same place as in the other charts (they keep 12 px on the right)
   const xEnd = W - RIGHT // the bars stop here: the labels need the room after it
   const perMs = (xEnd - xNow) / span
   const xOf = t => Math.min(xEnd, Math.max(LEFT, xNow + (t - now) * perMs))
@@ -2469,7 +2483,7 @@ function nerdTrackBars(d, cur, now) {
   svg.append(svgEl('text', { x: xNow, y: TOP - 1, class: 'tk-dwell-state is-here', 'text-anchor': 'middle' }, 'NOW'))
   rows.forEach((r, i) => {
     const y = TOP + i * group
-    svg.append(svgEl('text', { x: LEFT - 8, y: y + 17, class: 'tl-label', 'text-anchor': 'end' }, r.name.length > 20 ? `${r.name.slice(0, 19)}…` : r.name))
+    svg.append(svgEl('text', { x: LEFT - 8, y: y + 17, class: 'tl-label', 'text-anchor': 'end' }, r.name.length > Math.floor((LEFT - 10) / 6.4) ? `${r.name.slice(0, Math.floor((LEFT - 10) / 6.4) - 1)}…` : r.name))
     ;[['timetable', r.sched, 'tk-bar-sched'], ['raw', r.raw, 'tk-bar-raw'], ['model', r.model, 'tk-bar-model']].forEach(([label, t, cls], k) => {
       if (!Number.isFinite(t)) return
       const late = (t - r.sched) / 60000
@@ -2495,7 +2509,7 @@ function renderTrackNerd(d) {
   const now = Date.now()
   const wrap = el('div', ['nerd-wrap'])
   const category = (d.categoria || d.categoriaDescrizione || '').trim()
-  wrap.append(trackModeBar(), el('p', ['nerd-prompt'], `$ treno --track ${`${category} ${d.numeroTreno}`.trim().replace(/\s+/g, '_')} --plot position,delay`))
+  wrap.append(trackModeBar(), el('p', ['nerd-prompt'], `$ treno --track ${`${category} ${d.numeroTreno}`.trim().replace(/\s+/g, '_')}`))
 
   const fixes = trackHist.fetches.filter(f => f.sBefore !== null).map(f => Math.abs(f.s - f.sBefore))
   const meanFix = fixes.length ? fixes.reduce((a, b) => a + b, 0) / fixes.length : 0
@@ -2509,7 +2523,12 @@ function renderTrackNerd(d) {
     statTile('uncertainty', unc ? `±${unc}m` : '–', unc ? `1σ on the next arrival · ${cur.kal.sigmaKm.toFixed(2)} km` : 'in a station'),
     statTile('last detection', rel ? rel.text : '–', d.oraUltimoRilevamento ? `${Math.max(0, Math.round((now - d.oraUltimoRilevamento) / 60000))} min ago` : '')
   )
-  wrap.append(nerdDashboard(d), grid, nerdTrackKin(d, cur, now), nerdTrackBars(d, cur, now), nerdTrackChart(d), nerdTrackDelay(d))
+  // what matters stays in view (the live numbers, where the train is, the arrivals); the technical charts fold away
+  const more = el('details', ['nerd-more'])
+  more.open = nerdMoreOpen
+  more.addEventListener('toggle', () => { nerdMoreOpen = more.open })
+  more.append(el('summary', [], 'Technical charts'), grid, nerdTrackChart(d), nerdTrackDelay(d))
+  wrap.append(nerdDashboard(d), nerdTrackKin(d, cur, now), nerdTrackBars(d, cur, now), more)
   // redrawn every few seconds: the page keeps at least its previous height and scroll position, so it does not jump
   const host = $('trainInfo')
   const scroller = document.scrollingElement || document.documentElement
