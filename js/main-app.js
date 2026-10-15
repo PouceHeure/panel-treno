@@ -89,6 +89,7 @@ let stationName = null
 let lastUpdateData = null
 let groupByMode = 'platform'
 let groupFilterText = ''
+let destFilter = '' // the direction chips above the board: one destination, or all
 let viewMode = 'board'
 let sourceMode = 'vt' // 'vt' = ViaggiaTreno alone, 'global' = merged with the RFI board, delays shown as an interval
 
@@ -126,6 +127,8 @@ function syncStateToURL() {
   params.set('groupby', groupByMode)
   if (groupFilterText) params.set('groupfilter', groupFilterText)
   else params.delete('groupfilter')
+  if (destFilter) params.set('dest', destFilter)
+  else params.delete('dest')
   if (viewMode === 'nerd') params.set('view', 'nerd')
   else params.delete('view')
   window.history.replaceState(null, '', `${window.location.pathname}?${params}${window.location.hash}`)
@@ -284,6 +287,7 @@ function buildGroups(trainData) {
   const filterTerms = parseFilterTerms(groupFilterText)
   const groups = new Map()
   upcomingTrains(trainData).forEach(train => {
+    if (destFilter && (train.destinazione || '').toLowerCase() !== destFilter) return
     if (groupByMode === 'train' && filterTerms.length && !trainMatchesFilter(train, filterTerms)) return
     const key = getGroupKey(train, groupByMode)
     if (!groups.has(key)) groups.set(key, [])
@@ -478,6 +482,20 @@ function routePanel(train) {
     link.addEventListener('click', e => e.stopPropagation())
     actions.append(link)
   })
+  const pin = el('button', ['route-open', 'route-pin'])
+  pin.type = 'button'
+  const paintPin = () => {
+    const on = isPinned(train.numeroTreno, train.dataPartenzaTreno)
+    pin.replaceChildren(icon(on ? 'bi-pin-angle-fill' : 'bi-pin-angle'), on ? 'Following' : 'Follow')
+    pin.classList.toggle('is-on', on)
+  }
+  pin.addEventListener('click', e => {
+    e.stopPropagation()
+    togglePinned(pinnedEntry(train.numeroTreno, train.codOrigine, train.dataPartenzaTreno, `${(train.categoria || '').trim()} ${train.numeroTreno} → ${String(train.destinazione || '').toLowerCase()}`.trim()))
+    paintPin()
+  })
+  paintPin()
+  actions.append(pin)
   panel.append(actions)
   const entry = routeCache.get(trainKey(train))
   const age = entry && entry.at ? Date.now() - entry.at : Infinity
@@ -649,6 +667,26 @@ function trackKey() {
   return row
 }
 
+// One chip per destination of the coming trains: pick a direction and the board keeps only those trains.
+function directionChips(trainData) {
+  const seen = new Map()
+  upcomingTrains(trainData).forEach(t => {
+    const name = (t.destinazione || '').trim()
+    if (name && !seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), name)
+  })
+  if (seen.size < 2 && !destFilter) return null
+  const wrap = el('div', ['dir-chips'])
+  const chip = (key, text) => {
+    const b = el('button', ['dir-chip', destFilter === key ? 'is-active' : ''], text)
+    b.type = 'button'
+    b.addEventListener('click', () => { destFilter = key; syncStateToURL(); rerender() })
+    return b
+  }
+  wrap.append(chip('', 'All directions'), ...[...seen.entries()].slice(0, 8).map(([key, name]) => chip(key, `to ${name.toLowerCase()}`)))
+  if (destFilter && !seen.has(destFilter)) wrap.append(chip(destFilter, `to ${destFilter}`))
+  return wrap
+}
+
 function renderBoard(trainData) {
   updateDelayAxis(trainData)
   const groups = buildGroups(trainData)
@@ -658,6 +696,7 @@ function renderBoard(trainData) {
     return
   }
   const now = Date.now()
+  const chips = directionChips(trainData)
   const grid = el('div', ['card-grid', groupByMode === 'train' ? 'is-single' : 'is-multi'])
   groups.forEach(group => grid.append(boardSection(group, now)))
   const legend = el('p', ['board-legend'], label('legend'))
@@ -676,9 +715,9 @@ function renderBoard(trainData) {
       key(el('span', ['key-swatch', 'is-slight']), `< ${LATE_THRESHOLD} min`),
       key(el('span', ['key-swatch', 'is-late']), `${LATE_THRESHOLD} min+`)
     )
-    return $('trainInfo').replaceChildren(grid, bar, trackKey(), legend)
+    return $('trainInfo').replaceChildren(...(chips ? [chips] : []), grid, bar, trackKey(), legend)
   }
-  $('trainInfo').replaceChildren(grid, trackKey(), legend)
+  $('trainInfo').replaceChildren(...(chips ? [chips] : []), grid, trackKey(), legend)
 }
 
 // =======================
@@ -1105,6 +1144,51 @@ function updateClock() {
   $('currentTime').replaceChildren(
     ...chars.map(ch => (ch === ':' ? el('span', ['clock-colon'], ':') : el('span', ['clock-digit'], ch)))
   )
+}
+
+// The star next to the station name keeps it in the favourites shown on the home page.
+function initStationStar() {
+  const star = $('stationStar')
+  if (!star || !stationID) return
+  star.hidden = false
+  const paint = () => {
+    const on = isFavorite(stationID)
+    star.classList.toggle('is-on', on)
+    star.setAttribute('aria-pressed', String(on))
+    star.title = on ? 'Remove from favorites' : 'Add to favorites'
+    star.setAttribute('aria-label', star.title)
+    star.querySelector('i').className = `bi ${on ? 'bi-star-fill' : 'bi-star'}`
+  }
+  star.addEventListener('click', () => { toggleFavorite(stationID, stationName); paint() })
+  paint()
+}
+
+// Follow a train: it is pinned at the top of the home page, with its estimated arrival.
+function pinnedEntry(number, from, date, name) {
+  return { number: String(number), from, date: String(date), name }
+}
+
+function initTrainPin() {
+  const btn = $('trainPin')
+  const params = new URLSearchParams(window.location.search)
+  const number = params.get('train')
+  const from = params.get('from')
+  const date = params.get('date')
+  if (!btn || !number || !from || !date) return
+  btn.hidden = false
+  const paint = () => {
+    const on = isPinned(number, date)
+    $('trainPinLabel').textContent = on ? 'Following' : 'Follow'
+    btn.classList.toggle('is-on', on)
+    btn.querySelector('i').className = `bi ${on ? 'bi-pin-angle-fill' : 'bi-pin-angle'}`
+  }
+  btn.addEventListener('click', () => {
+    const d = trainDetail
+    const name = d ? `${(d.categoria || '').trim()} ${d.numeroTreno} → ${String(d.destinazione || '').toLowerCase()}`.trim() : `Train ${number}`
+    togglePinned(pinnedEntry(number, from, date, name))
+    paint()
+  })
+  paint()
 }
 
 function updateHeader() {
@@ -2996,6 +3080,7 @@ function initTrainPage() {
   $('text-search').setAttribute('aria-label', 'Home')
   $('trainShare').hidden = false
   $('trainShare').addEventListener('click', shareTrain)
+  initTrainPin()
   trackingMode = params.get('track') === '1'
   nerdTrack = params.get('nerd') === '1'
   loadStations()
@@ -3084,11 +3169,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const paramGroupBy = (getParam('groupby') || '').toLowerCase()
   if (GROUP_MODES.includes(paramGroupBy)) groupByMode = paramGroupBy
+  destFilter = (getParam('dest') || '').toLowerCase()
   const paramView = (getParam('view') || '').toLowerCase()
   if (VIEWS.includes(paramView)) viewMode = paramView
   // "mix" and "compare" were the two halves of Global before they were merged into one view
   if (['global', 'mix', 'compare'].includes((getParam('source') || '').toLowerCase())) sourceMode = 'global'
 
+  initStationStar()
   initSources()
   const searchLink = $('text-search')
   searchLink.title = 'Home: search a station or a train'

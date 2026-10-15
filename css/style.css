@@ -1002,3 +1002,32 @@ body.view-train .source-switch { display: none; }
 .k-bar-sched { width: 16px; height: 6px; background: var(--muted); opacity: 0.5; display: inline-block; }
 .k-bar-raw { width: 16px; height: 6px; border: 1.5px dashed var(--accent); display: inline-block; box-sizing: border-box; }
 .k-bar-model { width: 16px; height: 6px; background: var(--accent); display: inline-block; }
+
+/* home: station rows with a star, favourites, the followed train */
+.result-row { display: flex; align-items: stretch; gap: 0.4rem; }
+.result-row .result-item { flex: 1; min-width: 0; }
+.star-btn { flex: none; width: 2.6rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--faint); font-size: 1.05rem; cursor: pointer; }
+.star-btn:hover { border-color: var(--faint); color: var(--text); }
+.star-btn.is-on { color: var(--accent); }
+.major-grid .result-row .result-item { padding: 0.7rem 0.8rem; font-size: 0.85rem; line-height: 1.25; justify-content: flex-start; }
+.follow-card { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.9rem 1rem; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--surface); }
+.follow-top { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; }
+.follow-top strong { text-transform: uppercase; font-size: 0.85rem; }
+.follow-chip { flex: none; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; background: var(--tile); }
+.follow-chip.is-ok { color: var(--ok); }
+.follow-chip.is-slight { color: var(--slight); }
+.follow-chip.is-late { color: var(--late); }
+.follow-big { font-size: 1.8rem; font-weight: 700; line-height: 1.15; }
+.follow-sub { color: var(--muted); font-size: 0.8rem; }
+.follow-links { display: flex; gap: 0.5rem; margin-top: 0.3rem; }
+
+/* board: station star, direction chips, follow buttons */
+.station-name + .icon-btn { flex: none; }
+#stationStar.is-on { color: var(--accent); border-color: var(--accent); }
+.pill-btn.is-on, .route-pin.is-on { color: var(--accent); border-color: var(--accent); }
+.dir-chips { display: flex; gap: 0.4rem; overflow-x: auto; padding: 0 0 0.7rem; scrollbar-width: none; }
+.dir-chips::-webkit-scrollbar { display: none; }
+.dir-chip { flex: none; padding: 0.35rem 0.8rem; border: 1px solid var(--line); border-radius: 999px; background: var(--tile); color: var(--muted); font: inherit; font-size: 0.78rem; text-transform: capitalize; cursor: pointer; white-space: nowrap; }
+.dir-chip.is-active { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 700; }
+button.route-open { font: inherit; cursor: pointer; }
+.follow-links .route-open { margin-bottom: 0; }

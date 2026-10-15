@@ -21,6 +21,7 @@
       <div class="header-inner">
         <div class="title-row">
           <h1 id="stationTitle" class="station-name"></h1>
+          <button type="button" class="icon-btn" id="stationStar" aria-pressed="false" hidden><i class="bi bi-star"></i></button>
           <span class="clock" id="currentTime" aria-label="Current time"></span>
         </div>
 
@@ -49,6 +50,9 @@
           </a>
           <button type="button" class="pill-btn" id="trackToggle" hidden>
             <i class="bi bi-broadcast"></i><span id="trackToggleLabel">Tracking</span>
+          </button>
+          <button type="button" class="pill-btn" id="trainPin" hidden>
+            <i class="bi bi-pin-angle"></i><span id="trainPinLabel">Follow</span>
           </button>
           <button type="button" class="pill-btn" id="trainShare" hidden>
             <i class="bi bi-share"></i><span id="trainShareLabel">Share</span>
@@ -86,6 +90,7 @@
     <script src="js/modules/proxy.js"></script>
     <script src="js/modules/model.js"></script>
     <script src="js/modules/recent.js"></script>
+    <script src="js/modules/follow.js"></script>
     <script src="js/modules/rfi-source.js"></script>
     <script src="js/main-app.js"></script>
   </body>
