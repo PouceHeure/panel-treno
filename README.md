@@ -41,3 +41,36 @@ It is HTTP-only and has no CORS headers, so this static HTTPS site cannot call i
 (`js/modules/proxy.js`). This is a pragmatic choice to keep the project a simple static
 site like Panel Bus, but it means reliability depends on those third-party proxies — if
 departures stop loading, that's the most likely cause.
+
+## Pages
+
+| Page | What it is for |
+| --- | --- |
+| `home.html` | Find a station or a train. Search is local and instant (`data/stations.json`), favourite stations are starred, one train can be followed and shows its estimated arrival. |
+| `index.html?stationID=…` | Departures board of a station, with direction chips and a star. |
+| `index.html?view=train&train=…` | A train: glance card, details, Tracking, and the Nerd view. |
+| `rfi.html` | The official RFI station board. |
+| `lab.html` | The data collected, the delay models, and how each scored on a day it never saw. |
+
+Favourites, the followed train, recent searches and the device-side prediction log live in `localStorage`; nothing is sent anywhere.
+
+## Delay models
+
+`js/modules/model.js` holds the models, `js/modules/models.js` the registry (what exists, what each one needs). Times can be shown `raw` (the announced delay held on every stop) or `model` (recovery rules); the footer switch and `?times=raw` choose.
+
+A model is only recommended when it beats `raw` on a day it was not fitted on. To refresh that verdict after collecting more data:
+
+```bash
+python3 scripts/evaluate.py path/to/export.json   # writes data/model-report.json
+```
+
+The script scores the models on the last day of the export and calibrates on the days before it; it reads the model constants from `model.js`, so it always scores what the app runs. It also says whether recalibrating would help.
+
+`scripts/build-stations.py` rebuilds `data/stations.json` (station coordinates).
+
+## Tests
+
+```bash
+node --test tests/*.test.js                          # search, favourites, registry, prediction log
+python3 -m unittest discover -s tests -p "test_*.py" # evaluation: pairs, chronological split, models
+```

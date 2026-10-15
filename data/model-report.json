@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-15T17:42:18+00:00",
+  "generated_at": "2026-10-15T17:45:01+00:00",
   "source_exported_at": "2026-10-15T17:27:46+00:00",
   "data": {
     "trains": 864,
@@ -136,5 +136,19 @@
       "have_days": 3
     }
   },
-  "gain_vs_raw": 0.136
+  "gain_vs_raw": 0.136,
+  "recalibration": {
+    "fitted_on": [
+      "2026-10-13",
+      "2026-10-14"
+    ],
+    "constants": {
+      "rho": 0.438,
+      "cap": 4.4,
+      "tau": 26.25,
+      "offset": -0.725
+    },
+    "test_mae_1_to_6": 2.887,
+    "shipped_test_mae_1_to_6": 2.896
+  }
 }

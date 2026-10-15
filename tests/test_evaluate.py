@@ -81,6 +81,14 @@ class ModelsTest(unittest.TestCase):
         self.assertIn('raw', report['models'])
         self.assertIn('rules-v2', report['models'])
         self.assertIn('1', report['interval_90'])
+        self.assertIn('recalibration', report)
+        self.assertEqual(report['recalibration']['fitted_on'], ['2026-10-13', '2026-10-14'])
+
+    def test_a_recalibration_never_does_worse_than_its_start_on_the_calibration_days(self):
+        rows = evaluate.build_pairs([train(i, 0, 4) for i in range(25)] + [train(100 + i, 1, 6) for i in range(25)])
+        fitted = evaluate.fit_constants(rows, CONSTANTS)
+        mae = lambda c: sum(abs(evaluate.predict_rules(r, c) - r['y']) for r in rows if r['k'] <= 6)
+        self.assertLessEqual(mae(fitted), mae(CONSTANTS) + 1e-6)
 
 
 if __name__ == '__main__':

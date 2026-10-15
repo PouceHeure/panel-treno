@@ -151,6 +151,35 @@ def data_summary(trains):
     }
 
 
+def fit_constants(rows, start):
+    """Coordinate search of the recovery constants on the calibration rows (1 to 6 stops ahead), by mean absolute
+    error. Plain and deterministic: it only tells whether a recalibration would beat the shipped constants."""
+    window = [r for r in rows if r['k'] <= 6]
+    if not window:
+        return dict(start)
+
+    def error(c):
+        return statistics.fmean(abs(predict_rules(r, c) - r['y']) for r in window)
+
+    best = dict(start)
+    best_error = error(best)
+    steps = {'rho': 0.05, 'cap': 0.5, 'tau': 5.0, 'offset': 0.1}
+    for _ in range(6):
+        improved = False
+        for name, step in steps.items():
+            for direction in (-1, 1):
+                trial = dict(best)
+                trial[name] = best[name] + direction * step
+                if trial['rho'] <= 0 or trial['rho'] > 1 or trial['cap'] <= 0 or trial['tau'] <= 1:
+                    continue
+                e = error(trial)
+                if e < best_error - 1e-9:
+                    best, best_error, improved = trial, e, True
+        if not improved:
+            steps = {k: v / 2 for k, v in steps.items()}
+    return {k: round(v, 3) for k, v in best.items()}
+
+
 def evaluate(export, constants):
     trains = export['trains']
     rows = build_pairs(trains)
@@ -175,6 +204,13 @@ def evaluate(export, constants):
         best = report['models']['rules-v2']['mae_1_to_6']
         report['gain_vs_raw'] = round(1 - best / base, 3) if base else None
         report['interval_90'] = intervals(calibration, test, predict_rules, constants)
+        fitted = fit_constants(calibration, constants)
+        report['recalibration'] = {
+            'fitted_on': calibration_days,
+            'constants': fitted,
+            'test_mae_1_to_6': score(test, predict_rules, fitted)['mae_1_to_6'],
+            'shipped_test_mae_1_to_6': report['models']['rules-v2']['mae_1_to_6'],
+        }
     return report
 
 
@@ -191,6 +227,8 @@ def main(argv):
         for name, m in report['models'].items():
             print(f"  {name:10s} MAE 1-6 {m['mae_1_to_6']} min  median {m['median_abs']}  p90 {m['p90_abs']}  bias {m['bias']}")
         print(f"  gain vs raw: {report.get('gain_vs_raw')}")
+        rc = report['recalibration']
+        print(f"  recalibrating on {rc['fitted_on']} would give {rc['test_mae_1_to_6']} min on the test day (shipped constants: {rc['shipped_test_mae_1_to_6']})")
     else:
         print('not enough days for a chronological test (needs at least 2 days with enough trains)')
     print(f'written {REPORT.relative_to(ROOT)}')
