@@ -238,6 +238,7 @@ async function renderFollowing() {
   const refresh = async () => {
     try {
       const d = await fetchViaProxy(`${API}andamentoTreno/${pinned.from}/${pinned.number}/${pinned.date}`)
+      logPredictions(d)
       const sum = summarizeTrain(d, Date.now())
       if (!sum) return
       const href = recentHref(trainRecent(pinned.number, pinned.from, pinned.date, pinned.name))

@@ -1,0 +1,140 @@
+{
+  "generated_at": "2026-10-15T17:42:18+00:00",
+  "source_exported_at": "2026-10-15T17:27:46+00:00",
+  "data": {
+    "trains": 864,
+    "days": {
+      "2026-10-12": 1,
+      "2026-10-13": 251,
+      "2026-10-14": 322,
+      "2026-10-15": 290
+    },
+    "stops": 14292,
+    "real_arrival_share": 0.64,
+    "real_departure_share": 0.879,
+    "categories": {
+      "REG": 705,
+      "IC": 96,
+      "FB": 20,
+      "FR": 16,
+      "FA": 10,
+      "ICN": 10,
+      "EC": 6,
+      "EXP": 1
+    },
+    "status": {
+      "done": 799,
+      "lost": 1,
+      "active": 64
+    },
+    "polls_per_train": 33.7
+  },
+  "split": {
+    "calibration_days": [
+      "2026-10-13",
+      "2026-10-14"
+    ],
+    "test_day": "2026-10-15",
+    "pairs": {
+      "calibration": 38484,
+      "test": 16269
+    }
+  },
+  "recovery_constants": {
+    "rho": 0.5,
+    "cap": 4.4,
+    "tau": 25.0,
+    "offset": -0.75
+  },
+  "models": {
+    "raw": {
+      "mae_by_horizon": {
+        "1": 2.286,
+        "2": 2.943,
+        "3": 3.337,
+        "4": 3.713,
+        "6": 4.306
+      },
+      "mae_1_to_6": 3.353,
+      "median_abs": 2.5,
+      "p90_abs": 7.0,
+      "bias": 1.075,
+      "pairs": 13331
+    },
+    "rules-v2": {
+      "mae_by_horizon": {
+        "1": 1.744,
+        "2": 2.419,
+        "3": 2.911,
+        "4": 3.309,
+        "6": 3.927
+      },
+      "mae_1_to_6": 2.896,
+      "median_abs": 1.675,
+      "p90_abs": 6.5,
+      "bias": -1.064,
+      "pairs": 13331
+    }
+  },
+  "interval_90": {
+    "1": {
+      "lo": -4.0,
+      "hi": 4.5,
+      "n": 6181,
+      "coverage_on_test": 0.915
+    },
+    "2": {
+      "lo": -4.25,
+      "hi": 7.5,
+      "n": 5891,
+      "coverage_on_test": 0.915
+    },
+    "3": {
+      "lo": -4.75,
+      "hi": 9.25,
+      "n": 5436,
+      "coverage_on_test": 0.916
+    },
+    "4": {
+      "lo": -4.75,
+      "hi": 10.62,
+      "n": 4997,
+      "coverage_on_test": 0.911
+    },
+    "5": {
+      "lo": -5.3,
+      "hi": 11.55,
+      "n": 4622,
+      "coverage_on_test": 0.911
+    },
+    "6": {
+      "lo": -5.5,
+      "hi": 13.0,
+      "n": 4246,
+      "coverage_on_test": 0.914
+    },
+    "7": {
+      "lo": -5.88,
+      "hi": 14.0,
+      "n": 3732,
+      "coverage_on_test": 0.913
+    },
+    "8": {
+      "lo": -6.05,
+      "hi": 14.5,
+      "n": 3379,
+      "coverage_on_test": 0.907
+    }
+  },
+  "readiness": {
+    "tables": {
+      "needs_days": 7,
+      "have_days": 3
+    },
+    "trees": {
+      "needs_days": 14,
+      "have_days": 3
+    }
+  },
+  "gain_vs_raw": 0.136
+}

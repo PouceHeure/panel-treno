@@ -2892,6 +2892,7 @@ function setTrainTitle(d) {
 }
 
 function renderTrainPage(d) {
+  try { logPredictions(d) } catch { /* the log is a side note: it must never stop the page */ }
   document.body.classList.toggle('view-nerd', trackingMode && nerdTrack)
   if (trackingMode && nerdTrack) {
     stopTracking()
