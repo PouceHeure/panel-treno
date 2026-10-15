@@ -2348,47 +2348,55 @@ function nerdTrackBars(d, cur, now) {
   panel.append(head)
   const stops = d.fermate || []
   const first = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1) + 1
-  const idx = []
-  for (let i = Math.max(first, 1); i < stops.length && idx.length < 8; i++) idx.push(i)
-  if (!idx.length || cur.kind === 'arrived' || cur.kind === 'cancelled') {
+  const all = []
+  for (let i = Math.max(first, 1); i < stops.length && all.length < 8; i++) all.push(i)
+  if (!all.length || cur.kind === 'arrived' || cur.kind === 'cancelled') {
     panel.append(el('p', ['nerd-dim'], 'no stop ahead'))
     return panel
   }
   const raw = withTimesMode('raw', () => predOf(d, now))
   const mod = withTimesMode('model', () => predOf(d, now))
-  const rows = idx.map(i => {
+  const rowsAll = all.map(i => {
     const sched = stops[i].arrivo_teorico || stops[i].programmata
     return { name: stops[i].stazione.toLowerCase(), sched, raw: (raw.get(i) || {}).arrMs, model: (mod.get(i) || {}).arrMs }
   })
-  const ends = rows.flatMap(r => [r.sched, r.raw, r.model]).filter(Number.isFinite)
-  const tEnd = Math.max(...ends, now + 60000)
-  const tStart = Math.min(now, ...rows.map(r => r.sched).filter(Number.isFinite)) - 30000 // a late train: the timetable is behind now
+  // "now" is at the same place as in the other charts: the future gets the right 30 % of the plot
+  const MAX_AHEAD = 40 * 60000
+  const rows = rowsAll.filter((r, i) => !i || Math.min(r.sched, r.model ?? r.sched) <= now + MAX_AHEAD)
+  const span = Math.min(MAX_AHEAD, Math.max(10 * 60000, ...rows.flatMap(r => [r.sched, r.raw, r.model]).filter(Number.isFinite).map(t => t - now)))
   const W = chartWidth()
   const LEFT = 150
   const RIGHT = 44
   const TOP = 16
   const group = 34
   const H = TOP + rows.length * group + 22
-  const xOf = t => LEFT + (Math.max(0, t - tStart) / (tEnd - tStart)) * (W - LEFT - RIGHT)
-  const svg = svgChart(H, 'Arrival at each stop at each stop: timetable, raw and model', W)
-  const span = (tEnd - tStart) / 60000
-  const stepMin = span > 90 ? 30 : span > 40 ? 10 : span > 15 ? 5 : 2
-  for (let t = Math.ceil(tStart / (stepMin * 60000)) * stepMin * 60000; t <= tEnd; t += stepMin * 60000) {
+  const xNow = LEFT + NOW_FRAC * (W - LEFT - 12) // the same place as in the other charts (they keep 12 px on the right)
+  const xEnd = W - RIGHT // the bars stop here: the labels need the room after it
+  const perMs = (xEnd - xNow) / span
+  const xOf = t => Math.min(xEnd, Math.max(LEFT, xNow + (t - now) * perMs))
+  const svg = svgChart(H, 'Arrival at each stop: timetable, raw and model', W)
+  const stepMin = [1, 2, 5, 10, 15, 30, 60].find(m => m * 60000 * perMs >= 52) || 60 // labels at least ~50 px apart
+  const tFirst = now - (xNow - LEFT) / perMs
+  for (let t = Math.ceil(tFirst / (stepMin * 60000)) * stepMin * 60000; t <= now + span; t += stepMin * 60000) {
     svg.append(svgEl('line', { x1: xOf(t), x2: xOf(t), y1: TOP, y2: H - 18, class: 'tl-vgrid' }))
     svg.append(svgEl('text', { x: xOf(t), y: H - 4, class: 'tl-label', 'text-anchor': 'middle' }, formatEpochHHMM(t)))
   }
-  svg.append(svgEl('line', { x1: xOf(now), x2: xOf(now), y1: TOP, y2: H - 18, class: 'tl-now' }))
-  svg.append(svgEl('text', { x: xOf(now), y: TOP - 1, class: 'tk-dwell-state is-here', 'text-anchor': 'middle' }, 'NOW'))
+  svg.append(svgEl('line', { x1: xNow, x2: xNow, y1: TOP, y2: H - 18, class: 'tl-now' }))
+  svg.append(svgEl('text', { x: xNow, y: TOP - 1, class: 'tk-dwell-state is-here', 'text-anchor': 'middle' }, 'NOW'))
   rows.forEach((r, i) => {
     const y = TOP + i * group
     svg.append(svgEl('text', { x: LEFT - 8, y: y + 17, class: 'tl-label', 'text-anchor': 'end' }, r.name.length > 20 ? `${r.name.slice(0, 19)}…` : r.name))
-    ;[['timetable', r.sched, 'tk-bar-sched', formatEpochHHMM(r.sched)], ['raw', r.raw, 'tk-bar-raw', null], ['model', r.model, 'tk-bar-model', null]].forEach(([label, t, cls, text], k) => {
+    ;[['timetable', r.sched, 'tk-bar-sched'], ['raw', r.raw, 'tk-bar-raw'], ['model', r.model, 'tk-bar-model']].forEach(([label, t, cls], k) => {
       if (!Number.isFinite(t)) return
       const late = (t - r.sched) / 60000
-      const bar = svgEl('rect', { x: LEFT, y: y + 3 + k * 9, width: Math.max(2, xOf(t) - LEFT), height: 7, rx: 1.5, class: cls })
+      const x1 = xOf(t)
+      const cut = t > now + span // longer than the window: it runs off the right edge
+      const bar = svgEl('rect', { x: Math.min(xNow, x1), y: y + 3 + k * 9, width: Math.max(2, Math.abs(x1 - xNow)), height: 7, rx: 1.5, class: cls })
       bar.append(svgEl('title', {}, `${label}: ${formatEpochHHMM(t)}${k ? ` (${late > 0 ? '+' : ''}${late.toFixed(1)} min)` : ''}`))
       svg.append(bar)
-      svg.append(svgEl('text', { x: xOf(t) + 4, y: y + 10 + k * 9, class: 'tk-axis-scale' }, text || `${late > 0 ? '+' : ''}${late.toFixed(1)}`))
+      const text = k ? `${late > 0 ? '+' : ''}${late.toFixed(1)}` : formatEpochHHMM(t)
+      const before = x1 < xNow // already past: the bar goes left, the label sits at its left end
+      svg.append(svgEl('text', { x: before ? x1 - 4 : x1 + 4, y: y + 10 + k * 9, class: 'tk-axis-scale', 'text-anchor': before ? 'end' : 'start' }, cut ? `${text} →` : text))
     })
   })
   panel.append(svg)
