@@ -835,7 +835,12 @@ function trainsInHorizon(trains, now) {
 
 // SVG text scales with the viewBox: use the real width so labels stay readable on phones.
 function chartWidth() {
-  return Math.min(640, Math.max(300, $('trainInfo').clientWidth - 56))
+  const host = $('trainInfo').clientWidth
+  // the nerd view of a wide screen has two columns: a chart gets one of them
+  if (window.innerWidth >= 1000 && document.body.classList.contains('view-nerd')) {
+    return Math.max(420, Math.min(640, Math.floor((Math.min(host - 32, 1168) - 16) / 2 - 30)))
+  }
+  return Math.min(640, Math.max(300, host - 56))
 }
 // Left margin of the nerd charts (station names live there): narrower on a phone, shared so every "now" lines up.
 function chartLeft(width = chartWidth()) {
@@ -1697,7 +1702,7 @@ let nerdTrack = false
 let trackWin = '10' // minutes shown by the position plot: '5', '10', '30' or 'all'
 let trackAxis = 'min' // vertical axis of the plot: 'min' (scheduled travel time) or 'km' (distance)
 const TRACK_TICK_MS = 5000
-let nerdMoreOpen = false // the folded technical charts of the nerd view, kept open across redraws
+let nerdMoreOpen = window.innerWidth >= 1000 // the folded technical charts of the nerd view, kept open across redraws
 let nerdHoldUntil = 0 // while a finger or the mouse is on a chart, the page is not redrawn under it
 const holdNerd = ms => { nerdHoldUntil = Date.now() + ms }
 // where "now" is, as a share of the plot width, in every nerd chart: late on a wide screen (history), early on a phone (the future)
@@ -2528,7 +2533,12 @@ function renderTrackNerd(d) {
   more.open = nerdMoreOpen
   more.addEventListener('toggle', () => { nerdMoreOpen = more.open })
   more.append(el('summary', [], 'Technical charts'), grid, nerdTrackChart(d), nerdTrackDelay(d))
-  wrap.append(nerdDashboard(d), nerdTrackKin(d, cur, now), nerdTrackBars(d, cur, now), more)
+  // on a wide screen: the live reading on the left, the technical charts open on the right
+  const cols = el('div', ['nerd-cols'])
+  const left = el('div', ['nerd-col'])
+  left.append(nerdTrackKin(d, cur, now), nerdTrackBars(d, cur, now))
+  cols.append(left, more)
+  wrap.append(nerdDashboard(d), cols)
   // redrawn every few seconds: the page keeps at least its previous height and scroll position, so it does not jump
   const host = $('trainInfo')
   const scroller = document.scrollingElement || document.documentElement
@@ -2723,7 +2733,7 @@ function renderTracking(d) {
   setTrainTitle(d)
   root.append(trackModeBar())
 
-  const head = el('section', ['tv-card'])
+  const head = el('section', ['tv-card', 'tv-wide'])
   const top = el('div', ['tv-head'])
   top.append(el('span', ['train-badge'], `${category} ${d.numeroTreno}`.trim()), chip(label(status.key), status.tone))
   if (d.provvedimento !== 1 && delay !== 0) top.append(chip(delay > 0 ? `+${delay} min` : `${delay} min`, delay > 0 ? 'is-late' : 'is-early'))
@@ -2744,7 +2754,6 @@ function renderTracking(d) {
 
   const card = el('section', ['tv-card', 'tk-card'])
   const els = {}
-  els.state = el('p', ['tk-state'])
   const nextLine = el('div', ['tk-next'])
   els.label = el('span', ['tk-label'])
   els.name = el('span', ['tk-name'])
@@ -2752,10 +2761,13 @@ function renderTracking(d) {
   nextLine.append(els.label, els.name, els.eta)
   els.count = el('div', ['tk-count'])
 
-  els.motion = el('p', ['tk-motion'])
-  els.trust = el('p', ['tk-trust'])
-  els.sync = el('p', ['tk-sync'])
-  card.append(els.state, nextLine, els.count, els.motion, els.trust, els.sync)
+  // three short chips instead of sentences: speed, distance left, how far the position can be trusted
+  els.chips = el('div', ['tk-chips'])
+  els.chipSpeed = el('span', ['tk-pill'])
+  els.chipKm = el('span', ['tk-pill'])
+  els.chipTrust = el('span', ['tk-pill'])
+  els.chips.append(els.chipSpeed, els.chipKm, els.chipTrust)
+  card.append(nextLine, els.count, els.chips)
   root.append(card)
 
   // the line: a window of stops around the train (or all of them), the train sliding along it
@@ -2764,7 +2776,7 @@ function renderTracking(d) {
   const hereIdx = stops.indexOf(model.here)
   const from = trackZoom === 'all' ? 0 : Math.max(0, hereIdx - 2)
   const to = trackZoom === 'all' ? stops.length : Math.min(stops.length, hereIdx + (trackZoom === 'close' ? 3 : 8))
-  const listCard = el('section', ['tv-card'])
+  const listCard = el('section', ['tv-card', 'tk-list-card'])
   const listHead = el('div', ['tk-list-head'])
   listHead.append(el('h3', ['tv-section'], `Stops · ${stops.length}`))
   const zoom = el('div', ['tk-zoom'])
@@ -2865,36 +2877,32 @@ function tickTracking(ts) {
   let countdown
   if (model.kind === 'between') {
     countdown = model.eta - now
-    els.state.textContent = `Between ${model.here.stazione.toLowerCase()} and ${model.next.stazione.toLowerCase()} · left ${ago(model.since)} ago`
     els.count.dataset.caption = 'to the next stop'
   } else if (model.kind === 'station') {
     countdown = model.target - now
-    els.state.textContent = `In ${model.here.stazione.toLowerCase()}, leaves around ${formatEpochHHMM(model.target)}`
     els.count.dataset.caption = countdown > 0 ? 'before it leaves' : 'should be leaving'
   } else {
     countdown = model.target - now
-    els.state.textContent = `Not departed yet from ${model.here.stazione.toLowerCase()}`
     els.count.dataset.caption = 'before departure'
   }
-  if (model.kind === 'between' && model.km) {
-    const toGo = (1 - Math.min(model.p, 0.97)) * model.km
-    els.motion.textContent = `${toGo.toFixed(1)} km to ${model.next.stazione.toLowerCase()} of ${model.km.toFixed(1)} · about ${Math.round(model.speedKmh)} km/h`
-  } else {
-    els.motion.textContent = ''
+  const moving = model.kind === 'between' && model.km
+  els.chipSpeed.hidden = !moving
+  els.chipKm.hidden = !moving
+  if (moving) {
+    els.chipSpeed.textContent = `${Math.round(model.speedKmh)} km/h`
+    els.chipKm.textContent = `${((1 - Math.min(model.p, 0.97)) * model.km).toFixed(1)} km to go`
   }
   els.count.textContent = countdown > 0 ? clockLeft(model.kind === 'between' ? model.eta : model.target, now) : 'due now'
   els.count.classList.toggle('is-late', countdown <= 0)
   if (model.kind === 'between') els.name.classList.toggle('is-overdue', countdown <= 0)
 
+  els.chipTrust.hidden = !d.oraUltimoRilevamento
   if (d.oraUltimoRilevamento) {
     const rel = trackReliability(d.oraUltimoRilevamento, now)
-    els.trust.textContent = `Position ${rel.text} · last detection ${ago(d.oraUltimoRilevamento)} ago at ${d.stazioneUltimoRilevamento || '—'}`
-    els.trust.className = `tk-trust track-${rel.tier}`
+    els.chipTrust.textContent = `${rel.text} · ${ago(d.oraUltimoRilevamento)}`
+    els.chipTrust.className = `tk-pill track-${rel.tier}`
+    els.chipTrust.title = `Last detection ${ago(d.oraUltimoRilevamento)} ago at ${d.stazioneUltimoRilevamento || '—'}`
   }
-  const age = Math.round((now - trainFetchedAt) / 1000)
-  const nextIn = Math.max(0, Math.round(trainRefreshMs() / 1000 - age))
-  const c = live.correction
-  els.sync.textContent = `Data refreshed ${age} s ago · next in ${nextIn} s${c && now - c.at < 15000 && Math.abs(c.pct) >= 2 ? ` · re-synced ${c.pct > 0 ? '+' : ''}${c.pct}% of the segment` : ''}`
 
   els.rows.forEach(({ row, cell }) => {
     if (row.dataset.passed) return
@@ -3035,7 +3043,7 @@ function renderTrainPage(d) {
   const evolution = delayEvolution(stops)
   if (evolution) root.append(evolution)
 
-  const routeCard = el('section', ['tv-card'])
+  const routeCard = el('section', ['tv-card', 'tv-route-card'])
   routeCard.append(el('h3', ['tv-section'], `Route · ${stops.length} stops`))
   const columns = el('div', ['tv-columns'])
   columns.append(el('span'), el('span', [], 'station'), el('span', ['tv-cell-head'], 'arr'), el('span', ['tv-cell-head'], 'dep'))
