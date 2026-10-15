@@ -2276,11 +2276,8 @@ function dashboardTiles(d, now) {
   const k = kinematics(d, cur, now)
   const tiles = []
   if (cur.kind === 'between' && k.km) {
-    const t = k.prof.timeAt(cur.p)
-    const phase = t < k.prof.tAcc ? 'accelerating' : t <= k.prof.tAcc + k.prof.tCruise ? 'cruising' : 'braking'
     tiles.push(
       { name: 'speed now', value: `${Math.round(k.now)}`, unit: 'km/h', sub: `${Math.round(k.lo)}–${Math.round(k.hi)} · peak ${Math.round(k.peak)}`, bar: k.now / Math.max(1, k.peak) },
-      { name: 'phase', value: phase, sub: `${k.prof.cruises ? `cruise after ${Math.round(k.prof.tAcc)} s` : 'short hop, no cruise'}` },
       { name: 'progress', value: `${(k.km * cur.p).toFixed(1)}`, unit: `/ ${k.km.toFixed(1)} km`, sub: `${Math.round(cur.p * 100)} % · ${k.remainingKm.toFixed(1)} km to go`, bar: cur.p },
       { name: `next · ${cur.next.stazione.toLowerCase()}`, value: clockLeft(cur.eta, now), sub: `${formatEpochHHMM(cur.eta)} · ±${cur.kal && cur.kal.sigmaMin !== null ? cur.kal.sigmaMin.toFixed(1) : '?'} min` }
     )
