@@ -2891,6 +2891,44 @@ function setTrainTitle(d) {
   $('stationTitle').textContent = `${category || 'Train'} ${d.numeroTreno}`.trim()
 }
 
+// What data/model-report.json says about how far off an estimate can be; loaded once, the page redraws when it is there.
+let modelReport = null
+fetch('data/model-report.json')
+  .then(r => (r.ok ? r.json() : null))
+  .then(report => { modelReport = report; if (report && trainDetail && !trackingMode) renderTrainPage(trainDetail) })
+  .catch(() => { /* without the report the card simply has no range */ })
+
+// The train at a glance: one time, how sure we are, where it comes from. The rest of the page is the detail.
+function glanceCard(d, now, pred, finalMs, lastPassed) {
+  const card = el('section', ['tv-card', 'tv-glance'])
+  const stops = d.fermate || []
+  const delay = d.ritardo || 0
+  if (d.provvedimento === 1) {
+    card.append(el('div', ['glance-big'], 'Cancelled'))
+    return card
+  }
+  if (d.arrivato || lastPassed >= stops.length - 1) {
+    const last = stops[stops.length - 1] || {}
+    card.append(el('div', ['glance-label'], `Arrived at ${d.destinazione || 'the terminus'}`), el('div', ['glance-big'], last.arrivoReale ? formatEpochHHMM(last.arrivoReale) : 'Arrived'))
+    return card
+  }
+  card.append(el('div', ['glance-label'], `Arrives at ${d.destinazione || 'the terminus'}`))
+  const row = el('div', ['glance-row'])
+  row.append(el('span', ['glance-big'], finalMs ? formatEpochHHMM(finalMs) : '—'))
+  // the range: measured on days the model was not fitted on; only the recovery rules have one
+  const ahead = stops.length - 1 - Math.max(lastPassed, 0)
+  const band = modelReport && modelReport.interval_90 && modelReport.interval_90[String(Math.min(Math.max(ahead, 1), 8))]
+  if (finalMs && band && modelOn()) row.append(el('span', ['glance-range'], `likely ${formatEpochHHMM(finalMs + band.lo * 60000)} to ${formatEpochHHMM(finalMs + band.hi * 60000)}`))
+  card.append(row)
+  const chips = el('div', ['glance-chips'])
+  if (delay !== 0) chips.append(chip(delay > 0 ? `+${delay} min` : `${delay} min`, delay >= LATE_THRESHOLD ? 'is-late' : delay > 0 ? 'is-slight' : 'is-early'))
+  else chips.append(chip('on time', 'is-ok'))
+  if (d.oraUltimoRilevamento) chips.append(chip(`seen ${formatEpochHHMM(d.oraUltimoRilevamento)}${d.stazioneUltimoRilevamento ? ` · ${String(d.stazioneUltimoRilevamento).toLowerCase()}` : ''}`, 'is-seen'))
+  chips.append(chip(`estimate · ${modelOn() ? 'model' : 'raw'}`, 'is-estimate'))
+  card.append(chips)
+  return card
+}
+
 function renderTrainPage(d) {
   try { logPredictions(d) } catch { /* the log is a side note: it must never stop the page */ }
   document.body.classList.toggle('view-nerd', trackingMode && nerdTrack)
@@ -2973,7 +3011,7 @@ function renderTrainPage(d) {
   addFact('type', d.compTipologiaTreno)
   summary.append(facts)
   if (d.subTitle) summary.append(el('p', ['tv-banner', status.tone], d.subTitle))
-  root.append(summary)
+  root.append(glanceCard(d, now, pred, finalMs, lastPassed), summary)
 
   const evolution = delayEvolution(stops)
   if (evolution) root.append(evolution)
