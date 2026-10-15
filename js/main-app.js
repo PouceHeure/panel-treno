@@ -569,7 +569,8 @@ function boardRow(train, now) {
   const expanded = expandedTrains.has(trainKey(train))
   // a train only RFI lists has no ViaggiaTreno route to open
   const clickable = !train.rfiOnly
-  const row = el('div', ['flap-row', `is-${presence}`, cancelled ? 'is-cancelled' : '', clickable ? 'is-clickable' : '', expanded && clickable ? 'is-expanded' : ''])
+  const status = cancelled ? 'cancelled' : delay >= LATE_THRESHOLD ? 'late' : delay > 0 ? 'slight' : 'ok'
+  const row = el('div', ['flap-row', `is-${presence}`, `status-${status}`, cancelled ? 'is-cancelled' : '', clickable ? 'is-clickable' : '', expanded && clickable ? 'is-expanded' : ''])
   if (clickable) {
     row.setAttribute('role', 'button')
     row.setAttribute('tabindex', '0')
@@ -636,6 +637,9 @@ function boardRow(train, now) {
   dest.append(meta)
 
   const countdown = el('span', ['flap-countdown'], countdownLabel(train, now))
+  const minutesLeft = (realDepartureMs(train) - now) / 60000
+  if (!cancelled && minutesLeft <= 2) countdown.classList.add('is-imminent')
+  else if (!cancelled && minutesLeft <= 10) countdown.classList.add('is-soon')
   if (presence === 'at-platform') countdown.classList.add('is-at-platform')
   row.append(tile, sched, realEl, dest, countdown)
   return row
@@ -687,6 +691,35 @@ function directionChips(trainData) {
   return wrap
 }
 
+// The top of the board: the next departure, and how the coming trains are doing.
+function boardSummary(trainData, now) {
+  const trains = upcomingTrains(trainData).filter(t => !destFilter || (t.destinazione || '').toLowerCase() === destFilter)
+  const wrap = el('section', ['board-summary'])
+  const live = trains.filter(t => !isCancelled(t))
+  const next = live.find(t => realDepartureMs(t) >= now - 30000)
+  if (next) {
+    const hero = el('div', ['next-hero'])
+    const delay = delayOf(next)
+    const plat = platformOf(next)
+    const top = el('div', ['next-top'])
+    top.append(el('span', ['next-kicker'], 'Next departure'))
+    if (delay > 0) top.append(el('span', [`next-delay`, delay >= LATE_THRESHOLD ? 'is-late' : 'is-slight'], `+${delay} min`))
+    hero.append(top)
+    hero.append(el('div', ['next-count'], countdownLabel(next, now)))
+    hero.append(el('div', ['next-dest'], `${niceName(next.destinazione)}${plat ? ` · ${label('platform').toLowerCase()} ${plat}` : ''}`))
+    hero.append(el('div', ['next-meta'], trainLabel(next)))
+    wrap.append(hero)
+  }
+  const counts = { ok: 0, slight: 0, late: 0, cancelled: trains.filter(isCancelled).length }
+  live.forEach(t => { const d = delayOf(t); counts[d >= LATE_THRESHOLD ? 'late' : d > 0 ? 'slight' : 'ok']++ })
+  const stats = el('div', ['board-stats'])
+  const stat = (value, text, tone) => { const c = el('div', ['board-stat', tone || '']); c.append(el('strong', [], String(value)), el('span', [], text)); return c }
+  stats.append(stat(live.length, 'trains coming'), stat(counts.ok, 'on time', 'is-ok'), stat(counts.slight + counts.late, 'late', counts.late ? 'is-late' : 'is-slight'))
+  if (counts.cancelled) stats.append(stat(counts.cancelled, 'cancelled', 'is-late'))
+  wrap.append(stats)
+  return wrap
+}
+
 function renderBoard(trainData) {
   updateDelayAxis(trainData)
   const groups = buildGroups(trainData)
@@ -697,6 +730,7 @@ function renderBoard(trainData) {
   }
   const now = Date.now()
   const chips = directionChips(trainData)
+  const summary = boardSummary(trainData, now)
   const grid = el('div', ['card-grid', groupByMode === 'train' ? 'is-single' : 'is-multi'])
   groups.forEach(group => grid.append(boardSection(group, now)))
   const legend = el('p', ['board-legend'], label('legend'))
@@ -715,9 +749,9 @@ function renderBoard(trainData) {
       key(el('span', ['key-swatch', 'is-slight']), `< ${LATE_THRESHOLD} min`),
       key(el('span', ['key-swatch', 'is-late']), `${LATE_THRESHOLD} min+`)
     )
-    return $('trainInfo').replaceChildren(...(chips ? [chips] : []), grid, bar, trackKey(), legend)
+    return $('trainInfo').replaceChildren(summary, ...(chips ? [chips] : []), grid, bar, trackKey(), legend)
   }
-  $('trainInfo').replaceChildren(...(chips ? [chips] : []), grid, trackKey(), legend)
+  $('trainInfo').replaceChildren(summary, ...(chips ? [chips] : []), grid, trackKey(), legend)
 }
 
 // =======================
