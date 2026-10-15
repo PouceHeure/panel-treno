@@ -48,7 +48,7 @@ departures stop loading, that's the most likely cause.
 | --- | --- |
 | `home.html` | Find a station or a train. Search is local and instant (`data/stations.json`), favourite stations are starred, one train can be followed and shows its estimated arrival. |
 | `index.html?stationID=…` | Departures board of a station, with direction chips and a star. |
-| `index.html?view=train&train=…` | A train: glance card, details, Tracking, and the Nerd view. |
+| `index.html?view=train&train=…` | A train, in three tabs (`&tab=now|route|charts`): **Now** (arrival at the terminus, countdown to the next stop), **Route** (every stop, details) and **Charts** (the data behind the estimate). |
 | `rfi.html` | The official RFI station board. |
 | `lab.html` | The data collected, the delay models, and how each scored on a day it never saw. |
 
