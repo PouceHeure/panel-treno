@@ -28,6 +28,7 @@
   <body class="search-page">
     <main class="search-main">
       <h1 class="search-title"><i class="bi bi-train-front"></i> <span id="title"></span></h1>
+      <p class="search-sub" id="subtitle"></p>
 
       <div class="search-tabs" role="tablist">
         <button type="button" role="tab" id="tabStation" class="search-tab is-active" aria-selected="true">
@@ -44,10 +45,15 @@
       </form>
 
       <div id="results"></div>
-      <section id="following" class="recent" hidden></section>
-      <section id="favorites" class="recent" hidden></section>
-      <section id="major" class="recent"></section>
-      <section id="recent" class="recent" hidden></section>
+      <div class="home-grid" id="homeGrid">
+        <section id="preview" class="preview" hidden></section>
+        <div class="home-side">
+          <section id="following" class="recent" hidden></section>
+          <section id="favorites" class="recent" hidden></section>
+          <section id="major" class="recent"></section>
+          <section id="recent" class="recent" hidden></section>
+        </div>
+      </div>
     </main>
 
     <footer class="app-footer">

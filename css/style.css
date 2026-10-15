@@ -1188,3 +1188,71 @@ button.route-open { font: inherit; cursor: pointer; }
 .flap-title { color: var(--text); font-size: 0.95rem; font-weight: 650; padding-left: 0.5rem; }
 .flap-title .bi { color: var(--accent); }
 .flap-card { box-shadow: 0 1px 0 color-mix(in srgb, var(--text) 4%, transparent) inset; }
+
+/* ===============================
+   Home as a desktop dashboard: departures of your station next to the shortcuts
+   =============================== */
+.search-sub { margin: -0.3rem 0 1.1rem; color: var(--muted); text-align: center; font-size: 0.9rem; }
+.home-grid { display: flex; flex-direction: column; }
+.home-side { display: contents; }
+#following { order: 1; } #favorites { order: 2; } #preview { order: 3; } #major { order: 4; } #recent { order: 5; }
+.preview { margin-top: 1.4rem; }
+.preview[hidden], .home-grid[hidden] { display: none; }
+.preview-card { padding: 0.9rem 1rem 0.5rem; }
+.preview-head { display: flex; justify-content: space-between; align-items: center; gap: 0.8rem; padding-bottom: 0.6rem; }
+.preview-title { display: flex; flex-direction: column; min-width: 0; }
+.preview-kicker { color: var(--muted); font-size: 0.74rem; letter-spacing: 0.04em; }
+.preview-title strong { font-size: 1.15rem; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-head .route-open { margin: 0; flex: none; }
+.preview-switch { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 0.7rem; scrollbar-width: none; }
+.preview-switch::-webkit-scrollbar { display: none; }
+.preview-list { display: flex; flex-direction: column; }
+.preview-row { position: relative; display: grid; grid-template-columns: 2.4rem 5.2rem minmax(0, 1fr) 4.6rem; align-items: center; gap: 0.7rem; padding: 0.7rem 0.4rem 0.7rem 0.6rem; border-top: 1px solid var(--rule); color: var(--text); text-decoration: none; border-radius: 10px; }
+.preview-row:first-child { border-top: none; }
+.preview-row:hover { background: color-mix(in srgb, var(--text) 4%, transparent); text-decoration: none; }
+.preview-row::before { content: ""; position: absolute; left: 0; top: 0.6rem; bottom: 0.6rem; width: 3px; border-radius: 3px; background: transparent; }
+.preview-row.status-ok::before { background: color-mix(in srgb, var(--ok) 55%, transparent); }
+.preview-row.status-slight::before { background: var(--slight); }
+.preview-row.status-late::before { background: var(--late); }
+.preview-row.status-cancelled::before { background: var(--faint); }
+.preview-row .platform-tile { align-self: center; min-height: 1.9rem; }
+.preview-when { display: flex; flex-direction: column; gap: 1px; }
+.preview-time { font-family: var(--mono); font-weight: 600; font-size: 1.05rem; }
+.preview-delay { font-size: 0.72rem; font-weight: 700; }
+.preview-dest { display: flex; flex-direction: column; min-width: 0; }
+.preview-dest-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-dest-meta { color: var(--muted); font-size: 0.78rem; }
+.preview-count { text-align: right; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.preview-count.is-soon { color: var(--text); }
+.preview-count.is-imminent { color: var(--accent); animation: imminent 1.6s ease-in-out infinite; }
+
+@media (min-width: 1000px) {
+  .search-main { max-width: 1180px; padding-top: 2.4rem; }
+  .search-title { justify-content: flex-start; font-size: 1.9rem; margin-bottom: 0.2rem; }
+  .search-sub { text-align: left; margin: 0 0 1.4rem; font-size: 1rem; }
+  .search-tabs { max-width: 340px; }
+  .search-form { max-width: 680px; }
+  .search-form input { height: 3rem; font-size: 1.05rem; }
+  #results { max-width: 680px; }
+  .home-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); gap: 1.8rem; align-items: start; margin-top: 0.6rem; }
+  .home-side { display: flex; flex-direction: column; grid-column: 2; grid-row: 1; }
+  #following, #favorites, #major, #recent { order: 0; }
+  .preview { grid-column: 1; grid-row: 1; margin-top: 1.4rem; }
+  .preview-row { grid-template-columns: 2.6rem 6.5rem minmax(0, 1fr) 5.5rem; padding-block: 0.85rem; }
+  .preview-time { font-size: 1.2rem; }
+  .preview-dest-name { font-size: 1.02rem; }
+  .preview-count { font-size: 1.05rem; }
+  .major-grid { grid-template-columns: 1fr; }
+}
+
+/* the board on a big screen: three columns, and the flat list gets room */
+@media (min-width: 1400px) {
+  .board { max-width: 1500px; }
+  .card-grid.is-multi { grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); }
+}
+@media (min-width: 1000px) {
+  .card-grid.is-single { grid-template-columns: minmax(0, 900px); }
+  .card-grid.is-single .flap-row { padding-block: 0.85rem; }
+  .card-grid.is-single .flap-time { font-size: 1.2rem; }
+  .card-grid.is-single .flap-dest-name { font-size: 1.05rem; }
+}

@@ -4,6 +4,7 @@ const API = 'http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/'
 
 const LABELS = {
   title: 'Panel Treno',
+  subtitle: 'Find your train from the station you are in.',
   noresult: 'No result',
   failed: 'Search failed',
   btnsearch: 'Search',
@@ -77,7 +78,7 @@ function stationRow(id, name, extra = '', iconName = 'bi-geo-alt') {
     star.title = star.getAttribute('aria-label')
     star.replaceChildren(Object.assign(document.createElement('i'), { className: `bi ${on ? 'bi-star-fill' : 'bi-star'}` }))
   }
-  star.addEventListener('click', () => { toggleFavorite(id, name); paint(); renderFavorites(); renderMajor() })
+  star.addEventListener('click', () => { toggleFavorite(id, name); paint(); renderFavorites(); renderMajor(); renderPreview() })
   paint()
   row.append(resultLink(recentHref(stationRecent(id, name)), name, extra, iconName), star)
   return row
@@ -146,6 +147,7 @@ async function doSearch(e) {
   $('major').hidden = true
   $('favorites').hidden = true
   $('following').hidden = true
+  $('homeGrid').hidden = true
   const requestId = ++latestRequest
   try {
     if (mode === 'train') await searchTrains(keyword, requestId)
@@ -275,14 +277,107 @@ async function renderFollowing() {
   followingTimer = setInterval(() => { if (!document.hidden && !$('following').hidden) refresh() }, 30000)
 }
 
+// The next departures of one station, right on the home page: the first favourite, else the last station opened.
+let previewStation = null
+let previewTimer = null
+const previewCandidates = () => {
+  const seen = new Set()
+  return loadFavorites().map(f => ({ id: f.id, name: f.name }))
+    .concat(loadRecent().filter(e => e.type === 'station').map(e => ({ id: e.id, name: e.name })))
+    .filter(s => (seen.has(s.id) ? false : seen.add(s.id)))
+}
+
+async function renderPreview() {
+  clearInterval(previewTimer)
+  const box = $('preview')
+  const candidates = previewCandidates()
+  box.hidden = !candidates.length || mode !== 'station' || !!$('searchInput').value.trim()
+  if (box.hidden) return
+  if (!previewStation || !candidates.some(c => c.id === previewStation)) previewStation = candidates[0].id
+  const current = candidates.find(c => c.id === previewStation)
+
+  const card = document.createElement('section')
+  card.className = 'flap-card preview-card'
+  const head = document.createElement('div')
+  head.className = 'preview-head'
+  const title = document.createElement('div')
+  title.className = 'preview-title'
+  title.append(Object.assign(document.createElement('span'), { className: 'preview-kicker', textContent: 'Departures' }), Object.assign(document.createElement('strong'), { textContent: niceName(current.name) }))
+  head.append(title)
+  const open = document.createElement('a')
+  open.className = 'route-open'
+  open.href = recentHref(stationRecent(current.id, current.name))
+  open.textContent = 'Full board'
+  head.append(open)
+  const switcher = document.createElement('div')
+  switcher.className = 'preview-switch'
+  candidates.slice(0, 5).forEach(c => {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.className = `dir-chip${c.id === previewStation ? ' is-active' : ''}`
+    b.textContent = niceName(c.name)
+    b.addEventListener('click', () => { previewStation = c.id; renderPreview() })
+    switcher.append(b)
+  })
+  const list = document.createElement('div')
+  list.className = 'preview-list'
+  list.append(Object.assign(document.createElement('p'), { className: 'result-hint', textContent: 'Loading departures…' }))
+  card.append(head, ...(candidates.length > 1 ? [switcher] : []), list)
+  box.replaceChildren(card)
+
+  const load = async () => {
+    try {
+      const data = await fetchViaProxy(`${API}partenze/${current.id}/${encodeURIComponent(nowAsViaggiaTrenoDate())}`)
+      const now = Date.now()
+      const rows = (Array.isArray(data) ? data : [])
+        .map(t => ({ t, delay: Math.max(t.ritardo || 0, 0), real: (t.orarioPartenza || 0) + Math.max(t.ritardo || 0, 0) * 60000 }))
+        .filter(r => r.t.orarioPartenza && r.real >= now - 60000)
+        .sort((a, b) => a.real - b.real)
+        .slice(0, 8)
+      if (!rows.length) return list.replaceChildren(Object.assign(document.createElement('p'), { className: 'result-hint', textContent: 'No departure listed right now.' }))
+      list.replaceChildren(...rows.map(({ t, delay, real }) => previewRow(t, delay, real, current, now)))
+    } catch (err) {
+      list.replaceChildren(Object.assign(document.createElement('p'), { className: 'result-error', textContent: `${LABELS.failed}: ${describeProxyReport(lastProxyReport) || err.message}` }))
+    }
+  }
+  load()
+  previewTimer = setInterval(() => { if (!document.hidden && !$('preview').hidden) load() }, 30000)
+}
+
+function previewRow(t, delay, real, station, now) {
+  const cancelled = t.provvedimento === 1
+  const status = cancelled ? 'cancelled' : delay >= 5 ? 'late' : delay > 0 ? 'slight' : 'ok'
+  const link = document.createElement('a')
+  link.className = `preview-row status-${status}`
+  const stationParams = { stationID: station.id, stationName: station.name }
+  link.href = `index.html?${new URLSearchParams({ view: 'train', train: t.numeroTreno, from: t.codOrigine, date: t.dataPartenzaTreno, ...stationParams, tab: 'now' })}`
+  const plat = t.binarioEffettivoPartenzaDescrizione || t.binarioProgrammatoPartenzaDescrizione || '–'
+  const minutes = Math.round((real - now) / 60000)
+  const countdown = cancelled ? 'cancelled' : minutes <= 0 ? 'now' : minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}`
+  const cell = (cls, text) => Object.assign(document.createElement('span'), { className: cls, textContent: text })
+  const time = hhmm => new Date(hhmm).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+  const dest = document.createElement('span')
+  dest.className = 'preview-dest'
+  dest.append(cell('preview-dest-name', niceName(t.destinazione)), cell('preview-dest-meta', `${(t.categoria || '').trim()} ${t.numeroTreno}`.trim()))
+  const when = document.createElement('span')
+  when.className = 'preview-when'
+  when.append(cell('preview-time', time(t.orarioPartenza)))
+  if (delay > 0 && !cancelled) when.append(cell(`preview-delay ${status === 'late' ? 'is-late' : 'is-slight'}`, `~${time(real)} · +${delay}`))
+  const left = cell(`preview-count${minutes <= 2 && !cancelled ? ' is-imminent' : minutes <= 10 ? ' is-soon' : ''}`, countdown)
+  link.append(cell('platform-tile', plat), when, dest, left)
+  return link
+}
+
 function renderEmpty() {
   latestRequest++
   $('results').replaceChildren()
+  $('homeGrid').hidden = false
   $('major').hidden = false
   $('favorites').hidden = mode !== 'station' || loadFavorites().length === 0
   $('following').hidden = !loadPinned()
   if (!$('favorites').hidden) renderFavorites()
   renderFollowing()
+  renderPreview()
   const recent = $('recent')
   const list = loadRecent()
   recent.hidden = list.length === 0
@@ -311,6 +406,7 @@ function renderEmpty() {
 document.addEventListener('DOMContentLoaded', () => {
   $('btn-search').textContent = LABELS.btnsearch
   $('title').textContent = LABELS.title
+  $('subtitle').textContent = LABELS.subtitle
   $('tabStation').addEventListener('click', () => { setMode('station'); doSearch() })
   $('tabTrain').addEventListener('click', () => { setMode('train'); doSearch() })
 
