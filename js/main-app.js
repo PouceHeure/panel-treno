@@ -1609,6 +1609,8 @@ let nerdTrack = false
 let trackWin = '10' // minutes shown by the position plot: '5', '10', '30' or 'all'
 let trackAxis = 'min' // vertical axis of the plot: 'min' (scheduled travel time) or 'km' (distance)
 const TRACK_TICK_MS = 5000
+let nerdHoldUntil = 0 // while a finger or the mouse is on a chart, the page is not redrawn under it
+const holdNerd = ms => { nerdHoldUntil = Date.now() + ms }
 const NOW_FRAC = 0.7 // where "now" is, as a share of the plot width, in every nerd chart
 const TRACK_KEEP = 360
 
@@ -1666,7 +1668,7 @@ function recordTick() {
   if (s === null) return
   trackHist.ticks.push({ t: now, s })
   if (trackHist.ticks.length > TRACK_KEEP * 2) trackHist.ticks.shift() // about an hour of samples
-  if (trackingMode && nerdTrack) renderTrackNerd(trainDetail)
+  if (trackingMode && nerdTrack && Date.now() >= nerdHoldUntil) renderTrackNerd(trainDetail)
 }
 
 // A data refresh arrived: how far was the old estimate from the new one?
@@ -1922,7 +1924,7 @@ function nerdTrackChart(d) {
   const estPts = (revised ? samples.filter(x => x.t < model.since).concat(revised) : samples.concat([{ t: now, s: sNow }])).sort(sortT)
   trackView = { tMin, tMax, LEFT, RIGHT, W, winMs, now, est: estPts, cursors: [], readouts: [] }
   // hover (or touch) the plot to read the estimated position at that instant
-  const readout = el('p', ['tk-readout', 'nerd-dim'], winMs ? 'touch or hover the plot to read the position at that time' : '')
+  const readout = el('p', ['tk-readout', 'nerd-dim'], winMs ? 'touch or hover the plot' : '')
   const cursor = svgEl('line', { y1: TOP, y2: TOP + plotH, class: 'tk-cursor' })
   cursor.style.display = 'none'
   svg.append(cursor)
@@ -1942,9 +1944,9 @@ function nerdTrackChart(d) {
     readout.textContent = `${formatTime(new Date(t), true)} · ${t > now ? 'in the future' : describe(posAt(t))}`
   }
   if (winMs) {
-    svg.addEventListener('pointerdown', e => showAt(e.clientX))
-    svg.addEventListener('pointermove', e => showAt(e.clientX))
-    svg.addEventListener('pointerleave', () => syncCursors(null))
+    svg.addEventListener('pointerdown', e => { holdNerd(5000); showAt(e.clientX) })
+    svg.addEventListener('pointermove', e => { holdNerd(5000); showAt(e.clientX) })
+    svg.addEventListener('pointerleave', () => { holdNerd(600); syncCursors(null) })
   }
   panel.append(readout, svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
@@ -2038,7 +2040,7 @@ function nerdTrackDelay(d) {
   cursor.style.display = 'none'
   svg.append(cursor)
   trackView.cursors.push(cursor)
-  const readout = el('p', ['tk-readout', 'nerd-dim'], winMs ? 'hover to read the delay; the cursor follows the position chart' : '')
+  const readout = el('p', ['tk-readout', 'nerd-dim'], winMs ? 'touch or hover the plot' : '')
   const valueAt = t => {
     const pts = (t > now ? forecast : implied.length > 1 ? implied : reported)
     if (!pts.length) return null
@@ -2056,9 +2058,9 @@ function nerdTrackDelay(d) {
     readout.textContent = `${formatTime(new Date(t), true)} · ${t > now ? 'forecast ' : ''}${v === null ? '–' : `${v > 0 ? '+' : ''}${v.toFixed(1)} min`}`
   }
   if (winMs) {
-    svg.addEventListener('pointerdown', e => showAt(e.clientX))
-    svg.addEventListener('pointermove', e => showAt(e.clientX))
-    svg.addEventListener('pointerleave', () => syncCursors(null))
+    svg.addEventListener('pointerdown', e => { holdNerd(5000); showAt(e.clientX) })
+    svg.addEventListener('pointermove', e => { holdNerd(5000); showAt(e.clientX) })
+    svg.addEventListener('pointerleave', () => { holdNerd(600); syncCursors(null) })
   }
   panel.append(readout, svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
@@ -2805,6 +2807,7 @@ function renderTrainPage(d) {
   if (trackingMode && nerdTrack) {
     stopTracking()
     setTrainTitle(d)
+    if (Date.now() < nerdHoldUntil) return
     return renderTrackNerd(d)
   }
   if (trackingMode) return renderTracking(d)
