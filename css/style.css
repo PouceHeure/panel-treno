@@ -1292,3 +1292,10 @@ body.view-train #mapToggle { display: none; }
 @media (max-width: 600px) { #mapToggleLabel { display: none; } #mapToggle { padding: 0; width: 34px; } #mapToggle i { margin: 0; } }
 .sm-platform.is-closed { fill: color-mix(in srgb, var(--tile) 70%, transparent); stroke: var(--line); stroke-width: 1.5; }
 .sm-platform.is-closed.is-busy { fill: color-mix(in srgb, var(--text) 9%, var(--tile)); }
+
+/* numbered tracks */
+.sm-rail.is-track { stroke: var(--muted); stroke-width: 2.2; opacity: 0.85; }
+.sm-rail.is-track.is-busy { stroke: var(--text); stroke-width: 2.6; opacity: 1; }
+.sm-track-no { fill: var(--faint); font-family: var(--mono); font-size: 12px; font-weight: 600; }
+.sm-track-no.is-busy { fill: var(--text); }
+.sm-leader { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 2 2; }

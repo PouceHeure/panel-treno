@@ -774,7 +774,7 @@ function renderStationMap(trainData) {
     }
   }
   // the trains of a platform are listed in departure order
-  placement.onPlatform.forEach(list => list.sort((a, b) => realDepartureMs(a) - realDepartureMs(b)))
+  placement.slots.forEach(slot => slot.trains.sort((a, b) => realDepartureMs(a) - realDepartureMs(b)))
   const scroll = el('div', ['sm-scroll'])
   scroll.append(drawStationMap(entry.layout, placement, describe))
   wrap.append(scroll)
@@ -785,7 +785,7 @@ function renderStationMap(trainData) {
     rest.querySelectorAll('a').forEach((a, i) => { a.href = `${trainPageUrl(placement.unplaced[i])}&tab=now` })
     wrap.append(rest)
   }
-  wrap.append(el('p', ['sm-credit'], `Layout: OpenStreetMap contributors (${entry.source === 'live' ? 'just loaded' : entry.source === 'cached' ? 'saved in this browser' : 'saved with the app'}). Tracks are not numbered in OpenStreetMap: trains sit on their platform.`))
+  wrap.append(el('p', ['sm-credit'], `Layout: OpenStreetMap contributors (${entry.source === 'live' ? 'just loaded' : entry.source === 'cached' ? 'saved in this browser' : 'saved with the app'}). Track numbers are worked out from the platforms they touch: a train sits on its track when it was found, else on its platform.`))
   $('trainInfo').replaceChildren(wrap)
 }
 

@@ -88,7 +88,7 @@ python3 -m unittest discover -s tests -p "test_*.py" # evaluation: pairs, chrono
 
 ## Station map
 
-`view=map` on a station draws its platforms and tracks from OpenStreetMap and puts the next trains (3 hours, up to 3 per platform) on their platform. Tracks are not numbered in OpenStreetMap, platforms are (`12;13` is an island serving tracks 12 and 13), so a train sits on its platform, not on a particular track.
+`view=map` on a station draws its platforms and tracks from OpenStreetMap and puts the next trains (3 hours, up to 3 per platform) on their platform. Tracks are not numbered in OpenStreetMap, platforms are (`12;13` is an island serving tracks 12 and 13). The tracks are numbered from the platforms: the rail on each side of a platform is one of the tracks it serves, and the numbers grow across the station in one direction (found from the platforms themselves). A track is only numbered when its rail is not claimed by another number, so a train is never put on a wrong track; a train whose track was not found sits on its platform instead. ViaggiaTreno's platform (`binario`) is the track number.
 
 The layout comes from `data/topology/<station code>.json` when the file exists, else from this browser's cache, else from a live Overpass query (slow: up to half a minute, and rate limited). To ship a station with the app:
 

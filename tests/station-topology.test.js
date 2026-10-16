@@ -59,13 +59,34 @@ test('Genova Piazza Principe: a layout with its numbered platforms, fitted to th
   assert.strictEqual(T.findPlatform(layout, 'zzz'), null)
 })
 
-test('trains are placed on their platform, the others are returned', { skip: !fs.existsSync(file) }, () => {
+test('tracks are numbered from the platforms that serve them', { skip: !fs.existsSync(file) }, () => {
+  const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+  const layout = T.layoutTopology(T.topologyFromWays(data.ways))
+  const nums = Object.keys(layout.tracks).map(Number).sort((a, b) => a - b)
+  assert.ok(nums.length >= 7, `found ${nums.join(',')}`)
+  ;[12, 13, 14].forEach(n => assert.ok(layout.tracks[n], `track ${n} was found`))
+  // two tracks of one island are two different rails
+  assert.notStrictEqual(layout.tracks[12].rail, layout.tracks[13].rail)
+  // numbers grow in one direction across the station: the order of the tracks on the drawing follows the numbers
+  const ys = nums.map(n => layout.tracks[n].anchor[1])
+  const increasing = ys.every((y, i) => !i || y > ys[i - 1])
+  const decreasing = ys.every((y, i) => !i || y < ys[i - 1])
+  assert.ok(increasing || decreasing, 'tracks are ordered across the station')
+  // and no two tracks share an anchor
+  const anchors = nums.map(n => layout.tracks[n].anchor)
+  anchors.forEach((a, i) => anchors.slice(i + 1).forEach(b => assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1]) > 12, 'two tracks are not on top of each other')))
+  assert.strictEqual(T.findTrack(layout, '13 Est').ref, '13')
+  assert.strictEqual(T.findTrack(layout, '99'), null)
+})
+
+test('trains go on their track, else on their platform, else they are returned', { skip: !fs.existsSync(file) }, () => {
   const data = JSON.parse(fs.readFileSync(file, 'utf8'))
   const layout = T.layoutTopology(T.topologyFromWays(data.ways))
   const trains = [{ n: 1, p: '13' }, { n: 2, p: '13' }, { n: 3, p: '12' }, { n: 4, p: '99' }, { n: 5, p: '' }]
-  const { onPlatform, unplaced } = T.placeTrains(layout, trains, t => t.p)
-  const onSame = [...onPlatform.values()].find(list => list.some(t => t.n === 1))
-  assert.ok(onSame.some(t => t.n === 2), 'two trains on 13 share the platform')
+  const { slots, unplaced } = T.placeTrains(layout, trains, t => t.p)
+  const on13 = slots.get('t13')
+  assert.ok(on13 && on13.kind === 'track' && on13.trains.map(t => t.n).join() === '1,2', 'two trains share track 13')
+  assert.ok(slots.get('t12') && slots.get('t12') !== on13, 'track 12 is another slot')
   assert.deepStrictEqual(unplaced.map(t => t.n).sort(), [4, 5])
 })
 

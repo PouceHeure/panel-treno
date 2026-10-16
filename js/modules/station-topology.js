@@ -81,7 +81,7 @@ function trackAngle(railsMeters) {
 
 // Lays the station out on a width x ? canvas: tracks horizontal, north is not kept. When the platforms are too close
 // to hold a label each, the drawing is stretched across the tracks (a schematic, not a survey).
-function layoutTopology(topology, { width = 1100, pad = 28, rowGap = 46, margin = 60, marginY = 14 } = {}) {
+function layoutTopology(topology, { width = 1100, pad = 28, rowGap = 46, trackRowGap = 30, margin = 60, marginY = 14 } = {}) {
   const { rails } = topology
   if (!topology.platforms.length) return null
   let platforms = topology.platforms
@@ -112,35 +112,158 @@ function layoutTopology(topology, { width = 1100, pad = 28, rowGap = 46, margin 
   const bb = platR.flat().reduce((b, [x, y]) => ({ x0: Math.min(b.x0, x), x1: Math.max(b.x1, x), y0: Math.min(b.y0, y), y1: Math.max(b.y1, y) }), { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity })
   const spanX = Math.max(bb.x1 - bb.x0, 30) + 2 * margin
   const scale = (width - 2 * pad) / spanX
-  // rows: one per platform centre across the tracks; spread them when they are tighter than a label
-  // (a platform drawn in several pieces counts once)
   const groups = new Map()
   platforms.forEach((p, i) => {
     const key = p.refs.join('/') || `#${p.id}`
     groups.set(key, (groups.get(key) || []).concat(platR[i]))
   })
-  const centres = [...groups.values()].map(pts => centroid(pts)[1]).sort((a, b) => a - b)
-  let minGap = Infinity
-  for (let i = 1; i < centres.length; i++) if (centres[i] - centres[i - 1] > 2) minGap = Math.min(minGap, (centres[i] - centres[i - 1]) * scale)
-  const stretch = Number.isFinite(minGap) ? Math.min(3.2, Math.max(1, rowGap / minGap)) : 1
-  const px = ([x, y]) => [pad + (x - bb.x0 + margin) * scale, pad + (y - bb.y0 + marginY) * scale * stretch]
-  const height = Math.round(pad * 2 + (bb.y1 - bb.y0 + 2 * marginY) * scale * stretch)
+  const platformGap = () => {
+    const centres = [...groups.values()].map(pts => centroid(pts)[1]).sort((a, b) => a - b)
+    let g = Infinity
+    for (let i = 1; i < centres.length; i++) if (centres[i] - centres[i - 1] > 2) g = Math.min(g, (centres[i] - centres[i - 1]) * scale)
+    return g
+  }
 
-  const outPlatforms = platforms.map((p, i) => {
-    const pts = platR[i].map(px)
-    const c = centroid(pts)
-    // its axis: the two points furthest apart
-    let a = pts[0]
-    let b = pts[pts.length - 1]
-    let best = 0
-    for (let u = 0; u < pts.length; u++) for (let v = u + 1; v < pts.length; v++) {
-      const d = Math.hypot(pts[u][0] - pts[v][0], pts[u][1] - pts[v][1])
-      if (d > best) { best = d; a = pts[u]; b = pts[v] }
+  // the drawing for a given stretch across the tracks
+  const make = stretch => {
+    const px = ([x, y]) => [pad + (x - bb.x0 + margin) * scale, pad + (y - bb.y0 + marginY) * scale * stretch]
+    const height = Math.round(pad * 2 + (bb.y1 - bb.y0 + 2 * marginY) * scale * stretch)
+    const outPlatforms = platforms.map((p, i) => {
+      const pts = platR[i].map(px)
+      const c = centroid(pts)
+      // its axis: the two points furthest apart
+      let a = pts[0]
+      let b = pts[pts.length - 1]
+      let best = 0
+      for (let u = 0; u < pts.length; u++) for (let v = u + 1; v < pts.length; v++) {
+        const d = Math.hypot(pts[u][0] - pts[v][0], pts[u][1] - pts[v][1])
+        if (d > best) { best = d; a = pts[u]; b = pts[v] }
+      }
+      return { id: p.id, refs: p.refs, name: p.name, pts, centre: c, length: best, left: a[0] <= b[0] ? a : b, right: a[0] <= b[0] ? b : a }
+    })
+    const outRails = railR.map(r => ({ id: r.id, tunnel: r.tunnel, siding: r.siding, pts: r.m.map(px) }))
+    const layout = { width, height, scale, stretch, platforms: outPlatforms, rails: outRails }
+    layout.tracks = assignTracks(layout)
+    return layout
+  }
+
+  // first at true proportions: the tracks found there tell how far apart they must be drawn to hold a train each
+  const first = make(1)
+  const trackGaps = Object.values(first.tracks).map(t => t.anchor[1]).sort((u, v) => u - v)
+  let minTrackGap = Infinity
+  for (let i = 1; i < trackGaps.length; i++) if (trackGaps[i] - trackGaps[i - 1] > 3) minTrackGap = Math.min(minTrackGap, trackGaps[i] - trackGaps[i - 1])
+  const need = Number.isFinite(minTrackGap) ? trackRowGap / minTrackGap : rowGap / platformGap()
+  const stretch = Number.isFinite(need) ? Math.min(3.2, Math.max(1, need)) : 1
+  return stretch === 1 ? first : make(stretch)
+}
+
+// y of a polyline at x (the polyline runs roughly left to right); null outside its span
+function yAtX(pts, x, nearY) {
+  let best = null
+  for (let i = 1; i < pts.length; i++) {
+    const [x1, y1] = pts[i - 1]
+    const [x2, y2] = pts[i]
+    if ((x - x1) * (x - x2) > 0 || x1 === x2) continue
+    const y = y1 + ((x - x1) / (x2 - x1)) * (y2 - y1)
+    if (best === null || Math.abs(y - nearY) < Math.abs(best - nearY)) best = y
+  }
+  return best
+}
+
+const pathLength = pts => pts.reduce((s, p, i) => (i ? s + Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0), 0)
+
+// Numbers the tracks. A platform lists the tracks it serves ("12;13"), and the rail on each of its sides is one of
+// them; numbers increase across the station in one direction, found from the platforms themselves.
+// Every piece of every platform votes for the rails beside it; a track is kept only when its rail is not claimed by
+// another number, so that a train is never put on a wrong track. Trains of the others stay on their platform.
+// Returns { '13': { rail, rails: [ids], parts: [polylines], pts, anchor: [x, y], platform } }.
+function assignTracks(layout, { reach = 62, minPiece = 40 } = {}) {
+  const candidates = layout.rails.filter(r => !r.tunnel && r.pts.length > 1)
+  const sideRails = platform => {
+    // sample the platform along its length and vote for the closest rail above and below it
+    const votes = { up: new Map(), down: new Map() }
+    const [x0, x1] = [platform.left[0], platform.right[0]]
+    const steps = Math.max(4, Math.round((x1 - x0) / 14))
+    for (let i = 0; i <= steps; i++) {
+      const x = x0 + ((x1 - x0) * i) / steps
+      const y = yAtX(platform.pts, x, platform.centre[1])
+      if (y === null) continue
+      let up = null
+      let down = null
+      // the rails at this x; a siding drawn right over another rail is the same track drawn twice
+      const here = []
+      candidates.forEach(r => {
+        const ry = yAtX(r.pts, x, y)
+        if (ry !== null) here.push({ id: r.id, ry, siding: r.siding })
+      })
+      here.filter(r => !r.siding || !here.some(o => !o.siding && Math.abs(o.ry - r.ry) < 10)).forEach(r => {
+        const d = r.ry - y
+        if (d < -3 && d > -reach && (!up || d > up.d)) up = { id: r.id, d }
+        if (d > 3 && d < reach && (!down || d < down.d)) down = { id: r.id, d }
+      })
+      if (up) votes.up.set(up.id, (votes.up.get(up.id) || 0) + 1)
+      if (down) votes.down.set(down.id, (votes.down.get(down.id) || 0) + 1)
     }
-    return { id: p.id, refs: p.refs, name: p.name, pts, centre: c, length: best, left: a[0] <= b[0] ? a : b, right: a[0] <= b[0] ? b : a }
+    const top = m => [...m.entries()].sort((a, b) => b[1] - a[1])[0]
+    const u = top(votes.up)
+    const d = top(votes.down)
+    return { up: u && u[1] >= 2 ? u[0] : null, down: d && d[1] >= 2 ? d[0] : null }
+  }
+  const byId = new Map(layout.rails.map(r => [r.id, r]))
+  const numeric = ref => parseInt(ref, 10)
+  const pieces = layout.platforms.filter(p => p.refs.length && p.length >= minPiece && p.refs.every(r => /^\d+/.test(r)))
+
+  // direction of the numbering across the station: numbers grow downwards on the drawing, or upwards
+  const meanRef = pieces.reduce((acc, p) => acc + numeric(p.refs[0]), 0) / (pieces.length || 1)
+  const meanY = pieces.reduce((acc, p) => acc + p.centre[1], 0) / (pieces.length || 1)
+  const down = pieces.reduce((acc, p) => acc + (numeric(p.refs[0]) - meanRef) * (p.centre[1] - meanY) * p.length, 0) >= 0
+
+  // the votes: ref -> rail -> weight (the length of the platform piece that pointed at it)
+  const claims = new Map()
+  const claim = (ref, railId, piece) => {
+    if (!railId || !byId.has(railId)) return
+    if (!claims.has(ref)) claims.set(ref, new Map())
+    const m = claims.get(ref)
+    const cur = m.get(railId) || { weight: 0, piece: null }
+    cur.weight += piece.length
+    if (!cur.piece || piece.length > cur.piece.length) cur.piece = piece
+    m.set(railId, cur)
+  }
+  pieces.forEach(p => {
+    const sides = sideRails(p)
+    const refs = [...p.refs].sort((a, b) => numeric(a) - numeric(b))
+    if (refs.length === 2) {
+      claim(down ? refs[0] : refs[1], sides.up, p)
+      claim(down ? refs[1] : refs[0], sides.down, p)
+    } else if (refs.length === 1) {
+      // an edge platform serves one track, on the side that has a rail
+      claim(refs[0], sides.up && sides.down ? (down ? sides.down : sides.up) : sides.up || sides.down, p)
+    }
   })
-  const outRails = railR.map(r => ({ id: r.id, tunnel: r.tunnel, siding: r.siding, pts: r.m.map(px) }))
-  return { width, height, scale: scale * 1, stretch, platforms: outPlatforms, rails: outRails }
+
+  // a rail belongs to one number: when two numbers want it, the heavier claim keeps it
+  const winners = new Map()
+  claims.forEach((rails, ref) => {
+    const [railId, c] = [...rails.entries()].sort((a, b) => b[1].weight - a[1].weight)[0]
+    const taken = winners.get(railId)
+    if (!taken || c.weight > taken.weight) winners.set(railId, { ref, weight: c.weight })
+  })
+  const tracks = {}
+  claims.forEach((rails, ref) => {
+    const ranked = [...rails.entries()].sort((a, b) => b[1].weight - a[1].weight)
+    const [railId, c] = ranked[0]
+    if (winners.get(railId).ref !== ref) return
+    // the other rails this number also pointed at are further pieces of the same track
+    const parts = ranked.filter(([id, v], i) => !i || (v.weight >= 0.25 * c.weight && (!winners.get(id) || winners.get(id).ref === ref))).map(([id]) => byId.get(id))
+    const rail = byId.get(railId)
+    const piece = c.piece
+    const xs = rail.pts.map(q => q[0])
+    const x = Math.min(Math.max(piece.centre[0], Math.min(...xs)), Math.max(...xs))
+    const y = yAtX(rail.pts, x, piece.centre[1])
+    if (y === null) return
+    tracks[ref] = { rail: railId, rails: parts.map(r => r.id), parts: parts.map(r => r.pts), pts: rail.pts, anchor: [x, y], platform: piece.id }
+  })
+  return tracks
 }
 
 // Which platform (a drawn one) a ViaggiaTreno platform label belongs to; several drawn ways can carry the same
@@ -153,17 +276,30 @@ function findPlatform(layout, label) {
   return matches.reduce((best, p) => (p.length > best.length ? p : best))
 }
 
-// Puts trains on the platforms: Map(platform id -> trains), and the trains that could not be placed.
+// The track a ViaggiaTreno platform label ("13", "1 Ovest") names, when it was found on the map.
+function findTrack(layout, label) {
+  const token = platformToken(label)
+  return layout && token && layout.tracks && layout.tracks[token] ? { ref: token, ...layout.tracks[token] } : null
+}
+
+// Puts trains where they are: on their track when it is known, else on their platform. Returns the slots
+// (Map(key -> { key, kind, ref, anchor: [x, y], trains })) and the trains that could not be placed.
 function placeTrains(layout, trains, platformOf) {
-  const onPlatform = new Map()
+  const slots = new Map()
   const unplaced = []
+  const add = (key, kind, ref, anchor, train) => {
+    if (!slots.has(key)) slots.set(key, { key, kind, ref, anchor, trains: [] })
+    slots.get(key).trains.push(train)
+  }
   trains.forEach(train => {
-    const platform = findPlatform(layout, platformOf(train))
-    if (!platform) { unplaced.push(train); return }
-    if (!onPlatform.has(platform.id)) onPlatform.set(platform.id, [])
-    onPlatform.get(platform.id).push(train)
+    const label = platformOf(train)
+    const track = findTrack(layout, label)
+    if (track) return add(`t${track.ref}`, 'track', track.ref, track.anchor, train)
+    const platform = findPlatform(layout, label)
+    if (platform) return add(`p${platform.id}`, 'platform', platform.refs.join(' · '), platform.centre, train)
+    unplaced.push(train)
   })
-  return { onPlatform, unplaced }
+  return { slots, unplaced }
 }
 
 // The Overpass question for a station; the answer is turned into ways by waysFromOverpass().
@@ -184,5 +320,5 @@ function waysFromOverpass(elements) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { splitRefs, platformToken, topologyFromWays, layoutTopology, findPlatform, placeTrains, overpassQuery, waysFromOverpass, trackAngle }
+  module.exports = { splitRefs, platformToken, topologyFromWays, layoutTopology, findPlatform, findTrack, assignTracks, placeTrains, overpassQuery, waysFromOverpass, trackAngle }
 }
