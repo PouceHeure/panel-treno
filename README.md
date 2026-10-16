@@ -49,6 +49,7 @@ departures stop loading, that's the most likely cause.
 | `home.html` | Find a station or a train. Search is local and instant (`data/stations.json`), favourite stations are starred, one train can be followed and shows its estimated arrival. |
 | `index.html?stationID=…` | Departures board of a station, with direction chips and a star. |
 | `index.html?view=train&train=…` | A train, in three tabs (`&tab=now|route|charts`): **Now** (arrival at the terminus, countdown to the next stop), **Route** (every stop, details) and **Charts** (the data behind the estimate). |
+| `index.html?stationID=…&view=map` | The station map: the platforms of the station drawn from OpenStreetMap, with the next trains on them. |
 | `rfi.html` | The official RFI station board. |
 | `lab.html` | The data collected, the delay models, and how each scored on a day it never saw. |
 
@@ -74,3 +75,15 @@ The script scores the models on the last day of the export and calibrates on the
 node --test tests/*.test.js                          # search, favourites, registry, prediction log
 python3 -m unittest discover -s tests -p "test_*.py" # evaluation: pairs, chronological split, models
 ```
+
+## Station map
+
+`view=map` on a station draws its platforms and tracks from OpenStreetMap and puts the next trains (3 hours, up to 3 per platform) on their platform. Tracks are not numbered in OpenStreetMap, platforms are (`12;13` is an island serving tracks 12 and 13), so a train sits on its platform, not on a particular track.
+
+The layout comes from `data/topology/<station code>.json` when the file exists, else from this browser's cache, else from a live Overpass query (slow: up to half a minute, and rate limited). To ship a station with the app:
+
+```bash
+python3 scripts/fetch-topology.py S04700 S01700   # station codes, as in data/stations.json
+```
+
+`js/modules/station-topology.js` holds the geometry (parsing, rotating the tracks level, fitting the canvas, matching a ViaggiaTreno platform label such as `1 Ovest` to a drawn platform); `js/modules/station-map.js` loads the layout and draws it. Map data (c) OpenStreetMap contributors, ODbL.

@@ -8,7 +8,7 @@ const CLOCK_INTERVAL = 10 * 1000 // ms
 const TRAIN_MODE_KEY = 'ALL'
 const GROUP_MODES = ['platform', 'destination', 'category', 'train']
 const GROUP_ITEM_LIMIT = { platform: 3, destination: 3, category: 3, train: 20 }
-const VIEWS = ['board', 'nerd']
+const VIEWS = ['board', 'nerd', 'map']
 const LOCALE = 'en-GB'
 const LATE_THRESHOLD = 5 // min: from this delay a train counts as late in the nerd stats
 const TIMELINE_MINUTES = 60
@@ -129,7 +129,7 @@ function syncStateToURL() {
   else params.delete('groupfilter')
   if (destFilter) params.set('dest', destFilter)
   else params.delete('dest')
-  if (viewMode === 'nerd') params.set('view', 'nerd')
+  if (viewMode === 'nerd' || viewMode === 'map') params.set('view', viewMode)
   else params.delete('view')
   window.history.replaceState(null, '', `${window.location.pathname}?${params}${window.location.hash}`)
 }
@@ -720,6 +720,75 @@ function boardSummary(trainData, now) {
   return wrap
 }
 
+// =======================
+// Station map: the trains on the platforms of the station, drawn from OpenStreetMap
+// =======================
+const stationMaps = new Map() // station code -> { state: 'loading' | 'ready' | 'none' | 'error', layout, source, message }
+
+async function startStationMap(code) {
+  stationMaps.set(code, { state: 'loading' })
+  try {
+    await stationsReady
+    const point = stationPoint(code)
+    const result = await loadStationWays(code, point && point[0], point && point[1])
+    const layout = layoutTopology(topologyFromWays(result.ways), { width: 1100 })
+    stationMaps.set(code, layout ? { state: 'ready', layout, source: result.source } : { state: 'none' })
+  } catch (err) {
+    stationMaps.set(code, { state: 'error', message: err.message })
+  }
+  if (viewMode === 'map' && lastUpdateData) render(lastUpdateData)
+}
+
+function renderStationMap(trainData) {
+  let entry = stationMaps.get(stationID)
+  if (!entry) { startStationMap(stationID); entry = stationMaps.get(stationID) }
+  const wrap = el('section', ['sm-wrap'])
+  const note = text => { const p = el('p', ['sm-note'], text); wrap.append(p); $('trainInfo').replaceChildren(wrap) }
+  if (entry.state === 'loading') return note('Loading the station layout from OpenStreetMap… the first time can take half a minute.')
+  if (entry.state === 'error') {
+    const retry = el('button', ['btn-retry'], 'Retry')
+    retry.type = 'button'
+    retry.addEventListener('click', () => { stationMaps.delete(stationID); renderStationMap(trainData) })
+    wrap.append(el('p', ['sm-note', 'is-late'], entry.message), retry)
+    return $('trainInfo').replaceChildren(wrap)
+  }
+  if (entry.state === 'none') return note('OpenStreetMap has no platforms for this station yet: the board is the better view here.')
+
+  const now = Date.now()
+  const horizon = now + 3 * 3600000
+  const trains = upcomingTrains(trainData).filter(t => realDepartureMs(t) <= horizon)
+  const placement = placeTrains(entry.layout, trains, platformOf)
+  const describe = train => {
+    const delay = delayOf(train)
+    const cancelled = isCancelled(train)
+    const status = cancelled ? 'cancelled' : delay >= LATE_THRESHOLD ? 'late' : delay > 0 ? 'slight' : 'ok'
+    const real = realDepartureMs(train)
+    return {
+      time: formatEpochHHMM(real),
+      destination: niceName(train.destinazione) || '—',
+      delayText: cancelled ? 'cancelled' : delay > 0 ? `+${delay}` : '',
+      status,
+      href: `${trainPageUrl(train)}&tab=now`,
+      atPlatform: trainPresence(train, now) === 'at-platform',
+      title: `${trainLabel(train)} to ${niceName(train.destinazione)} · ${formatEpochHHMM(train.orarioPartenza)}${delay > 0 ? ` (+${delay} min)` : ''} · platform ${platformOf(train)}`
+    }
+  }
+  // the trains of a platform are listed in departure order
+  placement.onPlatform.forEach(list => list.sort((a, b) => realDepartureMs(a) - realDepartureMs(b)))
+  const scroll = el('div', ['sm-scroll'])
+  scroll.append(drawStationMap(entry.layout, placement, describe))
+  wrap.append(scroll)
+  if (placement.unplaced.length) {
+    const rest = el('div', ['sm-unplaced'])
+    rest.append(el('span', ['sm-unplaced-head'], 'Not on the map'))
+    placement.unplaced.slice(0, 12).forEach(t => rest.append(el('a', ['dir-chip', 'sm-unplaced-chip'], `${formatEpochHHMM(realDepartureMs(t))} ${niceName(t.destinazione)}${platformOf(t) ? ` · pl. ${platformOf(t)}` : ''}`)))
+    rest.querySelectorAll('a').forEach((a, i) => { a.href = `${trainPageUrl(placement.unplaced[i])}&tab=now` })
+    wrap.append(rest)
+  }
+  wrap.append(el('p', ['sm-credit'], `Layout: OpenStreetMap contributors (${entry.source === 'live' ? 'just loaded' : entry.source === 'cached' ? 'saved in this browser' : 'saved with the app'}). Tracks are not numbered in OpenStreetMap: trains sit on their platform.`))
+  $('trainInfo').replaceChildren(wrap)
+}
+
 function renderBoard(trainData) {
   updateDelayAxis(trainData)
   const groups = buildGroups(trainData)
@@ -1176,6 +1245,7 @@ function renderNerd(trainData) {
 // =======================
 function render(trainData) {
   if (viewMode === 'nerd') renderNerd(trainData)
+  else if (viewMode === 'map') renderStationMap(trainData)
   else renderBoard(trainData)
 }
 function rerender() {
@@ -1314,6 +1384,8 @@ function applyView() {
   $('viewToggleLabel').textContent = label(nerd ? 'viewBoard' : 'viewNerd')
   $('viewToggle').setAttribute('aria-label', label(nerd ? 'viewBoard' : 'viewNerd'))
   $('viewToggle').querySelector('i').className = `bi ${nerd ? 'bi-grid-3x2-gap' : 'bi-terminal'}`
+  $('mapToggle').classList.toggle('is-on', viewMode === 'map')
+  $('mapToggle').setAttribute('aria-pressed', String(viewMode === 'map'))
   syncHeaderSpacerHeight()
 }
 
@@ -1466,6 +1538,12 @@ function initFilter() {
 }
 
 function initViewToggle() {
+  $('mapToggle').addEventListener('click', () => {
+    viewMode = viewMode === 'map' ? 'board' : 'map'
+    applyView()
+    syncStateToURL()
+    rerender()
+  })
   $('viewToggle').addEventListener('click', () => {
     viewMode = viewMode === 'nerd' ? 'board' : 'nerd'
     applyView()

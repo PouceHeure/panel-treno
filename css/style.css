@@ -1256,3 +1256,39 @@ button.route-open { font: inherit; cursor: pointer; }
   .card-grid.is-single .flap-time { font-size: 1.2rem; }
   .card-grid.is-single .flap-dest-name { font-size: 1.05rem; }
 }
+
+/* ===============================
+   Station map
+   =============================== */
+body.view-train #mapToggle { display: none; }
+#mapToggle.is-on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.sm-wrap { display: flex; flex-direction: column; gap: 0.8rem; }
+.sm-note { padding: 1.4rem; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); text-align: center; }
+.sm-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); padding: 0.4rem; }
+.sm-svg { display: block; width: 100%; min-width: 880px; max-width: 1320px; margin-inline: auto; height: auto; }
+.sm-rail { fill: none; stroke: var(--faint); stroke-width: 1.6; opacity: 0.55; stroke-linejoin: round; }
+.sm-rail.is-siding { opacity: 0.3; }
+.sm-rail.is-tunnel { stroke-dasharray: 3 4; opacity: 0.25; }
+.sm-platform { fill: none; stroke: var(--tile); stroke-width: 11; stroke-linecap: round; stroke-linejoin: round; opacity: 0.9; }
+.sm-platform.is-busy { stroke: color-mix(in srgb, var(--text) 14%, var(--tile)); }
+.sm-label { fill: var(--muted); font-family: var(--mono); font-size: 13px; font-weight: 600; }
+.sm-chip { cursor: pointer; text-decoration: none; }
+.sm-chip-bg { fill: var(--bg); stroke: var(--line); stroke-width: 1; }
+.sm-chip:hover .sm-chip-bg { stroke: var(--faint); }
+.sm-chip.is-at .sm-chip-bg { stroke: var(--accent); stroke-width: 1.6; }
+.sm-chip-edge { fill: var(--ok); }
+.sm-chip.status-slight .sm-chip-edge { fill: var(--slight); }
+.sm-chip.status-late .sm-chip-edge { fill: var(--late); }
+.sm-chip.status-cancelled .sm-chip-edge { fill: var(--faint); }
+.sm-chip-time { fill: var(--text); font-family: var(--mono); font-size: 13px; font-weight: 600; }
+.sm-chip-dest { fill: var(--muted); font-family: var(--font); font-size: 12px; }
+.sm-chip-delay { fill: var(--late); font-family: var(--mono); font-size: 12px; font-weight: 700; }
+.sm-chip.status-slight .sm-chip-delay { fill: var(--slight); }
+.sm-more { fill: var(--muted); font-family: var(--mono); font-size: 12px; font-weight: 700; }
+.sm-unplaced { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.sm-unplaced-head { color: var(--muted); font-size: 0.78rem; margin-right: 0.3rem; }
+.sm-unplaced-chip { text-decoration: none; }
+.sm-credit { color: var(--faint); font-size: 0.74rem; }
+@media (max-width: 600px) { #mapToggleLabel { display: none; } #mapToggle { padding: 0; width: 34px; } #mapToggle i { margin: 0; } }
+.sm-platform.is-closed { fill: color-mix(in srgb, var(--tile) 70%, transparent); stroke: var(--line); stroke-width: 1.5; }
+.sm-platform.is-closed.is-busy { fill: color-mix(in srgb, var(--text) 9%, var(--tile)); }
