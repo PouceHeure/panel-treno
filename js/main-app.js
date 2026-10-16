@@ -2229,7 +2229,7 @@ function kinematics(d, cur, now) {
     const elapsed = arrMs ? Math.max(0, (now - arrMs) / 1000) : null
     const nextKm = segmentKm(stops, stops.indexOf(cur.here))
     return {
-      kind: 'station', sched, exp, elapsed, leaveMs: cur.target, nextKm,
+      kind: 'station', waiting: cur.kind === 'waiting', sched, exp, elapsed, leaveMs: cur.target, nextKm,
       nextProfile: nextKm ? motionProfile(nextKm, cls) : null, atOrigin: !arrMs
     }
   }
@@ -2243,7 +2243,7 @@ function nerdTrackKin(d, cur, now) {
   const head = el('div', ['nerd-panel-head'])
   const stops = d.fermate || []
   const cls = trainClass(d)
-  head.append(el('span', [], k.kind === 'station' ? 'time in station' : 'on the segment: now vs timetable'), el('span', [], k.kind === 'between' && k.km ? `${k.km.toFixed(1)} km` : ''))
+  head.append(el('span', [], k.kind === 'station' ? (k.waiting ? 'before departure' : 'time in station') : 'on the segment: now vs timetable'), el('span', [], k.kind === 'between' && k.km ? `${k.km.toFixed(1)} km` : ''))
   panel.append(head)
   const VW = chartWidth()
   const LEFT = chartLeft()
@@ -2303,8 +2303,10 @@ function nerdTrackKin(d, cur, now) {
       })
       bg.replaceChildren(...kids)
       hintEl.textContent = hint
-      state.textContent = here ? 'IN STATION' : 'BETWEEN STATIONS'
-      state.setAttribute('class', here ? 'tk-dwell-state is-here' : 'tk-dwell-state')
+      // a train that has not left its origin is not "between stations", whatever the clock says
+      const label = g.waiting ? 'NOT DEPARTED YET' : g.kind === 'station' ? 'IN STATION' : here ? 'IN STATION' : 'BETWEEN STATIONS'
+      state.textContent = label
+      state.setAttribute('class', label === 'BETWEEN STATIONS' ? 'tk-dwell-state' : 'tk-dwell-state is-here')
     }
     paint(now)
     dwellCursors.push(paint)
@@ -2417,6 +2419,12 @@ function dashboardTiles(d, now) {
       { name: 'speed now', value: `${Math.round(k.now)}`, unit: 'km/h', sub: `${Math.round(k.lo)}–${Math.round(k.hi)} · peak ${Math.round(k.peak)}`, bar: k.now / Math.max(1, k.peak) },
       { name: 'progress', value: `${(k.km * cur.p).toFixed(1)}`, unit: `/ ${k.km.toFixed(1)} km`, sub: `${Math.round(cur.p * 100)} % · ${k.remainingKm.toFixed(1)} km to go`, bar: cur.p },
       { name: `next · ${niceName(cur.next.stazione)}`, value: clockLeft(cur.eta, now), sub: `${formatEpochHHMM(cur.eta)} · ±${cur.kal && cur.kal.sigmaMin !== null ? cur.kal.sigmaMin.toFixed(1) : '?'} min` }
+    )
+  } else if (k.kind === 'station' && k.waiting) {
+    const left = k.leaveMs ? (k.leaveMs - now) / 1000 : null
+    tiles.push(
+      { name: 'departs', value: left === null ? '–' : left > 0 ? clockLeft(k.leaveMs, now) : 'now', sub: `${k.leaveMs ? formatEpochHHMM(k.leaveMs) : ''} · not departed yet` },
+      { name: 'next segment', value: k.nextKm ? k.nextKm.toFixed(1) : '–', unit: 'km', sub: k.nextProfile ? `~${k.nextProfile.minutes.toFixed(1)} min · peak ${Math.round(k.nextProfile.peakKmh)} km/h` : '' }
     )
   } else if (k.kind === 'station') {
     const left = k.leaveMs ? (k.leaveMs - now) / 1000 : null
