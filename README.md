@@ -49,7 +49,7 @@ departures stop loading, that's the most likely cause.
 | `home.html` | Find a station or a train. Search is local and instant (`data/stations.json`), favourite stations are starred, one train can be followed and shows its estimated arrival. |
 | `index.html?stationID=…` | Departures board of a station, with direction chips and a star. |
 | `index.html?view=train&train=…` | A train, in three tabs (`&tab=now|route|charts`): **Now** (arrival at the terminus, countdown to the next stop), **Route** (every stop, details) and **Charts** (the data behind the estimate). |
-| `index.html?stationID=…&view=map` | The station map: the platforms of the station drawn from OpenStreetMap, with the next trains on them. |
+| `index.html?stationID=…&view=map&labs=1` | (experimental, no button) The station map: the tracks of the station drawn from OpenStreetMap, with the next trains on them. |
 | `rfi.html` | The official RFI station board. |
 | `lab.html` | The data collected, the delay models, and how each scored on a day it never saw. |
 
@@ -88,7 +88,7 @@ python3 -m unittest discover -s tests -p "test_*.py" # evaluation: pairs, chrono
 
 ## Station map
 
-`view=map` on a station draws its platforms and tracks from OpenStreetMap and puts the next trains (3 hours, up to 3 per platform) on their platform. Tracks are not numbered in OpenStreetMap, platforms are (`12;13` is an island serving tracks 12 and 13). The tracks are numbered from the platforms: the rail on each side of a platform is one of the tracks it serves, and the numbers grow across the station in one direction (found from the platforms themselves). A track is only numbered when its rail is not claimed by another number, so a train is never put on a wrong track; a train whose track was not found sits on its platform instead. ViaggiaTreno's platform (`binario`) is the track number.
+The station map is not stable yet, so it has no button: it opens only from a link with `view=map&labs=1`. It draws its platforms and tracks from OpenStreetMap and puts the next trains (3 hours, up to 3 per platform) on their platform. Tracks are not numbered in OpenStreetMap, platforms are (`12;13` is an island serving tracks 12 and 13). The tracks are numbered from the platforms: the rail on each side of a platform is one of the tracks it serves, and the numbers grow across the station in one direction (found from the platforms themselves). A track is only numbered when its rail is not claimed by another number, so a train is never put on a wrong track; a train whose track was not found sits on its platform instead. ViaggiaTreno's platform (`binario`) is the track number.
 
 The layout comes from `data/topology/<station code>.json` when the file exists, else from this browser's cache, else from a live Overpass query (slow: up to half a minute, and rate limited). To ship a station with the app:
 

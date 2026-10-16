@@ -1260,8 +1260,6 @@ button.route-open { font: inherit; cursor: pointer; }
 /* ===============================
    Station map
    =============================== */
-body.view-train #mapToggle { display: none; }
-#mapToggle.is-on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
 .sm-wrap { display: flex; flex-direction: column; gap: 0.8rem; }
 .sm-note { padding: 1.4rem; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); text-align: center; }
 .sm-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); padding: 0.4rem; }
@@ -1289,7 +1287,6 @@ body.view-train #mapToggle { display: none; }
 .sm-unplaced-head { color: var(--muted); font-size: 0.78rem; margin-right: 0.3rem; }
 .sm-unplaced-chip { text-decoration: none; }
 .sm-credit { color: var(--faint); font-size: 0.74rem; }
-@media (max-width: 600px) { #mapToggleLabel { display: none; } #mapToggle { padding: 0; width: 34px; } #mapToggle i { margin: 0; } }
 .sm-platform.is-closed { fill: color-mix(in srgb, var(--tile) 70%, transparent); stroke: var(--line); stroke-width: 1.5; }
 .sm-platform.is-closed.is-busy { fill: color-mix(in srgb, var(--text) 9%, var(--tile)); }
 

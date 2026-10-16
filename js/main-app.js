@@ -1384,8 +1384,6 @@ function applyView() {
   $('viewToggleLabel').textContent = label(nerd ? 'viewBoard' : 'viewNerd')
   $('viewToggle').setAttribute('aria-label', label(nerd ? 'viewBoard' : 'viewNerd'))
   $('viewToggle').querySelector('i').className = `bi ${nerd ? 'bi-grid-3x2-gap' : 'bi-terminal'}`
-  $('mapToggle').classList.toggle('is-on', viewMode === 'map')
-  $('mapToggle').setAttribute('aria-pressed', String(viewMode === 'map'))
   syncHeaderSpacerHeight()
 }
 
@@ -1538,12 +1536,6 @@ function initFilter() {
 }
 
 function initViewToggle() {
-  $('mapToggle').addEventListener('click', () => {
-    viewMode = viewMode === 'map' ? 'board' : 'map'
-    applyView()
-    syncStateToURL()
-    rerender()
-  })
   $('viewToggle').addEventListener('click', () => {
     viewMode = viewMode === 'nerd' ? 'board' : 'nerd'
     applyView()
@@ -3362,7 +3354,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (GROUP_MODES.includes(paramGroupBy)) groupByMode = paramGroupBy
   destFilter = (getParam('dest') || '').toLowerCase()
   const paramView = (getParam('view') || '').toLowerCase()
-  if (VIEWS.includes(paramView)) viewMode = paramView
+  // the station map is not stable yet: it has no button, and opens only from a link with &labs=1
+  if (VIEWS.includes(paramView) && (paramView !== 'map' || getParam('labs') === '1')) viewMode = paramView
   // "mix" and "compare" were the two halves of Global before they were merged into one view
   if (['global', 'mix', 'compare'].includes((getParam('source') || '').toLowerCase())) sourceMode = 'global'
 
