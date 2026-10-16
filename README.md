@@ -69,6 +69,16 @@ The script scores the models on the last day of the export and calibrates on the
 
 `scripts/build-stations.py` rebuilds `data/stations.json` (station coordinates).
 
+## Cache
+
+Browsers keep a file until its address changes, so every page references its scripts and stylesheets with a hash of their content (`css/style.css?v=f1ddba43`). After editing any file in `js/` or `css/`, run:
+
+```bash
+python3 scripts/stamp-assets.py
+```
+
+The tests fail when a page is out of date.
+
 ## Tests
 
 ```bash
