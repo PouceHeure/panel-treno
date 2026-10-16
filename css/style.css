@@ -157,8 +157,10 @@ body.view-nerd #groupBySelect { display: none; }
 }
 .filter-wrap.expanded,
 .filter-wrap:focus-within { max-width: 260px; }
+.filter-clear { margin-left: auto; }
 .filter-wrap .icon-btn { border: none; background: transparent; }
 #groupFilterInput {
+  flex: 1 1 auto; /* grows with the open filter, so the clear button sits at its right edge */
   width: 150px;
   min-width: 0;
   padding: 0 0.6rem 0 0;
@@ -1296,3 +1298,9 @@ button.route-open { font: inherit; cursor: pointer; }
 .sm-track-no { fill: var(--faint); font-family: var(--mono); font-size: 12px; font-weight: 600; }
 .sm-track-no.is-busy { fill: var(--text); }
 .sm-leader { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 2 2; }
+
+/* mobile: an open filter gets a row of its own, with the clear button at its right edge */
+@media (max-width: 599px) {
+  .toolbar .filter-wrap.expanded, .toolbar .filter-wrap:focus-within { flex: 1 0 100%; order: 8; max-width: none; }
+  .toolbar:has(.filter-wrap.expanded) #groupBySelect { flex: 1 1 auto; }
+}
