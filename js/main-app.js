@@ -1981,7 +1981,11 @@ function nerdTrackChart(d) {
   }
   const modelPred = predOf(d)
   const modelAt = i => (modelPred.get(i) || {}).arrMs
-  const predAt = i => (nextS && i > hereStop && nextArrival && modelAt(i) && modelAt(hereStop + 1) ? nextArrival + modelAt(i) - modelAt(hereStop + 1) : null)
+  // the Kalman arrival knows nothing of the tables: the stops after it are shifted from the rules' arrival at the next stop, so that
+  // the table's correction of every stop counts (not only its difference with the next one). model.eta already comes from the model.
+  const fromKalman = model.kind === 'between' && model.kal && Number.isFinite(model.kal.minToGo)
+  const rulesNext = fromKalman ? (withTimesMode('model', () => predOf(d)).get(hereStop + 1) || {}).arrMs : modelAt(hereStop + 1)
+  const predAt = i => (nextS && i > hereStop && nextArrival && modelAt(i) && rulesNext ? nextArrival + modelAt(i) - rulesNext : null)
   const extra = Math.max(d.ritardo || 0, 0) * 60000
   const arrOf = f => f.arrivo_teorico || f.programmata
   const depOf = f => f.partenza_teorica || f.programmata
