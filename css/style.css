@@ -1428,3 +1428,8 @@ button.route-open { font: inherit; cursor: pointer; }
 
 /* the page keeps the room of its scrollbar, so the bar and the content do not shift between a long page and a short one */
 html { scrollbar-gutter: stable; }
+
+/* the refresh button turns while it waits for the data */
+#refreshBtn.is-spinning i { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #refreshBtn.is-spinning i { animation: none; } #refreshBtn.is-spinning { opacity: 0.5; } }

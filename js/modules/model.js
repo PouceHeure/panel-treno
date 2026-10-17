@@ -59,6 +59,7 @@ function setTimesMode(mode) {
 }
 
 // The corrections of the "tables" model: { pairs: { 'A>B': min }, stations: { 'B': min } }.
+const LEFT_GRACE_MS = 30000 // a train past its usual time in a station by this much is taken as gone, whatever the data says yet
 const MIN_RUN_MS = 60000 // the shortest run between two stops the prediction allows
 const MIN_TABLES_DELAY = -1 // min: a train is not predicted more than a minute early
 let corrections = null
@@ -203,7 +204,21 @@ function predictStopTimes(stops, delayNow, lastPassed, opts = {}) {
     r0 = Math.max((here.arrivoReale - arr(here)) / 60000, 0)
     baseMs = arr(here)
     const sched = Math.max(0, (dep(here) - arr(here)) / 60000)
-    depMs = !modelOn() ? dep(here) + late * 60000 : Math.max(dep(here), here.arrivoReale + dwellExpected(sched, cls).mid * 60000, nowMs + 30000)
+    if (!modelOn()) depMs = dep(here) + late * 60000
+    else {
+      const dwell = dwellExpected(sched, cls)
+      const expected = Math.max(dep(here), here.arrivoReale + dwell.mid * 60000)
+      const latest = Math.max(dep(here), here.arrivoReale + dwell.hi * 60000)
+      if (nowMs > latest + LEFT_GRACE_MS) {
+        // The announced departure has not come in yet, but the train is past the time it is usually still in the station:
+        // it has left. Waiting for the data to say so would keep it "in the station" and every prediction behind.
+        // The real departure, when it arrives, replaces this estimate.
+        depMs = expected
+        r0 = Math.max((expected - dep(here)) / 60000, 0)
+        baseMs = dep(here)
+        out.assumedLeft = true
+      } else depMs = Math.max(expected, nowMs + 30000)
+    }
   } else depMs = dep(here) + late * 60000
   out.leaveMs = depMs
 

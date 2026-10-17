@@ -50,3 +50,17 @@ test('predicted times never go back in time, even when the corrections of two st
   const out = M.withTimesMode('tables', () => M.predictStopTimes(list, 0, 0, { nowMs: t0 }))
   assert.ok(out.get(2).arrMs > out.get(1).depMs)
 })
+
+test('a train past its usual time in a station is taken as gone before the data says so', () => {
+  const t0 = Date.UTC(2026, 9, 17, 8, 0)
+  const min = m => t0 + m * 60000
+  const mk = (id, a, d) => ({ id, arrivo_teorico: min(a), partenza_teorica: min(d) })
+  const list = [mk('A', 0, 1), mk('B', 10, 11), mk('C', 20, 21)]
+  list[0].arrivoReale = min(2) // arrived 2 min late, no departure announced
+  const at = nowMin => M.withTimesMode('model', () => M.predictStopTimes(list, 2, 0, { inStation: true, nowMs: min(nowMin) }))
+  assert.ok(!at(3).assumedLeft, 'a minute after arriving it is still in the station')
+  const gone = at(8)
+  assert.ok(gone.assumedLeft)
+  assert.ok(gone.leaveMs < min(8), 'its departure is put in the past, not 30 s from now')
+  assert.ok(gone.get(1).arrMs > gone.leaveMs)
+})

@@ -2970,18 +2970,18 @@ function trackingModel(d, now) {
   if (lastPassed < 0 || d.nonPartito) {
     return { kind: 'waiting', here, next, segKey: 'wait', p: 0, ghost: 0, target: pred.leaveMs || sched(here, 'dep') + extra, eta }
   }
-  if (!here.partenzaReale) {
+  if (!here.partenzaReale && !pred.assumedLeft) {
     // arrived and not left yet (or no departure time recorded): in the station
     return { kind: 'station', here, next, segKey: `s${lastPassed}`, p: 0, ghost: 0, target: pred.leaveMs || sched(here, 'dep') + extra, eta }
   }
-  const t0 = here.partenzaReale
+  const t0 = here.partenzaReale || pred.leaveMs // estimated when the announced departure has not come in yet
   const span = eta - t0
   const linear = span > 0 ? Math.min(0.97, Math.max(0, (now - t0) / span)) : 0
   const kal = kalmanRun(d, here, next, t0, now)
   const p = Number.isFinite(kal.p) ? Math.min(0.97, kal.p) : linear
   const schedSpan = sched(next, 'arr') - sched(here, 'dep')
   const ghost = schedSpan > 0 ? Math.min(1, Math.max(0, (now - sched(here, 'dep')) / schedSpan)) : 0
-  return { kind: 'between', here, next, segKey: `b${lastPassed}`, p, sigma: kal.sigma, kal, km: kal.km, speedKmh: kal.speedKmh, ghost, target: eta, eta, since: t0 }
+  return { kind: 'between', here, next, segKey: `b${lastPassed}`, p, sigma: kal.sigma, kal, km: kal.km, speedKmh: kal.speedKmh, ghost, target: eta, eta, since: t0, assumed: !here.partenzaReale }
 }
 
 // "18 min 04 s", "1 h 14 min": a countdown that cannot be mistaken for a clock time
@@ -3385,6 +3385,17 @@ function renderTrainPage(d) {
   setTrainTitle(d)
 }
 
+// The refresh button: asks for the data right now instead of waiting for the next automatic refresh.
+function initRefreshButton(refresh) {
+  const btn = $('refreshBtn')
+  if (!btn) return
+  btn.addEventListener('click', async () => {
+    if (btn.classList.contains('is-spinning')) return
+    btn.classList.add('is-spinning')
+    try { await refresh() } finally { btn.classList.remove('is-spinning') }
+  })
+}
+
 async function loadTrainPage() {
   const url = `http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno/andamentoTreno/${trainRef.from}/${trainRef.number}/${trainRef.date}`
   let data
@@ -3480,6 +3491,7 @@ function initTrainPage() {
   $('trackToggle').hidden = true // the tabs at the top of the page replaced this button
   $('trainShareLabel').textContent = label('share')
   retryLoad = loadTrainPage
+  initRefreshButton(loadTrainPage)
 
   $('stationTitle').textContent = trainRef.number ? `Train ${trainRef.number}` : label('trainNotFound')
   $('versionNumber').textContent = APP_VERSION
@@ -3571,6 +3583,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('statusLabel').textContent = label('connecting')
   renderMessage('bi-hourglass-split', label('connecting'))
   updateHeader()
+  initRefreshButton(fetchAndDisplay)
   fetchAndDisplay()
 
   setInterval(fetchAndDisplay, REFRESH_REQUEST_INTERVAL)
