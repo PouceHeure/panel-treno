@@ -236,6 +236,23 @@ function predictStopTimes(stops, delayNow, lastPassed, opts = {}) {
   return out
 }
 
+// ViaggiaTreno sometimes gives a stop a "real" arrival that is only its scheduled time (the train has not been seen there),
+// next to a real departure from the stop before that is later: an arrival before the previous departure. That time is not
+// a measurement: it is replaced by an estimate (flagged `arrivoEstimated`) from what is known around it.
+function repairStopTimes(stops) {
+  for (let i = 1; i < stops.length; i++) {
+    const f = stops[i]
+    const prevDep = stops[i - 1].partenzaReale
+    if (!f.arrivoReale || !prevDep || f.arrivoReale >= prevDep) continue
+    const schedArr = f.arrivo_teorico || f.programmata
+    const schedDep = f.partenza_teorica || f.programmata
+    const dwell = Math.max(60000, (schedDep - schedArr) || 0)
+    f.arrivoReale = f.partenzaReale ? Math.max(prevDep + 60000, f.partenzaReale - dwell) : prevDep + 60000
+    f.arrivoEstimated = true
+  }
+  return stops
+}
+
 // Runs `fn` as if the times mode were `mode`, to compare the two on the same train.
 function withTimesMode(mode, fn) {
   const previous = timesMode
@@ -247,7 +264,7 @@ loadCorrections()
 
 if (typeof module !== 'undefined') {
   module.exports = {
-    delayAt, predictArrival, predictStopTimes, correctionFor, correctionInfo, stationDelay, withTimesMode, dwellExpected, motionProfile,
+    delayAt, predictArrival, predictStopTimes, repairStopTimes, correctionFor, correctionInfo, stationDelay, withTimesMode, dwellExpected, motionProfile,
     setCorrectionsForTests: table => { corrections = table }
   }
 }

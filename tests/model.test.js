@@ -64,3 +64,19 @@ test('a train past its usual time in a station is taken as gone before the data 
   assert.ok(gone.leaveMs < min(8), 'its departure is put in the past, not 30 s from now')
   assert.ok(gone.get(1).arrMs > gone.leaveMs)
 })
+
+test('an arrival that comes before the departure from the stop before is not kept as a measurement', () => {
+  const t0 = Date.UTC(2026, 9, 17, 8, 0)
+  const min = m => t0 + m * 60000
+  const stop = (a, d) => ({ arrivo_teorico: min(a), partenza_teorica: min(d) })
+  const list = [stop(0, 1), stop(3, 4), stop(6, 7)]
+  list[0].partenzaReale = min(16)
+  list[1].arrivoReale = min(18)
+  list[1].partenzaReale = min(19)
+  list[2].arrivoReale = min(6) // only the schedule: the train left the stop before at 19
+  list[2].partenzaReale = min(24)
+  M.repairStopTimes(list)
+  assert.equal(list[1].arrivoEstimated, undefined, 'a plausible arrival stays')
+  assert.ok(list[2].arrivoEstimated)
+  assert.ok(list[2].arrivoReale >= min(19) + 60000 && list[2].arrivoReale <= list[2].partenzaReale)
+})

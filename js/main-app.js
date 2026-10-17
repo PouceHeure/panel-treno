@@ -1576,13 +1576,13 @@ function chip(text, tone = '') {
 }
 
 // One time cell: the scheduled time, with the real (or estimated "~") time under it when it differs.
-function tvTimeCell(schedMs, realMs, delayNow, passed) {
+function tvTimeCell(schedMs, realMs, delayNow, passed, estimated = false) {
   const cell = el('span', ['tv-cell'])
   if (!schedMs) return cell
   cell.append(el('strong', [], formatEpochHHMM(schedMs)))
   const diff = realMs ? Math.round((realMs - schedMs) / 60000) : 0
-  if (realMs && diff !== 0) {
-    cell.append(el('span', [diff > 0 ? 'is-late' : 'is-early'], formatEpochHHMM(realMs)))
+  if (realMs && (diff !== 0 || estimated)) {
+    cell.append(el('span', [diff > 0 ? 'is-late' : 'is-early'], `${estimated ? '~' : ''}${formatEpochHHMM(realMs)}`))
   } else if (!realMs && !passed && delayNow > 0) {
     cell.append(el('span', ['is-late'], `~${formatEpochHHMM(schedMs + delayNow * 60000)}`))
   }
@@ -1609,7 +1609,7 @@ function trainStopEl(f, index, stops, detail, lastPassedIndex, pred) {
   const arrSched = f.arrivo_teorico || f.programmata
   const depSched = f.partenza_teorica || f.programmata
   const guess = pred && pred.get(index)
-  const arrCell = isFirst ? el('span', ['tv-cell']) : tvTimeCell(arrSched, f.arrivoReale, guess ? guess.arrDelay : delayNow, passed)
+  const arrCell = isFirst ? el('span', ['tv-cell']) : tvTimeCell(arrSched, f.arrivoReale, guess ? guess.arrDelay : delayNow, passed, !!f.arrivoEstimated)
   const depCell = isLast ? el('span', ['tv-cell']) : tvTimeCell(depSched, f.partenzaReale, guess ? guess.depDelay : delayNow, passed)
 
   const info = el('div', ['tv-info'])
@@ -3414,6 +3414,7 @@ async function loadTrainPage() {
     return
   }
   await stationsReady
+  repairStopTimes(data.fermate)
   const previous = trainDetail
   trainDetail = data
   trainFetchedAt = Date.now()
