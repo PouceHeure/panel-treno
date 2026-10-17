@@ -1395,7 +1395,8 @@ button.route-open { font: inherit; cursor: pointer; }
   #text-search { order: 1; width: 34px; padding: 0; }
   #text-search span { display: none; }
   #text-search i { margin: 0; }
-  #trainBack { order: 2; border-color: transparent; background: transparent; padding: 0 0.5rem; max-width: 18rem; font-size: 1.25rem; font-weight: 500; height: 38px; gap: 0.4rem; }
+  body.view-train #trainBack { max-width: 26rem; }
+  #trainBack { order: 2; border-color: transparent; background: transparent; padding: 0 0.5rem; max-width: 26rem; font-size: 1.25rem; font-weight: 500; height: 38px; gap: 0.4rem; }
   #trainBack i { font-size: 1.05rem; }
   #trainBack::after { content: "/"; margin-left: 0.7rem; color: var(--faint); }
   #trainBack:hover { color: var(--text); background: var(--tile); }
