@@ -1551,6 +1551,48 @@ function initViewToggle() {
 // =======================
 let trainRef = null // { number, from, date }
 let trainDetail = null
+let trainFocus = null // id of the stop the page is focused on (a stop ahead), from ?focus= and the drop-down
+
+// Index of the focus stop while it is still ahead of the train, else -1.
+function focusIndex(d) {
+  if (!trainFocus) return -1
+  const stops = d.fermate || []
+  const last = stops.reduce((l, f, i) => (f.actualFermataType === 1 ? i : l), -1)
+  const i = stops.findIndex(f => f.id === trainFocus)
+  return i > Math.max(last, 0) ? i : -1
+}
+
+// "Focus on: [ whole trip | a stop ahead ]": the data of the page is then worked out up to that stop. The element lives
+// as long as the page does (it is moved into each redraw), so an open list is not closed by a refresh.
+let focusBarEl = null
+function focusBar(d) {
+  if (!focusBarEl) {
+    focusBarEl = el('label', ['tk-focus'])
+    focusBarEl.append(el('span', [], 'Focus on'), document.createElement('select'))
+    const select = focusBarEl.querySelector('select')
+    select.setAttribute('aria-label', 'Focus on a stop')
+    select.addEventListener('change', () => {
+      trainFocus = select.value || null
+      const url = new URLSearchParams(window.location.search)
+      if (trainFocus) url.set('focus', trainFocus)
+      else url.delete('focus')
+      window.history.replaceState(null, '', `${window.location.pathname}?${url}`)
+      if (trainDetail) renderTrainPage(trainDetail)
+    })
+  }
+  const select = focusBarEl.querySelector('select')
+  const stops = d.fermate || []
+  const last = stops.reduce((l, f, i) => (f.actualFermataType === 1 ? i : l), -1)
+  const ahead = stops.map((f, i) => ({ f, i })).filter(({ i }) => i > Math.max(last, 0))
+  const signature = ahead.map(({ f }) => f.id).join(',')
+  if (select.dataset.signature !== signature) {
+    select.dataset.signature = signature
+    select.replaceChildren(new Option('Whole trip (final stop)', ''), ...ahead.map(({ f }) => new Option(niceName(f.stazione), f.id)))
+  }
+  select.value = focusIndex(d) >= 0 ? trainFocus : ''
+  focusBarEl.hidden = !ahead.length
+  return focusBarEl
+}
 
 function canonicalTrainUrl() {
   const params = new URLSearchParams({ view: 'train', train: trainRef.number, from: trainRef.from, date: trainRef.date })
@@ -1603,7 +1645,7 @@ function trainStopEl(f, index, stops, detail, lastPassedIndex, pred) {
   const cancelledIds = new Set((detail.fermateSoppresse || []).map(s => s.id))
   const isFirst = index === 0
   const isLast = index === stops.length - 1
-  const kinds = [passed ? 'is-passed' : '', index === lastPassedIndex ? 'is-last-seen' : '', index === lastPassedIndex + 1 ? 'is-next' : '', isFirst ? 'is-start' : '', isLast ? 'is-end' : '', cancelledIds.has(f.id) ? 'is-cancelled' : '']
+  const kinds = [passed ? 'is-passed' : '', index === lastPassedIndex ? 'is-last-seen' : '', index === lastPassedIndex + 1 ? 'is-next' : '', isFirst ? 'is-start' : '', isLast ? 'is-end' : '', cancelledIds.has(f.id) ? 'is-cancelled' : '', index === focusIndex(detail) ? 'is-focus' : '', focusIndex(detail) >= 0 && index > focusIndex(detail) ? 'is-beyond' : '']
   const node = el('div', ['tv-stop', ...kinds])
 
   const arrSched = f.arrivo_teorico || f.programmata
@@ -1983,6 +2025,8 @@ function nerdTrackChart(d) {
     if (hi - lo > 13) lo = hi - 13
   }
   while (hi - lo < 2 && (lo > 0 || hi < stops.length - 1)) { if (hi < stops.length - 1) hi++; else lo-- }
+  const fi = focusIndex(d)
+  if (fi >= 0) { hi = Math.max(fi, lo + 1); if (hi - lo > 13) lo = hi - 13 } // the chart ends at the focus stop
   const rows = stops.slice(lo, hi + 1)
   // predicted passing times: the filter's arrival at the next stop, then the timetable's gaps after it
   const hereStop = stops.indexOf(model.here)
@@ -2020,7 +2064,8 @@ function nerdTrackChart(d) {
   const firstT = samples.length ? Math.min(...samples.map(x => x.t)) : now
   const nextStop = stops[Math.min(stops.length - 1, Math.floor(sNow) + 1)]
   const tMin = winMs ? winStart : firstT - 2 * 60000
-  const tMax = winMs ? winStart + winMs : Math.max(now + 3 * 60000, arrOf(nextStop) + extra + 2 * 60000, tMin + 20 * 60000)
+  const focusT = fi >= 0 ? (modelAt(fi) || arrOf(stops[fi]) + extra) + 2 * 60000 : 0
+  const tMax = winMs ? winStart + winMs : Math.max(now + 3 * 60000, arrOf(nextStop) + extra + 2 * 60000, tMin + 20 * 60000, focusT)
   const LEFT = chartLeft()
   const RIGHT = 12
   const TOP = 14
@@ -2609,7 +2654,8 @@ function nerdTrackBars(d, cur, now) {
   const stops = d.fermate || []
   const first = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1) + 1
   const all = []
-  for (let i = Math.max(first, 1); i < stops.length && all.length < 8; i++) all.push(i)
+  const fiBars = focusIndex(d)
+  for (let i = Math.max(first, 1); i < stops.length && (fiBars >= 0 ? i <= fiBars : all.length < 8); i++) all.push(i)
   if (!all.length || cur.kind === 'arrived' || cur.kind === 'cancelled') {
     panel.append(el('p', ['nerd-dim'], 'no stop ahead'))
     return panel
@@ -2623,7 +2669,7 @@ function nerdTrackBars(d, cur, now) {
   })
   // "now" is at the same place as in the other charts: the future gets the right 30 % of the plot
   const MAX_AHEAD = 40 * 60000
-  const rows = rowsAll.filter((r, i) => !i || Math.min(r.sched, r.tables ?? r.sched) <= now + MAX_AHEAD)
+  const rows = fiBars >= 0 ? rowsAll : rowsAll.filter((r, i) => !i || Math.min(r.sched, r.tables ?? r.sched) <= now + MAX_AHEAD)
   const span = Math.min(MAX_AHEAD, Math.max(10 * 60000, ...rows.flatMap(r => [r.sched, r.raw, r.rules, r.tables]).filter(Number.isFinite).map(t => t - now)))
   const W = chartWidth()
   const LEFT = chartLeft()
@@ -2679,7 +2725,8 @@ function nerdTrackTable(d, cur) {
   head.append(el('span', [], 'what the tables add to the rules'), el('span', [], from ? `from ${niceName(from.stazione)}` : ''))
   panel.append(head)
   const ahead = []
-  for (let i = hereIdx + 1; i < stops.length && ahead.length < 8; i++) ahead.push(i)
+  const fiTab = focusIndex(d)
+  for (let i = hereIdx + 1; i < stops.length && (fiTab >= 0 ? i <= fiTab : ahead.length < 8); i++) ahead.push(i)
   if (!from || !ahead.length || cur.kind === 'arrived' || cur.kind === 'cancelled') {
     panel.append(el('p', ['nerd-dim'], 'no stop ahead'))
     return panel
@@ -2734,7 +2781,7 @@ function nerdTrackHabits(d, cur) {
   const all = d.fermate || []
   const hereIdx = Math.max(all.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1), 0)
   const rows = all.map((f, i) => ({ i, name: niceName(f.stazione), info: stationDelay(f.id, all[i + 1] && all[i + 1].id) }))
-    .filter(r => r.i > hereIdx).slice(0, 8)
+    .filter(r => r.i > hereIdx && (focusIndex(d) < 0 || r.i <= focusIndex(d))).slice(0, focusIndex(d) >= 0 ? 30 : 8)
   if (!rows.length || cur.kind === 'arrived' || cur.kind === 'cancelled') { panel.append(el('p', ['nerd-dim'], 'no stop ahead')); return panel }
   if (rows.every(r => r.info === null)) { panel.append(el('p', ['nerd-dim'], 'loading the table…')); return panel }
   const W = chartWidth()
@@ -2773,7 +2820,7 @@ function renderTrackNerd(d) {
   const now = Date.now()
   const wrap = el('div', ['nerd-wrap'])
   const category = (d.categoria || d.categoriaDescrizione || '').trim()
-  wrap.append(trackModeBar(), el('p', ['nerd-prompt'], `$ treno --track ${`${category} ${d.numeroTreno}`.trim().replace(/\s+/g, '_')}`))
+  wrap.append(trackModeBar(), focusBar(d), el('p', ['nerd-prompt'], `$ treno --track ${`${category} ${d.numeroTreno}`.trim().replace(/\s+/g, '_')}`))
 
   const fixes = trackHist.fetches.filter(f => f.sBefore !== null).map(f => Math.abs(f.s - f.sBefore))
   const meanFix = fixes.length ? fixes.reduce((a, b) => a + b, 0) / fixes.length : 0
@@ -3001,7 +3048,7 @@ function renderTracking(d) {
   const model = trackingModel(d, Date.now())
   live.data = d
   setTrainTitle(d)
-  root.append(trackModeBar())
+  root.append(trackModeBar(), focusBar(d))
 
   const head = el('section', ['tv-card', 'tv-wide'])
   const top = el('div', ['tv-head'])
@@ -3044,7 +3091,8 @@ function renderTracking(d) {
   els.chipSpeed = el('span', ['tk-pill'])
   els.chipKm = el('span', ['tk-pill'])
   els.chipTrust = el('span', ['tk-pill'])
-  els.chips.append(els.chipSpeed, els.chipKm, els.chipTrust)
+  els.chipFocus = el('span', ['tk-pill', 'tk-pill-focus'])
+  els.chips.append(els.chipFocus, els.chipSpeed, els.chipKm, els.chipTrust)
   card.append(nextLine, els.count, els.chips)
   root.append(card)
 
@@ -3069,7 +3117,8 @@ function renderTracking(d) {
   const trackPred = predOf(d)
   const hereIdx = stops.indexOf(model.here)
   const from = trackZoom === 'all' ? 0 : Math.max(0, hereIdx - 2)
-  const to = trackZoom === 'all' ? stops.length : Math.min(stops.length, hereIdx + (trackZoom === 'close' ? 3 : 8))
+  const focusI = focusIndex(d)
+  const to = focusI >= 0 ? focusI + 1 : trackZoom === 'all' ? stops.length : Math.min(stops.length, hereIdx + (trackZoom === 'close' ? 3 : 8))
   const listCard = el('section', ['tv-card', 'tk-list-card'])
   const listHead = el('div', ['tk-list-head'])
   listHead.append(el('h3', ['tv-section'], `Stops · ${stops.length}`))
@@ -3095,7 +3144,7 @@ function renderTracking(d) {
     const i = from + k
     const passed = f.actualFermataType === 1
     const at = (trackPred.get(i) || {}).arrMs || (f.arrivo_teorico || f.programmata) + Math.max(delay, 0) * 60000
-    const row = el('div', ['tk-row', passed ? 'is-passed' : '', i === hereIdx + 1 ? 'is-next' : '', i === stops.length - 1 ? 'is-end' : ''])
+    const row = el('div', ['tk-row', passed ? 'is-passed' : '', i === hereIdx + 1 ? 'is-next' : '', i === stops.length - 1 ? 'is-end' : '', i === focusI ? 'is-focus' : ''])
     const cell = el('span', ['tk-up-count'])
     row.append(el('span', ['tk-row-dot']), el('span', ['tk-up-name'], niceName(f.stazione)), el('span', ['tk-up-time'], formatEpochHHMM(passed ? (f.arrivoReale || f.partenzaReale || at) : at)), cell)
     row.dataset.at = String(at)
@@ -3193,6 +3242,10 @@ function tickTracking(ts) {
     countdown = model.target - now
     els.count.dataset.caption = 'before departure'
   }
+  const fi = focusIndex(live.data)
+  const focusMs = fi >= 0 ? ((predOf(live.data, now).get(fi) || {}).arrMs) : 0
+  els.chipFocus.hidden = !focusMs
+  if (focusMs) els.chipFocus.textContent = `${niceName(live.data.fermate[fi].stazione)} · ${clockLeft(focusMs, now)}`
   const moving = model.kind === 'between' && model.km
   els.chipSpeed.hidden = !moving
   els.chipKm.hidden = !moving
@@ -3247,7 +3300,7 @@ function glanceCard(d, now, pred, finalMs, lastPassed) {
     card.append(el('div', ['glance-label'], `Arrived at ${niceName(d.destinazione) || 'the terminus'}`), el('div', ['glance-big'], last.arrivoReale ? formatEpochHHMM(last.arrivoReale) : 'Arrived'))
     return card
   }
-  // the next stop and the final one, side by side: when, and the range the model was measured to hold
+  // the next stop and the target stop (the final one, or the stop the page is focused on), side by side
   const nextIdx = Math.max(lastPassed, 0) + 1
   const bands = modelReport && (tablesOn() ? modelReport.interval_90 : modelReport.interval_90_rules)
   const column = (labelText, name, ms, ahead) => {
@@ -3262,10 +3315,13 @@ function glanceCard(d, now, pred, finalMs, lastPassed) {
     return col
   }
   const cols = el('div', ['glance-cols'])
+  const fi = focusIndex(d)
+  const targetIdx = fi >= 0 ? fi : stops.length - 1
+  const isFinal = targetIdx === stops.length - 1
+  const targetMs = (pred.get(targetIdx) || {}).arrMs || (isFinal ? finalMs : null)
   const nextStop = stops[nextIdx]
-  const finalAhead = stops.length - 1 - Math.max(lastPassed, 0)
-  if (nextStop && nextIdx < stops.length - 1) cols.append(column('Next stop', niceName(nextStop.stazione), (pred.get(nextIdx) || {}).arrMs, 1))
-  cols.append(column('Final stop', niceName(d.destinazione) || 'the terminus', finalMs, finalAhead))
+  if (nextStop && nextIdx < targetIdx) cols.append(column('Next stop', niceName(nextStop.stazione), (pred.get(nextIdx) || {}).arrMs, 1))
+  cols.append(column(isFinal ? 'Final stop' : nextIdx === targetIdx ? 'Next stop · your focus' : 'Your focus', niceName(stops[targetIdx].stazione) || 'the terminus', targetMs, targetIdx - Math.max(lastPassed, 0)))
   cols.classList.toggle('is-single', cols.children.length === 1)
   card.append(cols)
   const chips = el('div', ['glance-chips'])
@@ -3289,7 +3345,7 @@ function renderTrainPage(d) {
   if (trackingMode) return renderTracking(d)
   stopTracking()
   const root = el('div', ['tv-wrap'])
-  root.append(trackModeBar())
+  root.append(trackModeBar(), focusBar(d))
   const category = (d.categoria || d.categoriaDescrizione || '').trim()
   const status = trainStatus(d)
   const delay = d.ritardo || 0
@@ -3463,6 +3519,7 @@ function initTrainPage() {
   document.body.classList.add('view-train')
   const params = new URLSearchParams(window.location.search)
   trainRef = { number: params.get('train'), from: params.get('from'), date: params.get('date') }
+  trainFocus = params.get('focus')
 
   const back = $('trainBack')
   back.hidden = false

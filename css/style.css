@@ -1433,3 +1433,18 @@ html { scrollbar-gutter: stable; }
 #refreshBtn.is-spinning i { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { #refreshBtn.is-spinning i { animation: none; } #refreshBtn.is-spinning { opacity: 0.5; } }
+
+/* focus on a stop: a small drop-down under the tabs; the focused stop is marked, what lies beyond it fades */
+.tk-focus { display: inline-flex; align-items: center; gap: 0.5rem; align-self: center; font-size: 0.8rem; color: var(--muted); }
+.tk-focus select { height: 34px; max-width: 16rem; padding: 0 2rem 0 0.8rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+.tk-focus[hidden] { display: none; }
+.tv-wrap > .tk-focus { justify-self: center; }
+@media (min-width: 1000px) {
+  .tv-wrap > .tk-modes { grid-row: 1; }
+  .tv-wrap > .tk-focus { grid-column: 1 / -1; grid-row: 1; justify-self: end; }
+}
+.tk-pill-focus { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.tk-row.is-focus .tk-up-name, .tv-stop.is-focus .tv-name { color: var(--accent); }
+.tk-row.is-focus { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: 8px; }
+.tv-stop.is-focus { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: 8px; }
+.tv-stop.is-beyond { opacity: 0.45; }
