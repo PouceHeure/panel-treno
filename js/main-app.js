@@ -1997,10 +1997,22 @@ function nerdTrackChart(d) {
   // the table's correction of every stop counts (not only its difference with the next one). model.eta already comes from the model.
   const fromKalman = model.kind === 'between' && model.kal && Number.isFinite(model.kal.minToGo)
   const rulesNext = fromKalman ? (withTimesMode('model', () => predOf(d)).get(hereStop + 1) || {}).arrMs : modelAt(hereStop + 1)
-  const predAt = i => (nextS && i > hereStop && nextArrival && modelAt(i) && rulesNext ? nextArrival + modelAt(i) - rulesNext : null)
+  const predArr = new Map() // stop index -> predicted arrival (ms), filled below once the dwell is known
+  const predAt = i => (predArr.has(i) ? predArr.get(i) : null)
   const extra = Math.max(d.ritardo || 0, 0) * 60000
   // how long the model keeps the train in a stop ahead: the same for the predicted line and the band
   const dwellAt = (idx, f) => { const m = modelPred.get(idx); return m && m.depMs && m.arrMs ? m.depMs - m.arrMs : depOf(f) - arrOf(f) }
+  // in order, from now: a stop is never reached before the train could have left the one before (a negative table correction
+  // would otherwise put the next arrival in the past, and the line would go back in time)
+  if (nextS && nextArrival && rulesNext) {
+    let free = now + 15000
+    for (let i = hereStop + 1; i < stops.length; i++) {
+      if (!modelAt(i)) break
+      const at = Math.max(nextArrival + modelAt(i) - rulesNext, free)
+      predArr.set(i, at)
+      free = at + dwellAt(i, stops[i]) + 60000
+    }
+  }
   const arrOf = f => f.arrivo_teorico || f.programmata
   const depOf = f => f.partenza_teorica || f.programmata
 
