@@ -1319,3 +1319,7 @@ button.route-open { font: inherit; cursor: pointer; }
 .tk-hab-mean { stroke: var(--text, #e8ecf4); stroke-width: 2 }
 .k-hab-bar { display: inline-block; width: 14px; height: 8px; border-radius: 2px; background: var(--accent, #f2c14e); opacity: .75 }
 .k-hab-mean { display: inline-block; width: 2px; height: 12px; background: var(--text, #e8ecf4) }
+
+/* Charts tab: the position against time is the main chart, on the full width */
+.nerd-hero { border-color: var(--line-strong, var(--line)); }
+@media (min-width: 1000px) { .nerd-hero { padding: 1.1rem 1.4rem 1rem; } }

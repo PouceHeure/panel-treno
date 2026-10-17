@@ -937,8 +937,10 @@ function trainsInHorizon(trains, now) {
 }
 
 // SVG text scales with the viewBox: use the real width so labels stay readable on phones.
+let chartWide = false // set while the full-width chart of the Charts tab is drawn
 function chartWidth() {
   const host = $('trainInfo').clientWidth
+  if (chartWide && window.innerWidth >= 1000) return Math.max(640, Math.min(host - 32, 1168) - 60)
   // the nerd view of a wide screen has two columns: a chart gets one of them
   if (window.innerWidth >= 1000 && document.body.classList.contains('view-nerd')) {
     return Math.max(420, Math.min(640, Math.floor((Math.min(host - 32, 1168) - 16) / 2 - 30)))
@@ -1806,7 +1808,6 @@ let nerdTrack = false
 let trackWin = '10' // minutes shown by the position plot: '5', '10', '30' or 'all'
 let trackAxis = 'min' // vertical axis of the plot: 'min' (scheduled travel time) or 'km' (distance)
 const TRACK_TICK_MS = 5000
-let nerdMoreOpen = window.innerWidth >= 1000 // the folded technical charts of the nerd view, kept open across redraws
 let nerdHoldUntil = 0 // while a finger or the mouse is on a chart, the page is not redrawn under it
 const holdNerd = ms => { nerdHoldUntil = Date.now() + ms }
 // where "now" is, as a share of the plot width, in every nerd chart: late on a wide screen (history), early on a phone (the future)
@@ -2742,17 +2743,18 @@ function renderTrackNerd(d) {
     statTile('uncertainty', unc ? `±${unc}m` : '–', unc ? `1σ on the next arrival · ${cur.kal.sigmaKm.toFixed(2)} km` : 'in a station'),
     statTile('last detection', rel ? rel.text : '–', d.oraUltimoRilevamento ? `${Math.max(0, Math.round((now - d.oraUltimoRilevamento) / 60000))} min ago` : '')
   )
-  // what matters stays in view (the live numbers, where the train is, the arrivals); the technical charts fold away
-  const more = el('details', ['nerd-more'])
-  more.open = nerdMoreOpen
-  more.addEventListener('toggle', () => { nerdMoreOpen = more.open })
-  more.append(el('summary', [], 'Technical charts'), grid, nerdTrackChart(d), nerdTrackDelay(d))
-  // on a wide screen: the live reading on the left, the technical charts open on the right
+  // the position against time is the main chart: alone, on the full width; the rest sits in two columns below it
+  chartWide = true
+  const hero = nerdTrackChart(d)
+  chartWide = false
+  hero.classList.add('nerd-hero')
   const cols = el('div', ['nerd-cols'])
   const left = el('div', ['nerd-col'])
-  left.append(nerdTrackKin(d, cur, now), nerdTrackBars(d, cur, now), nerdTrackTable(d, cur), nerdTrackHabits(d, cur))
-  cols.append(left, more)
-  wrap.append(nerdDashboard(d), cols)
+  const right = el('div', ['nerd-col'])
+  left.append(nerdTrackKin(d, cur, now), nerdTrackBars(d, cur, now), nerdTrackDelay(d))
+  right.append(grid, nerdTrackTable(d, cur), nerdTrackHabits(d, cur))
+  cols.append(left, right)
+  wrap.append(nerdDashboard(d), hero, cols)
   // redrawn every few seconds: the page keeps at least its previous height and scroll position, so it does not jump
   const host = $('trainInfo')
   const scroller = document.scrollingElement || document.documentElement
