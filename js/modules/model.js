@@ -89,6 +89,14 @@ function correctionInfo(fromId, toId) {
 }
 
 // The correction the "tables" model adds (0 in the other modes): the pair when it was seen enough, else the stop alone.
+// What the trains were seen to do at a station: { n, median, mean, source } of the arrival delay in minutes, for the
+// trains going towards `nextId` when there are enough of them ('direction'), else for all of them ('station'); or null.
+function stationDelay(id, nextId) {
+  const delays = corrections && corrections.delays
+  if (!delays) return null
+  const pick = (row, source) => (row ? { n: row[0], median: row[1], mean: row[2], source } : null)
+  return pick(delays.directions && delays.directions[`${id}>${nextId || ''}`], 'direction') || pick(delays.stations && delays.stations[id], 'station')
+}
 function correctionFor(fromId, toId) {
   if (!tablesOn()) return 0
   const info = correctionInfo(fromId, toId)
@@ -219,7 +227,7 @@ loadCorrections()
 
 if (typeof module !== 'undefined') {
   module.exports = {
-    delayAt, predictArrival, predictStopTimes, correctionFor, correctionInfo, withTimesMode, dwellExpected, motionProfile,
+    delayAt, predictArrival, predictStopTimes, correctionFor, correctionInfo, stationDelay, withTimesMode, dwellExpected, motionProfile,
     setCorrectionsForTests: table => { corrections = table }
   }
 }

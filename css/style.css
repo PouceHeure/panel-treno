@@ -1314,3 +1314,8 @@ button.route-open { font: inherit; cursor: pointer; }
 .tk-tab-bar.is-station { opacity: 0.55; }
 .k-tab-later { width: 16px; height: 6px; background: var(--late); display: inline-block; }
 .k-tab-earlier { width: 16px; height: 6px; background: var(--ok); display: inline-block; }
+
+.tk-hab-bar { fill: var(--accent, #f2c14e); opacity: .75 }
+.tk-hab-mean { stroke: var(--text, #e8ecf4); stroke-width: 2 }
+.k-hab-bar { display: inline-block; width: 14px; height: 8px; border-radius: 2px; background: var(--accent, #f2c14e); opacity: .75 }
+.k-hab-mean { display: inline-block; width: 2px; height: 12px; background: var(--text, #e8ecf4) }

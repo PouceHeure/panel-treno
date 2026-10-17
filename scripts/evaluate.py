@@ -73,6 +73,29 @@ def build_pairs(trains):
     return rows
 
 
+def station_delays(trains, days):
+    """The arrival delay (min) seen over the whole days, as [n, median, mean], from MIN_SEEN arrivals:
+    'stations': per station; 'directions': per station and the stop after it ('A>B': the trains going towards B)."""
+    seen = {}
+    for train in trains:
+        if day_of(train['departure_ms']) not in days:
+            continue
+        stops = train['stops']
+        for i, stop in enumerate(stops):
+            if not (stop.get('real_arr') and stop.get('sched_arr')):
+                continue
+            late = (stop['real_arr'] - stop['sched_arr']) / 60
+            after = stops[i + 1]['station'] if i + 1 < len(stops) else ''
+            seen.setdefault(stop['station'], []).append(late)
+            seen.setdefault(f"{stop['station']}>{after}", []).append(late)
+    out = {'stations': {}, 'directions': {}}
+    for key, values in seen.items():
+        if len(values) >= MIN_SEEN:
+            values.sort()
+            out['directions' if '>' in key else 'stations'][key] = [len(values), round(percentile(values, 0.5), 1), round(sum(values) / len(values), 1)]
+    return out
+
+
 def predict_raw(row, _constants):
     return row['r0']
 
@@ -335,6 +358,7 @@ def main(argv):
     CORRECTIONS.write_text(json.dumps({
         'generated_at': report['generated_at'], 'days': days, 'shrink': SHRINK, 'min_seen': MIN_SEEN,
         'pairs': table['pairs'], 'stations': table['stations'],
+        'delays': station_delays(export['trains'], days),
     }, separators=(',', ':'), ensure_ascii=False) + '\n')
     print(f"written {REPORT.relative_to(ROOT)} and {CORRECTIONS.relative_to(ROOT)} ({len(table['pairs'])} pairs, {len(table['stations'])} stations, {CORRECTIONS.stat().st_size // 1024} KB)")
     return 0

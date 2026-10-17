@@ -33,3 +33,10 @@ test('without a table, tables behaves as the rules; and a train is not predicted
   assert.ok(delays('tables')[0] >= -1 - 1e-9, 'the floor is one minute early')
   M.setCorrectionsForTests(null)
 })
+
+test('stationDelay prefers the direction, falls back to the station, null when unknown', () => {
+  M.setCorrectionsForTests({ pairs: {}, stations: {}, delays: { stations: { S1: [40, 1.5, 3.2] }, directions: { 'S1>S2': [12, 3, 4.1] } } })
+  assert.deepEqual(M.stationDelay('S1', 'S2'), { n: 12, median: 3, mean: 4.1, source: 'direction' })
+  assert.deepEqual(M.stationDelay('S1', 'S9'), { n: 40, median: 1.5, mean: 3.2, source: 'station' })
+  assert.equal(M.stationDelay('S2', 'S1'), null)
+})

@@ -68,8 +68,11 @@ Favourites, the followed train, recent searches and the device-side prediction l
 A model is only recommended when it beats `raw` on a day it was not fitted on. To refresh the scores and the table after collecting more data:
 
 ```bash
-python3 scripts/evaluate.py path/to/export.json   # writes data/model-report.json and data/segment-corrections.json
+scripts/update-model.sh path/to/export.json       # all in one: evaluate, restamp the assets, run the tests
+python3 scripts/evaluate.py path/to/export.json   # only the evaluation: writes data/model-report.json and data/segment-corrections.json
 ```
+
+`data/segment-corrections.json` also holds the median and mean arrival delay seen on the whole days, per station and per direction (`delays`); the Charts tab of a trip plots them ("usual delay per station").
 
 The script scores the models on the last whole day of the export (a morning export is not a whole day) with everything learned from the days before it, then each whole day in turn with the tables built from the other days. It reads the rule constants from `model.js`, so it always scores what the app runs, and says whether refitting them would help. The table shipped with the app is built from every whole day.
 

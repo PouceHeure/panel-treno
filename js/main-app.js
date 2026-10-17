@@ -2680,6 +2680,48 @@ function nerdTrackTable(d, cur) {
   return panel
 }
 
+// The delay trains usually have on arrival at each stop of the trip, from the recorded days: median (bar) and mean (tick).
+function nerdTrackHabits(d) {
+  const panel = el('div', ['nerd-panel'])
+  const head = el('div', ['nerd-panel-head'])
+  head.append(el('span', [], 'usual delay per station'), el('span', [], 'this direction · median · mean'))
+  panel.append(head)
+  const all = d.fermate || []
+  const rows = all.map((f, i) => ({ name: niceName(f.stazione), info: stationDelay(f.id, all[i + 1] && all[i + 1].id) }))
+  if (!rows.length) { panel.append(el('p', ['nerd-dim'], 'no stops')); return panel }
+  if (rows.every(r => r.info === null)) { panel.append(el('p', ['nerd-dim'], 'loading the table…')); return panel }
+  const W = chartWidth()
+  const LEFT = chartLeft()
+  const RIGHT = 54
+  const TOP = 12
+  const rowH = 22
+  const H = TOP + rows.length * rowH + 24
+  const top = Math.max(2, Math.ceil(Math.max(...rows.map(r => (r.info ? Math.max(r.info.median, r.info.mean, 0) : 0)))))
+  const xOf = v => LEFT + (Math.max(v, 0) / top) * (W - LEFT - RIGHT)
+  const svg = svgChart(H, 'Median and mean arrival delay recorded at each stop of this trip', W)
+  ;[0, top / 2, top].forEach(v => {
+    svg.append(svgEl('line', { x1: xOf(v), x2: xOf(v), y1: TOP - 4, y2: H - 20, class: v === 0 ? 'tl-grid' : 'tl-vgrid' }))
+    svg.append(svgEl('text', { x: xOf(v), y: H - 6, class: 'tl-label', 'text-anchor': 'middle' }, `${Number.isInteger(v) ? v : v.toFixed(1)}`))
+  })
+  const max = Math.floor((LEFT - 10) / 6.4)
+  rows.forEach((r, i) => {
+    const y = TOP + i * rowH
+    svg.append(svgEl('text', { x: LEFT - 8, y: y + 13, class: 'tl-label', 'text-anchor': 'end' }, r.name.length > max ? `${r.name.slice(0, max - 1)}…` : r.name))
+    if (!r.info) return
+    const bar = svgEl('rect', { x: LEFT, y: y + 3, width: Math.max(2, xOf(r.info.median) - LEFT), height: 11, rx: 2, class: 'tk-hab-bar' })
+    bar.append(svgEl('title', {}, `${r.name}: median ${r.info.median} min, mean ${r.info.mean} min (${r.info.n} arrivals${r.info.source === 'station' ? ', both directions: this one is rare' : ', same direction'})`))
+    svg.append(bar)
+    svg.append(svgEl('line', { x1: xOf(r.info.mean), x2: xOf(r.info.mean), y1: y, y2: y + 17, class: 'tk-hab-mean' }))
+    svg.append(svgEl('text', { x: Math.max(xOf(r.info.median), xOf(r.info.mean)) + 6, y: y + 13, class: 'tk-axis-scale' }, `${r.info.median} · ${r.info.mean}${r.info.source === 'station' ? '*' : ''}`))
+  })
+  panel.append(svg)
+  const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
+  const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
+  legend.append(item('k-hab-bar', 'median'), item('k-hab-mean', 'mean (pulled up by the big delays)'), el('span', [], '* both directions'))
+  panel.append(legend)
+  return panel
+}
+
 function renderTrackNerd(d) {
   const now = Date.now()
   const wrap = el('div', ['nerd-wrap'])
@@ -2706,7 +2748,7 @@ function renderTrackNerd(d) {
   // on a wide screen: the live reading on the left, the technical charts open on the right
   const cols = el('div', ['nerd-cols'])
   const left = el('div', ['nerd-col'])
-  left.append(nerdTrackKin(d, cur, now), nerdTrackBars(d, cur, now), nerdTrackTable(d, cur))
+  left.append(nerdTrackKin(d, cur, now), nerdTrackBars(d, cur, now), nerdTrackTable(d, cur), nerdTrackHabits(d))
   cols.append(left, more)
   wrap.append(nerdDashboard(d), cols)
   // redrawn every few seconds: the page keeps at least its previous height and scroll position, so it does not jump
