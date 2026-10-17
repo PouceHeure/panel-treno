@@ -1987,6 +1987,8 @@ function nerdTrackChart(d) {
   const rulesNext = fromKalman ? (withTimesMode('model', () => predOf(d)).get(hereStop + 1) || {}).arrMs : modelAt(hereStop + 1)
   const predAt = i => (nextS && i > hereStop && nextArrival && modelAt(i) && rulesNext ? nextArrival + modelAt(i) - rulesNext : null)
   const extra = Math.max(d.ritardo || 0, 0) * 60000
+  // how long the model keeps the train in a stop ahead: the same for the predicted line and the band
+  const dwellAt = (idx, f) => { const m = modelPred.get(idx); return m && m.depMs && m.arrMs ? m.depMs - m.arrMs : depOf(f) - arrOf(f) }
   const arrOf = f => f.arrivo_teorico || f.programmata
   const depOf = f => f.partenza_teorica || f.programmata
 
@@ -2075,9 +2077,8 @@ function nerdTrackChart(d) {
     let to = null
     if (f.arrivoReale && (f.partenzaReale || idx === hereIdx0)) { from = f.arrivoReale; to = f.partenzaReale || Math.max(now, f.arrivoReale) }
     else if (idx > hereIdx0 || (idx === hereIdx0 && model.kind === 'station')) {
-      const m = modelPred.get(idx)
       const at = predAt(idx) || arrOf(f) + extra
-      const dwell = m && m.depMs && m.arrMs ? m.depMs - m.arrMs : depOf(f) - arrOf(f)
+      const dwell = dwellAt(idx, f)
       from = at; to = at + dwell
     }
     if (from === null || to === null || to < tMin || from > tMax) return
@@ -2093,7 +2094,7 @@ function nerdTrackChart(d) {
   // what the current delay predicts for the stops ahead
   const idxHere = stops.indexOf(model.here)
   const ahead = rows.map((f, i) => ({ f, i, idx: lo + i })).filter(r => r.idx > idxHere)
-  path([[xOf(now), yOf(sNow)]].concat(ahead.flatMap(r => { const at = predAt(lo + r.i) || arrOf(r.f) + extra; const dwell = depOf(r.f) - arrOf(r.f); return [[xOf(at), yAt(lo + r.i)], [xOf(at + dwell), yAt(lo + r.i)]] })), 'tk-plot-pred')
+  path([[xOf(now), yOf(sNow)]].concat(ahead.flatMap(r => { const at = predAt(lo + r.i) || arrOf(r.f) + extra; const dwell = dwellAt(r.idx, r.f); return [[xOf(at), yAt(lo + r.i)], [xOf(at + dwell), yAt(lo + r.i)]] })), 'tk-plot-pred')
   // the filter replayed with everything known now (late detections and real times applied where they belong,
   // and the past revised by the smoother), against what was believed at the time
   let revised = null
