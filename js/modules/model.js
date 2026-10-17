@@ -238,15 +238,21 @@ function predictStopTimes(stops, delayNow, lastPassed, opts = {}) {
 
 // ViaggiaTreno sometimes gives a stop a "real" arrival that is only its scheduled time (the train has not been seen there),
 // next to a real departure from the stop before that is later: an arrival before the previous departure. That time is not
-// a measurement: it is replaced by an estimate (flagged `arrivoEstimated`) from what is known around it.
+// a measurement (and a departure may come with no arrival at all): it is replaced by an estimate (flagged `arrivoEstimated`) from what is known around it.
 function repairStopTimes(stops) {
   for (let i = 1; i < stops.length; i++) {
     const f = stops[i]
     const prevDep = stops[i - 1].partenzaReale
-    if (!f.arrivoReale || !prevDep || f.arrivoReale >= prevDep) continue
     const schedArr = f.arrivo_teorico || f.programmata
     const schedDep = f.partenza_teorica || f.programmata
     const dwell = Math.max(60000, (schedDep - schedArr) || 0)
+    if (f.partenzaReale && !f.arrivoReale) {
+      // a departure with no arrival (the feed does not always keep it): the arrival is worked back from the departure
+      f.arrivoReale = Math.min(f.partenzaReale, Math.max((prevDep || 0) + 60000, f.partenzaReale - dwell))
+      f.arrivoEstimated = true
+      continue
+    }
+    if (!f.arrivoReale || !prevDep || f.arrivoReale >= prevDep) continue
     f.arrivoReale = f.partenzaReale ? Math.max(prevDep + 60000, f.partenzaReale - dwell) : prevDep + 60000
     f.arrivoEstimated = true
   }

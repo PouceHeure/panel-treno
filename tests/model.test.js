@@ -80,3 +80,15 @@ test('an arrival that comes before the departure from the stop before is not kep
   assert.ok(list[2].arrivoEstimated)
   assert.ok(list[2].arrivoReale >= min(19) + 60000 && list[2].arrivoReale <= list[2].partenzaReale)
 })
+
+test('a stop with a real departure and no real arrival gets an estimated arrival, after the departure before', () => {
+  const t0 = Date.UTC(2026, 9, 17, 8, 0)
+  const min = m => t0 + m * 60000
+  const stop = (a, d) => ({ arrivo_teorico: min(a), partenza_teorica: min(d) })
+  const list = [stop(0, 1), stop(3, 4)]
+  list[0].partenzaReale = min(20)
+  list[1].partenzaReale = min(21) // no arrival in the feed
+  M.repairStopTimes(list)
+  assert.ok(list[1].arrivoEstimated)
+  assert.ok(list[1].arrivoReale >= min(20) + 60000 && list[1].arrivoReale <= min(21))
+})
