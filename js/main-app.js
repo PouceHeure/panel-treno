@@ -3129,6 +3129,7 @@ function renderTracking(d) {
   if (live.segKey !== model.segKey) {
     live.segKey = model.segKey
     live.shown = 0
+    live.segShown = undefined
   } else if (live.lastFetch !== trainFetchedAt) {
     const jump = model.p - live.shown
     live.correction = { pct: Math.round(jump * 100), at: Date.now() }
@@ -3161,11 +3162,17 @@ function tickTracking(ts) {
   }
   els.segA.textContent = niceName(model.here.stazione)
   els.segB.textContent = niceName(model.next.stazione)
-  els.segTrain.style.left = `${live.shown * 100}%`
-  els.segDone.style.width = `${live.shown * 100}%`
+  // the train follows the selected model: how far through the time it expects for this stretch (raw, rules or tables
+  // each give their own arrival), gliding to its new place when the model or the data changes
+  const byModel = model.kind === 'between' && model.eta > model.since ? Math.min(0.97, Math.max(0, (now - model.since) / (model.eta - model.since))) : 0
+  if (live.segShown === undefined) live.segShown = byModel
+  live.segShown += (byModel - live.segShown) * (1 - Math.exp(-dt / 1.2))
+  els.segTrain.style.left = `${live.segShown * 100}%`
+  els.segDone.style.width = `${live.segShown * 100}%`
   els.segGhost.style.left = `${model.ghost * 100}%`
   els.segGhost.hidden = model.kind !== 'between'
-  els.segFoot.textContent = model.kind === 'between' ? `${Math.round(live.shown * 100)} % of the way` : model.kind === 'waiting' ? 'waiting to leave' : 'in the station'
+  const modeName = { raw: 'delay held', model: 'rules', tables: 'tables' }[timesMode] || timesMode
+  els.segFoot.textContent = model.kind === 'between' ? `${Math.round(live.segShown * 100)} % of the way · arrives ~${formatEpochHHMM(model.eta)} (${modeName})` : model.kind === 'waiting' ? 'waiting to leave' : 'in the station'
   els.label.textContent = 'Next stop'
   els.name.textContent = niceName(model.next.stazione)
   els.eta.textContent = `~${formatEpochHHMM(model.eta)}`
