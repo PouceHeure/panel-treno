@@ -73,7 +73,14 @@ python3 scripts/evaluate.py path/to/export.json   # writes data/model-report.jso
 
 The script scores the models on the last whole day of the export (a morning export is not a whole day) with everything learned from the days before it, then each whole day in turn with the tables built from the other days. It reads the rule constants from `model.js`, so it always scores what the app runs, and says whether refitting them would help. The table shipped with the app is built from every whole day.
 
-`notebooks/model-evaluation.ipynb` is the same work, step by step, for exploring and trying new models.
+### Notebook
+
+`notebooks/model-evaluation.ipynb` is the same work step by step, for exploring the data and trying new models: data quality, the three models on a day they have not seen, every whole day in turn, the ranges, where the errors still come from, a harness (`leave_one_day_out`) to score any new model, and whether the rules need recalibrating. It imports `scripts/evaluate.py`, so it can never drift from what the app runs, and the tests execute all its cells on a made-up export.
+
+```bash
+pip install -r notebooks/requirements.txt
+TRENO_EXPORT=path/to/export.json jupyter lab notebooks/model-evaluation.ipynb
+```
 
 `scripts/build-stations.py` rebuilds `data/stations.json` (station coordinates).
 
@@ -91,7 +98,7 @@ The tests fail when a page is out of date.
 
 ```bash
 node --test tests/*.test.js                          # search, favourites, registry, prediction log
-python3 -m unittest discover -s tests -p "test_*.py" # evaluation: pairs, chronological split, models
+python3 -m unittest discover -s tests -p "test_*.py" # evaluation (pairs, split, tables), assets, and the notebook
 ```
 
 ## Station map

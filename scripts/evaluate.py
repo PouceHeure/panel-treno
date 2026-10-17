@@ -66,6 +66,7 @@ def build_pairs(trains):
                     continue
                 rows.append({
                     'day': day, 'train': train['id'], 'k': j - i, 'r0': r0, 'from': a['station'], 'to': b['station'],
+                    'hour': datetime.fromtimestamp(a['real_dep'], ROME).hour, 'cat': train.get('category') or '',
                     'h': (b['sched_arr'] - a['sched_dep']) / 60,
                     'y': (b['real_arr'] - b['sched_arr']) / 60,
                 })
