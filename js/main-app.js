@@ -3459,7 +3459,7 @@ function initTrainPage() {
     const stationParams = new URLSearchParams({ stationID: boardId })
     if (params.get('stationName')) stationParams.set('stationName', params.get('stationName'))
     back.href = `index.html?${stationParams}`
-    $('trainBackLabel').textContent = params.get('stationName') || 'Board'
+    $('trainBackLabel').textContent = niceName(params.get('stationName')) || 'Board'
   } else {
     // no station to go back to: the Home icon is enough
     back.hidden = true
