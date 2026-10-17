@@ -1574,8 +1574,7 @@ function focusBar(d) {
     select.addEventListener('change', () => {
       trainFocus = select.value || null
       const url = new URLSearchParams(window.location.search)
-      if (trainFocus) url.set('focus', trainFocus)
-      else url.delete('focus')
+      url.set('focus', trainFocus || '') // empty: the whole trip, even when the page was opened from a station
       window.history.replaceState(null, '', `${window.location.pathname}?${url}`)
       if (trainDetail) renderTrainPage(trainDetail)
     })
@@ -3565,7 +3564,8 @@ function initTrainPage() {
   document.body.classList.add('view-train')
   const params = new URLSearchParams(window.location.search)
   trainRef = { number: params.get('train'), from: params.get('from'), date: params.get('date') }
-  trainFocus = params.get('focus')
+  // coming from a station board, the page is focused on that station (the stop the visitor is waiting at); ?focus= wins, and an empty one means "the whole trip"
+  trainFocus = params.has('focus') ? params.get('focus') || null : params.get('stationID')
 
   const back = $('trainBack')
   back.hidden = false
