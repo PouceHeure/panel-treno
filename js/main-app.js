@@ -1839,8 +1839,20 @@ function loadTrackHist() {
 
 function saveTrackHist() {
   try {
-    localStorage.setItem(trackHist.key, JSON.stringify({ f: trackHist.fetches.slice(-TRACK_KEEP), d: trackHist.detections.slice(-200) }))
+    localStorage.setItem(trackHist.key, JSON.stringify({ at: Date.now(), f: trackHist.fetches.slice(-TRACK_KEEP), d: trackHist.detections.slice(-200) }))
+    pruneTrackLogs()
   } catch { /* storage is optional */ }
+}
+
+// The logs of the trains looked at are kept for the next visit, a few days and a few trains: they would otherwise pile up
+// (up to 30 KB each) until the storage is full.
+const TRACK_LOG_KEEP = 8
+const TRACK_LOG_DAYS = 3
+function pruneTrackLogs() {
+  const keys = Object.keys(localStorage).filter(k => k.startsWith('panelTreno.track.'))
+  if (keys.length <= 1) return
+  const dated = keys.map(k => { let at = 0; try { at = (JSON.parse(localStorage.getItem(k)) || {}).at || 0 } catch { /* unreadable: oldest */ } return [k, at] }).sort((a, b) => b[1] - a[1])
+  dated.forEach(([k, at], i) => { if (k !== trackHist.key && (i >= TRACK_LOG_KEEP || Date.now() - at > TRACK_LOG_DAYS * 86400000)) localStorage.removeItem(k) })
 }
 
 // The API only keeps the LAST detection of a train. Detection points are often stations it goes through
