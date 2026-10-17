@@ -2070,7 +2070,8 @@ function nerdTrackChart(d) {
     svg.append(label)
     const due = predAt(lo + i)
     if (due) {
-      const when = svgEl('text', { x: LEFT - 6, y: y + 4, 'text-anchor': 'end', class: 'tk-plot-when' }, `~${formatEpochHHMM(due)}`)
+      const narrow = LEFT < 100 // on a phone the name takes the whole margin: the time goes just above the line, inside the plot
+      const when = svgEl('text', narrow ? { x: LEFT + 4, y: y - 4, class: 'tk-plot-when' } : { x: LEFT - 6, y: y + 4, 'text-anchor': 'end', class: 'tk-plot-when' }, `~${formatEpochHHMM(due)}`)
       when.append(svgEl('title', {}, `Predicted at ${formatTime(new Date(due), true)}`))
       svg.append(when)
     }

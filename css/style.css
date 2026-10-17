@@ -1348,3 +1348,41 @@ button.route-open { font: inherit; cursor: pointer; }
 .glance-name { font-weight: 600; font-size: 1rem; overflow-wrap: anywhere; }
 .glance-cols .glance-big { font-size: 2rem; }
 .glance-cols .glance-col:first-child:not(:last-child) .glance-big { font-size: 1.6rem; opacity: 0.9; }
+
+/* phone footer: one slim row (connection state on the left, the model switch on the right), no links, no strip */
+@media (max-width: 600px) {
+  .app-footer { gap: 0.5rem; padding: 0.4rem 0.75rem max(0.4rem, env(safe-area-inset-bottom)); }
+  .app-footer > a, .app-footer > .footer-item { display: none; }
+  .footer-status { flex: 1 1 auto; }
+  .status-text { white-space: nowrap; overflow: hidden; }
+  .status-text strong + span { margin-left: 0.3rem; }
+  .status-detail, .req-strip { display: none; }
+  .times-label { display: none; }
+  .times-switch { height: 26px; }
+}
+
+/* phone, Now tab: what you glance at while walking comes first (the countdown, then the little train), the final stop after */
+@media (max-width: 999px) {
+  .tv-wrap > .tk-modes { order: 0; }
+  .tv-wrap > .tv-wide { order: 1; }
+  .tv-wrap > .tk-card { order: 2; }
+  .tv-wrap > .tk-seg { order: 3; }
+  .tv-wrap > .tv-glance { order: 4; }
+  .tv-wrap > .tk-list-card { order: 5; }
+  .tv-wrap > .tk-legend { order: 6; }
+}
+
+@media (max-width: 600px) { .kin-value { font-size: 1.45rem; white-space: nowrap; } .kin-tile { min-width: 0; } }
+
+/* Lab on a wide screen: the models side by side, the ranges and the device numbers in two columns below */
+@media (min-width: 1000px) {
+  .lab-page .search-main { max-width: 1180px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem 2rem; align-items: start; }
+  .lab-page .search-main > .search-title, .lab-page .search-main > .lab-intro, .lab-page #labData, .lab-page #labModels, .lab-page .lab-foot { grid-column: 1 / -1; }
+  .lab-page .lab-models { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.8rem; }
+  .lab-page .lab-model { display: flex; flex-direction: column; }
+  .lab-page .lab-model .route-open { margin-top: auto; align-self: flex-start; }
+  .lab-page .lab-tile-value { font-size: 2.1rem; }
+  .lab-page .lab-tile { padding: 1rem 1.2rem; }
+}
+@media (min-width: 1000px) { .lab-page .search-main > * { margin-block: 0; } .lab-page .search-main { row-gap: 1.1rem; } }
+@media (min-width: 1000px) { .lab-page .search-main { align-content: start; } }
