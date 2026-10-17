@@ -3047,6 +3047,22 @@ function renderTracking(d) {
   card.append(nextLine, els.count, els.chips)
   root.append(card)
 
+  // the simple picture: a rail from the last stop to the next one, a little train on it, the timetable's train as a ghost
+  const seg = el('section', ['tv-card', 'tk-seg'])
+  const segNames = el('div', ['tk-seg-names'])
+  els.segA = el('span', ['tk-seg-a'])
+  els.segB = el('span', ['tk-seg-b'])
+  segNames.append(els.segA, els.segB)
+  const rail = el('div', ['tk-seg-rail'])
+  els.segDone = el('div', ['tk-seg-done'])
+  els.segGhost = el('div', ['tk-seg-ghost'])
+  els.segTrain = el('div', ['tk-seg-train'])
+  els.segTrain.append(icon('bi-train-front-fill'))
+  rail.append(el('div', ['tk-seg-line']), els.segDone, el('span', ['tk-seg-stop', 'is-a']), el('span', ['tk-seg-stop', 'is-b']), els.segGhost, els.segTrain)
+  els.segFoot = el('p', ['tk-seg-foot'])
+  seg.append(segNames, rail, els.segFoot)
+  root.append(seg)
+
   // the line: a window of stops around the train (or all of them), the train sliding along it
   const stops = d.fermate || []
   const trackPred = predOf(d)
@@ -3143,6 +3159,13 @@ function tickTracking(ts) {
     place(els.dot, live.shown)
     place(els.ghost, model.ghost)
   }
+  els.segA.textContent = niceName(model.here.stazione)
+  els.segB.textContent = niceName(model.next.stazione)
+  els.segTrain.style.left = `${live.shown * 100}%`
+  els.segDone.style.width = `${live.shown * 100}%`
+  els.segGhost.style.left = `${model.ghost * 100}%`
+  els.segGhost.hidden = model.kind !== 'between'
+  els.segFoot.textContent = model.kind === 'between' ? `${Math.round(live.shown * 100)} % of the way` : model.kind === 'waiting' ? 'waiting to leave' : 'in the station'
   els.label.textContent = 'Next stop'
   els.name.textContent = niceName(model.next.stazione)
   els.eta.textContent = `~${formatEpochHHMM(model.eta)}`

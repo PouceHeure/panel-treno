@@ -1323,3 +1323,20 @@ button.route-open { font: inherit; cursor: pointer; }
 /* Charts tab: the position against time is the main chart, on the full width */
 .nerd-hero { border-color: var(--line-strong, var(--line)); }
 @media (min-width: 1000px) { .nerd-hero { padding: 1.1rem 1.4rem 1rem; } }
+
+
+/* Now tab: one segment, a little train going from the last stop to the next */
+.tk-seg { padding: 1.1rem 1.3rem 1rem; }
+.tk-seg-names { display: flex; justify-content: space-between; gap: 1rem; font-weight: 600; font-size: 0.95rem; }
+.tk-seg-names span:last-child { text-align: right; }
+.tk-seg-rail { position: relative; height: 3.2rem; margin: 0.4rem 0.9rem 0; }
+.tk-seg-line, .tk-seg-done { position: absolute; left: 0; top: 1.9rem; height: 6px; border-radius: 3px; }
+.tk-seg-line { right: 0; background: var(--line); }
+.tk-seg-done { background: var(--accent); }
+.tk-seg-stop { position: absolute; top: 1.9rem; width: 16px; height: 16px; margin: -5px 0 0 -8px; border-radius: 50%; background: var(--bg); border: 3px solid var(--accent); box-sizing: border-box; }
+.tk-seg-stop.is-a { left: 0; }
+.tk-seg-stop.is-b { left: 100%; border-color: var(--muted); }
+.tk-seg-train { position: absolute; top: 0; width: 2.6rem; height: 2.6rem; margin-left: -1.3rem; display: flex; align-items: center; justify-content: center; font-size: 1.7rem; color: var(--accent); filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5)); }
+.tk-seg-train::after { content: ""; position: absolute; bottom: -0.25rem; left: 50%; width: 2px; height: 0.45rem; background: var(--accent); }
+.tk-seg-ghost { position: absolute; top: 0.2rem; width: 2rem; height: 2rem; margin-left: -1rem; display: flex; align-items: center; justify-content: center; opacity: 0.35; border: 2px dashed var(--muted); border-radius: 50%; }
+.tk-seg-foot { margin: 0.3rem 0 0; text-align: center; color: var(--muted); font-size: 0.8rem; }
