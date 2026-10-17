@@ -1080,8 +1080,8 @@ button.route-open { font: inherit; cursor: pointer; }
   .tv-wrap { max-width: 1180px; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 1rem; align-items: start; }
   .tv-wrap > .tk-modes, .tv-wrap > .tv-wide { grid-column: 1 / -1; justify-self: stretch; }
   .tv-wrap > .tk-modes { justify-self: center; }
-  .tv-wrap > .tk-list-card { grid-column: 2; grid-row: 3 / span 2; position: sticky; top: 5.5rem; }
-  .tv-wrap > .tv-route-card { grid-column: 2; grid-row: 2 / span 5; }
+  .tv-wrap > .tk-list-card { grid-column: 2; grid-row: 3 / span 4; position: sticky; top: 5.5rem; }
+  .tv-wrap > .tv-route-card { grid-column: 2; grid-row: 3 / span 5; }
   .tv-wrap > .tk-legend { grid-column: 1; }
   .nerd-wrap { width: 100%; max-width: 1168px; margin-inline: auto; font-size: 0.85rem; }
   .nerd-wrap > .tk-modes { align-self: center; }
@@ -1361,15 +1361,6 @@ button.route-open { font: inherit; cursor: pointer; }
   .times-switch { height: 26px; }
 }
 
-/* phone, Now tab: what you glance at while walking comes first (the countdown, then the little train), the final stop after */
-@media (max-width: 999px) {
-  .tv-wrap > .tk-modes { order: 0; }
-  .tv-wrap > .tv-wide { order: 1; }
-  .tv-wrap > .tk-card { order: 2; }
-  .tv-wrap > .tk-seg { order: 3; }
-  .tv-wrap > .tv-glance { order: 4; }
-  .tv-wrap > .tk-list-card { order: 5; }
-  .tv-wrap > .tk-legend { order: 6; }
 }
 
 @media (max-width: 600px) { .kin-value { font-size: 1.45rem; white-space: nowrap; } .kin-tile { min-width: 0; } }
@@ -1456,3 +1447,20 @@ html { scrollbar-gutter: stable; }
 .tk-seg-stop.is-focus { border-color: var(--accent); border-width: 4px; }
 .tk-seg-focus { border-color: var(--accent); }
 .tk-seg-focus[hidden] { display: none; }
+
+/* the arrival card is the answer: next stop and target side by side, each with its time, its range and what is left */
+.glance-count { margin-top: 0.1rem; font-family: var(--mono); font-size: 1.05rem; font-weight: 600; color: var(--accent); }
+.glance-count.is-late { color: var(--late); }
+.glance-count:empty { display: none; }
+/* the picture cards: the same rhythm as every card */
+.tk-seg .tk-chips { margin-top: 0.6rem; justify-content: center; }
+.tv-headcard .tv-progress { margin-top: 0.7rem; }
+
+/* phones: the answer (next stop and target) comes right under the tabs, the identity card after it; the same on every tab */
+@media (max-width: 999px) {
+  .tv-wrap > * { order: 5; }
+  .tv-wrap > .tk-modes { order: 0; }
+  .tv-wrap > .tk-focus { order: 1; }
+  .tv-wrap > .tv-glance { order: 2; }
+  .tv-wrap > .tv-headcard { order: 3; }
+}

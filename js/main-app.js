@@ -3040,7 +3040,38 @@ function clockLeft(ms, now) {
   return h ? `${h} h ${String(m).padStart(2, '0')} min` : `${m} min ${sec} s`
 }
 
+// The top of both tabs: which train, how it is doing, where it goes, how far along it is, and what the operator says.
+function trainHeadCard(d) {
+  const category = (d.categoria || d.categoriaDescrizione || '').trim()
+  const status = trainStatus(d)
+  const delay = d.ritardo || 0
+  const stops = d.fermate || []
+  const head = el('section', ['tv-card', 'tv-wide', 'tv-headcard'])
+  const top = el('div', ['tv-head'])
+  top.append(el('span', ['train-badge'], `${category} ${d.numeroTreno}`.trim()), chip(label(status.key), status.tone))
+  if (d.provvedimento !== 1 && delay !== 0) top.append(chip(delay > 0 ? `+${delay} min` : `${delay} min`, delay > 0 ? 'is-late' : 'is-early'))
+  head.append(top)
+  const route = el('h2', ['tv-route'])
+  route.append(el('span', [], niceName(d.origine) || '—'), icon('bi-arrow-right'), el('span', [], niceName(d.destinazione) || '—'))
+  head.append(route)
+  // how far along the journey the train is (by stops reached)
+  if (stops.length > 1 && d.provvedimento !== 1) {
+    const reached = stops.filter(f => f.actualFermataType === 1).length
+    const pct = d.arrivato ? 100 : Math.round((reached / stops.length) * 100)
+    const progress = el('div', ['tv-progress'])
+    const track = el('div', ['tv-progress-track'])
+    const fill = el('div', ['tv-progress-fill'])
+    fill.style.width = `${pct}%`
+    track.append(fill)
+    progress.append(track, el('span', ['tv-progress-label'], `${d.arrivato ? stops.length : reached} of ${stops.length} stops reached`))
+    head.append(progress)
+  }
+  if (d.subTitle) head.append(el('p', ['tv-banner', status.tone], d.subTitle))
+  return head
+}
+
 function renderTracking(d) {
+  let glanceEl = null
   const root = el('div', ['tv-wrap'])
   const category = (d.categoria || d.categoriaDescrizione || '').trim()
   const status = trainStatus(d)
@@ -3050,22 +3081,15 @@ function renderTracking(d) {
   setTrainTitle(d)
   root.append(trackModeBar(), focusBar(d))
 
-  const head = el('section', ['tv-card', 'tv-wide'])
-  const top = el('div', ['tv-head'])
-  top.append(el('span', ['train-badge'], `${category} ${d.numeroTreno}`.trim()), chip(label(status.key), status.tone))
-  if (d.provvedimento !== 1 && delay !== 0) top.append(chip(delay > 0 ? `+${delay} min` : `${delay} min`, delay > 0 ? 'is-late' : 'is-early'))
-  head.append(top)
-  const route = el('h2', ['tv-route'])
-  route.append(el('span', [], niceName(d.origine) || '—'), icon('bi-arrow-right'), el('span', [], niceName(d.destinazione) || '—'))
-  head.append(route)
-  root.append(head)
+  root.append(trainHeadCard(d))
   {
     // the terminus at a glance: when, how sure, where it comes from
     const stopsAll = d.fermate || []
     const lastIdx = stopsAll.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
     const predAll = predOf(d)
     const fin = predAll.get(stopsAll.length - 1)
-    root.append(glanceCard(d, Date.now(), predAll, fin ? fin.arrMs : (d.orarioArrivoZero || d.orarioArrivo), lastIdx))
+    glanceEl = glanceCard(d, Date.now(), predAll, fin ? fin.arrMs : (d.orarioArrivoZero || d.orarioArrivo), lastIdx, true)
+    root.append(glanceEl)
   }
 
   if (model.kind === 'cancelled' || model.kind === 'arrived') {
@@ -3077,25 +3101,7 @@ function renderTracking(d) {
     return
   }
 
-  const card = el('section', ['tv-card', 'tk-card'])
-  const els = {}
-  const nextLine = el('div', ['tk-next'])
-  els.label = el('span', ['tk-label'])
-  els.name = el('span', ['tk-name'])
-  els.eta = el('span', ['tk-eta'])
-  nextLine.append(els.label, els.name, els.eta)
-  els.count = el('div', ['tk-count'])
-
-  // three short chips instead of sentences: speed, distance left, how far the position can be trusted
-  els.chips = el('div', ['tk-chips'])
-  els.chipSpeed = el('span', ['tk-pill'])
-  els.chipKm = el('span', ['tk-pill'])
-  els.chipTrust = el('span', ['tk-pill'])
-  els.chipFocus = el('span', ['tk-pill', 'tk-pill-focus'])
-  els.chips.append(els.chipFocus, els.chipSpeed, els.chipKm, els.chipTrust)
-  card.append(nextLine, els.count, els.chips)
-  root.append(card)
-
+  const els = { glanceCard: glanceEl }
   // the simple picture: a rail from the last stop to the next one, a little train on it, the timetable's train as a ghost
   const seg = el('section', ['tv-card', 'tk-seg'])
   const segNames = el('div', ['tk-seg-names'])
@@ -3109,7 +3115,13 @@ function renderTracking(d) {
   els.segTrain.append(icon('bi-train-front-fill'))
   rail.append(el('div', ['tk-seg-line']), els.segDone, el('span', ['tk-seg-stop', 'is-a']), el('span', ['tk-seg-stop', 'is-b']), els.segGhost, els.segTrain)
   els.segFoot = el('p', ['tk-seg-foot'])
-  seg.append(segNames, rail, els.segFoot)
+  // short chips under the picture: speed, distance left, how far the position can be trusted
+  els.chips = el('div', ['tk-chips'])
+  els.chipSpeed = el('span', ['tk-pill'])
+  els.chipKm = el('span', ['tk-pill'])
+  els.chipTrust = el('span', ['tk-pill'])
+  els.chips.append(els.chipSpeed, els.chipKm, els.chipTrust)
+  seg.append(segNames, rail, els.segFoot, els.chips)
   root.append(seg)
 
   // with a focus stop: the same picture over the whole way to it, the stops between as dots, to see when the train gets there
@@ -3265,7 +3277,7 @@ function tickTracking(ts) {
   els.segGhost.style.left = `${model.ghost * 100}%`
   els.segGhost.hidden = model.kind !== 'between'
   const modeName = { raw: 'delay held', model: 'rules', tables: 'tables' }[timesMode] || timesMode
-  els.segFoot.textContent = model.kind === 'between' ? `${Math.round(live.segShown * 100)} % of the way · arrives ~${formatEpochHHMM(model.eta)} (${modeName})` : model.kind === 'waiting' ? 'waiting to leave' : 'in the station'
+  els.segFoot.textContent = model.kind === 'between' ? `${Math.round(live.segShown * 100)} % of the way · arrives ~${formatEpochHHMM(model.eta)} (${modeName})` : model.kind === 'waiting' ? `waiting to leave${model.target > now ? ` · ${clockLeft(model.target, now)}` : ''}` : model.target > now ? `in the station · leaves in ${clockLeft(model.target, now)}` : 'in the station · should be leaving'
   const fs = focusState(els, live.data, model, now)
   els.fsCard.hidden = !fs
   if (fs) {
@@ -3290,29 +3302,24 @@ function tickTracking(ts) {
     els.fsDone.style.width = `${live.fsShown * 100}%`
     els.fsFoot.textContent = now >= fs.end ? `should be at ${fs.name} now` : `${Math.round(live.fsShown * 100)} % of the way · ${fs.left} stop${fs.left > 1 ? 's' : ''} to go · arrives ~${formatEpochHHMM(fs.end)}`
   }
-  els.label.textContent = 'Next stop'
-  els.name.textContent = niceName(model.next.stazione)
-  els.eta.textContent = `~${formatEpochHHMM(model.eta)}`
-
   const ago = ms => {
     const m = Math.max(0, Math.round((now - ms) / 60000))
     return m < 1 ? 'less than a minute' : `${m} min`
   }
-  let countdown
-  if (model.kind === 'between') {
-    countdown = model.eta - now
-    els.count.dataset.caption = 'to the next stop'
-  } else if (model.kind === 'station') {
-    countdown = model.target - now
-    els.count.dataset.caption = countdown > 0 ? 'before it leaves' : 'should be leaving'
-  } else {
-    countdown = model.target - now
-    els.count.dataset.caption = 'before departure'
+  // the countdowns of the arrival card: the next stop from the live position, the target stop from the model
+  const cachedPred = () => {
+    const key = Math.floor(now / 1000)
+    if (els.predKey !== key) { els.predKey = key; els.predMap = predOf(d, now) }
+    return els.predMap
   }
-  const fi = focusIndex(live.data)
-  const focusMs = fi >= 0 ? ((predOf(live.data, now).get(fi) || {}).arrMs) : 0
-  els.chipFocus.hidden = !focusMs
-  if (focusMs) els.chipFocus.textContent = `${niceName(live.data.fermate[fi].stazione)} · ${clockLeft(focusMs, now)}`
+  if (els.glanceCard) {
+    els.glanceCard.querySelectorAll('.glance-count').forEach(node => {
+      const at = node.dataset.key === 'next' ? model.eta : (cachedPred().get(Number(node.dataset.idx)) || {}).arrMs
+      if (!at) { node.textContent = ''; return }
+      node.textContent = at - now > 0 ? clockLeft(at, now) : 'due now'
+      node.classList.toggle('is-late', at - now <= 0)
+    })
+  }
   const moving = model.kind === 'between' && model.km
   els.chipSpeed.hidden = !moving
   els.chipKm.hidden = !moving
@@ -3320,9 +3327,6 @@ function tickTracking(ts) {
     els.chipSpeed.textContent = `${Math.round(model.speedKmh)} km/h`
     els.chipKm.textContent = `${((1 - Math.min(model.p, 0.97)) * model.km).toFixed(1)} km to go`
   }
-  els.count.textContent = countdown > 0 ? clockLeft(model.kind === 'between' ? model.eta : model.target, now) : 'due now'
-  els.count.classList.toggle('is-late', countdown <= 0)
-  if (model.kind === 'between') els.name.classList.toggle('is-overdue', countdown <= 0)
 
   els.chipTrust.hidden = !d.oraUltimoRilevamento
   if (d.oraUltimoRilevamento) {
@@ -3354,7 +3358,7 @@ fetch('data/model-report.json')
   .catch(() => { /* without the report the card simply has no range */ })
 
 // The train at a glance: one time, how sure we are, where it comes from. The rest of the page is the detail.
-function glanceCard(d, now, pred, finalMs, lastPassed) {
+function glanceCard(d, now, pred, finalMs, lastPassed, live = false) {
   const card = el('section', ['tv-card', 'tv-glance'])
   const stops = d.fermate || []
   const delay = d.ritardo || 0
@@ -3370,7 +3374,7 @@ function glanceCard(d, now, pred, finalMs, lastPassed) {
   // the next stop and the target stop (the final one, or the stop the page is focused on), side by side
   const nextIdx = Math.max(lastPassed, 0) + 1
   const bands = modelReport && (tablesOn() ? modelReport.interval_90 : modelReport.interval_90_rules)
-  const column = (labelText, name, ms, ahead) => {
+  const column = (labelText, name, ms, ahead, key, idx) => {
     const col = el('div', ['glance-col'])
     col.append(el('div', ['glance-label'], labelText), el('div', ['glance-name'], name))
     const row = el('div', ['glance-row'])
@@ -3379,6 +3383,11 @@ function glanceCard(d, now, pred, finalMs, lastPassed) {
     const band = bands && bands[String(Math.min(Math.max(ahead, 1), 8))]
     if (ms && band && modelOn()) row.append(el('span', ['glance-range'], `${formatEpochHHMM(ms + band.lo * 60000)}–${formatEpochHHMM(ms + band.hi * 60000)}`))
     col.append(row)
+    // how long to go: to the second on the live tab (the page ticks it), to the minute on the others
+    const count = el('div', ['glance-count'], ms ? (live ? clockLeft(ms, now) : untilLabel(ms, now)) : '')
+    count.dataset.key = key
+    count.dataset.idx = String(idx)
+    col.append(count)
     return col
   }
   const cols = el('div', ['glance-cols'])
@@ -3387,13 +3396,11 @@ function glanceCard(d, now, pred, finalMs, lastPassed) {
   const isFinal = targetIdx === stops.length - 1
   const targetMs = (pred.get(targetIdx) || {}).arrMs || (isFinal ? finalMs : null)
   const nextStop = stops[nextIdx]
-  if (nextStop && nextIdx < targetIdx) cols.append(column('Next stop', niceName(nextStop.stazione), (pred.get(nextIdx) || {}).arrMs, 1))
-  cols.append(column(isFinal ? 'Final stop' : nextIdx === targetIdx ? 'Next stop · your focus' : 'Your focus', niceName(stops[targetIdx].stazione) || 'the terminus', targetMs, targetIdx - Math.max(lastPassed, 0)))
+  if (nextStop && nextIdx < targetIdx) cols.append(column('Next stop', niceName(nextStop.stazione), (pred.get(nextIdx) || {}).arrMs, 1, 'next', nextIdx))
+  cols.append(column(isFinal ? 'Final stop' : nextIdx === targetIdx ? 'Next stop · your focus' : 'Your focus', niceName(stops[targetIdx].stazione) || 'the terminus', targetMs, targetIdx - Math.max(lastPassed, 0), nextIdx === targetIdx ? 'next' : 'target', targetIdx))
   cols.classList.toggle('is-single', cols.children.length === 1)
   card.append(cols)
   const chips = el('div', ['glance-chips'])
-  if (delay !== 0) chips.append(chip(delay > 0 ? `+${delay} min` : `${delay} min`, delay >= LATE_THRESHOLD ? 'is-late' : delay > 0 ? 'is-slight' : 'is-early'))
-  else chips.append(chip('on time', 'is-ok'))
   if (d.oraUltimoRilevamento) chips.append(chip(`seen ${formatEpochHHMM(d.oraUltimoRilevamento)}${d.stazioneUltimoRilevamento ? ` · ${niceName(d.stazioneUltimoRilevamento)}` : ''}`, 'is-seen'))
   chips.append(chip(`estimate · ${modelOn() ? 'model' : 'raw'}`, 'is-estimate'))
   card.append(chips)
@@ -3422,29 +3429,7 @@ function renderTrainPage(d) {
   const arrivalSched = d.orarioArrivoZero || d.orarioArrivo
   const departSched = d.orarioPartenzaZero || d.orarioPartenza
 
-  const summary = el('section', ['tv-card'])
-  const head = el('div', ['tv-head'])
-  head.append(el('span', ['train-badge'], `${category} ${d.numeroTreno}`.trim()))
-  head.append(chip(label(status.key), status.tone))
-  if (d.provvedimento !== 1 && delay !== 0) head.append(chip(delay > 0 ? `+${delay} min` : `${delay} min`, delay > 0 ? 'is-late' : 'is-early'))
-  summary.append(head)
-
-  const route = el('h2', ['tv-route'])
-  route.append(el('span', [], niceName(d.origine) || '—'), icon('bi-arrow-right'), el('span', [], niceName(d.destinazione) || '—'))
-  summary.append(route)
-
-  // How far along the journey the train is (by stops reached).
-  if (stops.length > 1 && d.provvedimento !== 1) {
-    const reached = stops.filter(f => f.actualFermataType === 1).length
-    const pct = d.arrivato ? 100 : Math.round((reached / stops.length) * 100)
-    const progress = el('div', ['tv-progress'])
-    const track = el('div', ['tv-progress-track'])
-    const fill = el('div', ['tv-progress-fill'])
-    fill.style.width = `${pct}%`
-    track.append(fill)
-    progress.append(track, el('span', ['tv-progress-label'], `${d.arrivato ? stops.length : reached} of ${stops.length} stops reached`))
-    summary.append(progress)
-  }
+  const summary = el('section', ['tv-card', 'tv-factscard']) // the details; the head and the arrival card above are shared with the Now tab
 
   const position = trainPosition(d, stops, lastPassed, delay, now)
   if (position) summary.append(positionEl(position, now, d.oraUltimoRilevamento, stops[lastPassed], stops[lastPassed + 1], delay))
@@ -3464,12 +3449,7 @@ function renderTrainPage(d) {
   addFact('departs', formatEpochHHMM(departSched))
   addFact('arrives', arrivalSched ? `${formatEpochHHMM(arrivalSched)}${eta}` : null, eta ? 'is-late' : '')
   addFact('duration', durationLabel(departSched, arrivalSched))
-  if (arrivalSched && !d.arrivato && d.provvedimento !== 1 && !d.nonPartito) addFact('arrival', untilLabel(finalMs, now))
-  const next = stops[lastPassed + 1]
-  if (next && !d.arrivato && !d.nonPartito && d.provvedimento !== 1) {
-    const nextEta = (pred.get(lastPassed + 1) || {}).arrMs || (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
-    addFact('next stop', `${next.stazione} · ${formatEpochHHMM(nextEta)} (${untilLabel(nextEta, now)})`)
-  }
+  // the next stop and the time left are in the arrival card above, not repeated here
   if (d.oraUltimoRilevamento) {
     const age = trackedAgeLabel({ ultimoRilev: d.oraUltimoRilevamento, circolante: true })
     const rel = trackReliability(d.oraUltimoRilevamento, now)
@@ -3482,8 +3462,7 @@ function renderTrainPage(d) {
   addFact('rolling stock', d.materiale_label)
   addFact('type', d.compTipologiaTreno)
   summary.append(facts)
-  if (d.subTitle) summary.append(el('p', ['tv-banner', status.tone], d.subTitle))
-  root.append(glanceCard(d, now, pred, finalMs, lastPassed), summary)
+  root.append(trainHeadCard(d), glanceCard(d, now, pred, finalMs, lastPassed), summary)
 
   const evolution = delayEvolution(stops)
   if (evolution) root.append(evolution)
