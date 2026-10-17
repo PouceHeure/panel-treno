@@ -3074,7 +3074,9 @@ function glanceCard(d, now, pred, finalMs, lastPassed) {
   row.append(el('span', ['glance-big'], finalMs ? formatEpochHHMM(finalMs) : '—'))
   // the range: measured on days the model was not fitted on; only the recovery rules have one
   const ahead = stops.length - 1 - Math.max(lastPassed, 0)
-  const band = modelReport && modelReport.interval_90 && modelReport.interval_90[String(Math.min(Math.max(ahead, 1), 8))]
+  // each model has its own range: the tables are closer to the truth, so their range is narrower
+  const bands = modelReport && (tablesOn() ? modelReport.interval_90 : modelReport.interval_90_rules)
+  const band = bands && bands[String(Math.min(Math.max(ahead, 1), 8))]
   if (finalMs && band && modelOn()) row.append(el('span', ['glance-range'], `likely ${formatEpochHHMM(finalMs + band.lo * 60000)} to ${formatEpochHHMM(finalMs + band.hi * 60000)}`))
   card.append(row)
   const chips = el('div', ['glance-chips'])
@@ -3328,6 +3330,12 @@ function initTimesSwitch() {
   }))
   paint()
 }
+
+// the corrections of the "tables" model arrived: every time shown is worked out again
+window.addEventListener('treno-corrections', () => {
+  if (trainDetail) renderTrainPage(trainDetail)
+  else if (lastUpdateData) rerender()
+})
 
 document.addEventListener('DOMContentLoaded', () => {
   loadStations() // distances feed the prediction model on every page

@@ -25,7 +25,7 @@ function resolvePredictions(pending, stops, trainKey) {
     const real = stops[index] && stops[index].arrivoReale
     if (!real) return
     const p = pending[key]
-    closed.push({ key, train: trainKey, stop: index, k: p.k, at: p.at, rawErrMin: (p.raw - real) / 60000, modelErrMin: (p.model - real) / 60000 })
+    closed.push({ key, train: trainKey, stop: index, k: p.k, at: p.at, rawErrMin: (p.raw - real) / 60000, modelErrMin: (p.model - real) / 60000, tablesErrMin: p.tables === undefined ? null : (p.tables - real) / 60000 })
     delete pending[key]
   })
   return closed
@@ -43,10 +43,11 @@ function logPredictions(detail, nowMs = Date.now()) {
   const opts = { inStation: lastPassed >= 0 && !here.partenzaReale, cls: trainClass(detail), nowMs }
   const raw = withTimesMode('raw', () => predictStopTimes(stops, detail.ritardo || 0, lastPassed, opts))
   const model = withTimesMode('model', () => predictStopTimes(stops, detail.ritardo || 0, lastPassed, opts))
+  const tables = withTimesMode('tables', () => predictStopTimes(stops, detail.ritardo || 0, lastPassed, opts))
   for (let k = 1; k <= WATCH_AHEAD; k++) {
     const i = Math.max(lastPassed, 0) + k
     if (i >= stops.length || stops[i].arrivoReale) continue
-    if (raw.get(i) && model.get(i)) pending[`${trainKey}#${i}`] = { k, at: nowMs, raw: raw.get(i).arrMs, model: model.get(i).arrMs }
+    if (raw.get(i) && model.get(i)) pending[`${trainKey}#${i}`] = { k, at: nowMs, raw: raw.get(i).arrMs, model: model.get(i).arrMs, tables: tables.get(i) && tables.get(i).arrMs }
   }
   // old predictions of trains that never reported an arrival do not stay forever
   Object.keys(pending).forEach(key => { if (nowMs - pending[key].at > 6 * 3600000) delete pending[key] })
@@ -61,7 +62,8 @@ function predictionStats() {
   return {
     checked: results.length,
     rawMae: mean(results.map(r => Math.abs(r.rawErrMin))),
-    modelMae: mean(results.map(r => Math.abs(r.modelErrMin)))
+    modelMae: mean(results.map(r => Math.abs(r.modelErrMin))),
+    tablesMae: mean(results.filter(r => r.tablesErrMin !== null && r.tablesErrMin !== undefined).map(r => Math.abs(r.tablesErrMin)))
   }
 }
 

@@ -79,8 +79,12 @@
         </span>
       </span>
       <a href="http://www.viaggiatreno.it" target="_blank" rel="noopener">ViaggiaTreno (RFI)</a>
-      <span class="times-switch" id="timesSwitch" role="group" aria-label="Predicted times" title="Raw: scheduled time plus the announced delay. Model: corrected with what trains were seen doing.">
+      <span class="times-switch" id="timesSwitch" role="group" aria-label="Predicted times" title="raw: scheduled time plus the announced delay. rules: corrected for the delay trains recover. tables: rules plus the usual error of each stretch.">
         <span class="times-label">times</span>
+        <button type="button" data-mode="raw">raw</button>
+        <button type="button" data-mode="model">rules</button>
+        <button type="button" data-mode="tables">tables</button>
+      </span>
         <button type="button" data-mode="raw">raw</button>
         <button type="button" data-mode="model">model</button>
       </span>
@@ -89,13 +93,13 @@
 
     <script src="js/modules/format.js?v=e065bb89"></script>
     <script src="js/modules/proxy.js?v=1a0ebef6"></script>
-    <script src="js/modules/model.js?v=4ec25b17"></script>
-    <script src="js/modules/prediction-log.js?v=f84dc1b2"></script>
+    <script src="js/modules/model.js?v=cc0a43fd"></script>
+    <script src="js/modules/prediction-log.js?v=ec1602e4"></script>
     <script src="js/modules/recent.js?v=7927125c"></script>
     <script src="js/modules/station-topology.js?v=692079e6"></script>
     <script src="js/modules/station-map.js?v=09511503"></script>
     <script src="js/modules/follow.js?v=9dd8cef4"></script>
     <script src="js/modules/rfi-source.js?v=f8978329"></script>
-    <script src="js/main-app.js?v=ee500129"></script>
+    <script src="js/main-app.js?v=d68aaa70"></script>
   </body>
 </html>

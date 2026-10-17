@@ -57,15 +57,23 @@ Favourites, the followed train, recent searches and the device-side prediction l
 
 ## Delay models
 
-`js/modules/model.js` holds the models, `js/modules/models.js` the registry (what exists, what each one needs). Times can be shown `raw` (the announced delay held on every stop) or `model` (recovery rules); the footer switch and `?times=raw` choose.
+`js/modules/model.js` holds the models, `js/modules/models.js` the registry (what exists, what each one needs). Three ways to show the times ahead, chosen with the footer switch or `?times=raw|model|tables`:
 
-A model is only recommended when it beats `raw` on a day it was not fitted on. To refresh that verdict after collecting more data:
+| Mode | What it does |
+| --- | --- |
+| `raw` | the announced delay, held on every stop |
+| `model` (rules) | the delay trains typically recover on the way, from the last real datum, and a stop that lasts longer than the timetable says |
+| `tables` (default) | the rules plus the usual error of each pair of stations (last known stop to stop ahead), from `data/segment-corrections.json` |
+
+A model is only recommended when it beats `raw` on a day it was not fitted on. To refresh the scores and the table after collecting more data:
 
 ```bash
-python3 scripts/evaluate.py path/to/export.json   # writes data/model-report.json
+python3 scripts/evaluate.py path/to/export.json   # writes data/model-report.json and data/segment-corrections.json
 ```
 
-The script scores the models on the last day of the export and calibrates on the days before it; it reads the model constants from `model.js`, so it always scores what the app runs. It also says whether recalibrating would help.
+The script scores the models on the last whole day of the export (a morning export is not a whole day) with everything learned from the days before it, then each whole day in turn with the tables built from the other days. It reads the rule constants from `model.js`, so it always scores what the app runs, and says whether refitting them would help. The table shipped with the app is built from every whole day.
+
+`notebooks/model-evaluation.ipynb` is the same work, step by step, for exploring and trying new models.
 
 `scripts/build-stations.py` rebuilds `data/stations.json` (station coordinates).
 

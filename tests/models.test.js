@@ -4,7 +4,7 @@ const { MODEL_REGISTRY, modelStatus, daysAvailable, beatsBaseline } = require('.
 
 const report = {
   split: { calibration_days: ['a', 'b'], test_day: 'c' },
-  readiness: { tables: { needs_days: 7, have_days: 3 }, trees: { needs_days: 14, have_days: 14 } },
+  readiness: { trees: { needs_days: 14, have_days: 3 } },
   models: { raw: { mae_1_to_6: 3.3 }, 'rules-v2': { mae_1_to_6: 2.9 } }
 }
 const by = id => MODEL_REGISTRY.find(m => m.id === id)
@@ -12,9 +12,11 @@ const by = id => MODEL_REGISTRY.find(m => m.id === id)
 test('built models are active or available, the others wait for data', () => {
   assert.strictEqual(modelStatus(by('rules-v2'), report, 'model'), 'active')
   assert.strictEqual(modelStatus(by('raw'), report, 'model'), 'available')
-  assert.strictEqual(modelStatus(by('tables'), report, 'model'), 'collecting')
-  assert.strictEqual(modelStatus(by('trees'), report, 'model'), 'to build')
-  assert.strictEqual(modelStatus(by('tables'), null, 'model'), 'collecting')
+  assert.strictEqual(modelStatus(by('tables'), report, 'model'), 'available')
+  assert.strictEqual(modelStatus(by('tables'), report, 'tables'), 'active')
+  assert.strictEqual(modelStatus(by('trees'), report, 'model'), 'collecting')
+  assert.strictEqual(modelStatus(by('trees'), { readiness: { trees: { have_days: 14 } } }, 'model'), 'to build')
+  assert.strictEqual(modelStatus(by('trees'), null, 'model'), 'collecting')
 })
 
 test('days of data come from the report', () => {

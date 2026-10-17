@@ -9,14 +9,15 @@ CONSTANTS = {'rho': 0.5, 'cap': 4.4, 'tau': 25.0, 'offset': -0.75}
 DAY = 86400
 
 
-def train(tid, day_index, delay_min, n_stops=6):
-    """A train late by delay_min at every stop, on the n-th day from a fixed Rome midnight."""
+def train(tid, day_index, delay_min, n_stops=6, offsets=None):
+    """A train late by delay_min at every stop (offsets: extra minutes at given stop indexes), on the n-th day from a fixed Rome midnight."""
     base = 1791842400 + day_index * DAY  # 2026-10-13 00:00 Europe/Rome
     stops = []
     for i in range(n_stops):
         sched = base + 6 * 3600 + i * 300
-        stops.append({'sched_arr': sched, 'sched_dep': sched + 60,
-                      'real_arr': sched + delay_min * 60, 'real_dep': sched + 60 + delay_min * 60})
+        extra = (offsets or {}).get(i, 0)  # minutes this stop is later than the rest
+        stops.append({'station': f'S{i}', 'sched_arr': sched, 'sched_dep': sched + 60,
+                      'real_arr': sched + (delay_min + extra) * 60, 'real_dep': sched + 60 + (delay_min + extra) * 60})
     return {'id': tid, 'departure_ms': base * 1000, 'category': 'REG', 'status': 'done', 'n_polls': 3, 'stops': stops}
 
 
@@ -89,6 +90,61 @@ class ModelsTest(unittest.TestCase):
         fitted = evaluate.fit_constants(rows, CONSTANTS)
         mae = lambda c: sum(abs(evaluate.predict_rules(r, c) - r['y']) for r in rows if r['k'] <= 6)
         self.assertLessEqual(mae(fitted), mae(CONSTANTS) + 1e-6)
+
+
+class TablesTest(unittest.TestCase):
+    def rows(self, n=10, **kw):
+        return evaluate.build_pairs([train(i, 0, 4, **kw) for i in range(n)])
+
+    def test_a_pair_seen_enough_gets_a_shrunk_median_and_the_station_is_the_fallback(self):
+        rows = self.rows(offsets={3: 3})  # stop S3 is always 3 min later than the rules say
+        table = evaluate.build_corrections(rows, CONSTANTS)
+        self.assertIn('S0>S3', table['pairs'])
+        seen = len([r for r in rows if r['from'] == 'S0' and r['to'] == 'S3'])
+        raw = statistics_median([r['y'] - evaluate.predict_rules(r, CONSTANTS) for r in rows if r['from'] == 'S0' and r['to'] == 'S3'])
+        self.assertAlmostEqual(table['pairs']['S0>S3'], round(raw * seen / (seen + evaluate.SHRINK), 2))
+        self.assertLess(abs(table['pairs']['S0>S3']), abs(raw))  # shrunk towards 0
+        # a pair never seen falls back to the station, then to nothing
+        row = {'from': 'S9', 'to': 'S3'}
+        self.assertEqual(evaluate.correction_for(row, table), table['stations']['S3'])
+        self.assertEqual(evaluate.correction_for({'from': 'S9', 'to': 'S99'}, table), 0.0)
+        self.assertEqual(evaluate.correction_for({'from': 'S0', 'to': 'S3'}, table), table['pairs']['S0>S3'])
+
+    def test_what_was_seen_too_few_times_is_not_corrected(self):
+        rows = self.rows(n=evaluate.MIN_SEEN - 1, offsets={3: 3})
+        table = evaluate.build_corrections(rows, CONSTANTS)
+        self.assertEqual(table['pairs'], {})  # each pair was seen once per train
+        # a station is seen once per stop that preceded it: it can be enough even with few trains
+        self.assertTrue(all(n >= evaluate.MIN_SEEN for n in [len([r for r in rows if r['to'] == st]) for st in table['stations']]))
+
+    def test_the_tables_never_predict_more_than_a_minute_early(self):
+        table = {'pairs': {'S0>S1': -9.0}, 'stations': {}}
+        predict = evaluate.tables_predictor(table)
+        self.assertGreaterEqual(predict({'from': 'S0', 'to': 'S1', 'r0': 0.0, 'h': 5}, CONSTANTS), evaluate.TABLES_FLOOR)
+
+
+class WholeDaysTest(unittest.TestCase):
+    def test_a_morning_export_is_not_a_test_day(self):
+        trains = [train(i, 0, 3) for i in range(60)] + [train(100 + i, 1, 3) for i in range(60)] + [train(200 + i, 2, 3) for i in range(12)]
+        calibration, test = evaluate.split_days(evaluate.build_pairs(trains))
+        self.assertEqual(calibration, ['2026-10-13'])
+        self.assertEqual(test, '2026-10-14')  # the 12 trains of the last day are a fragment
+
+    def test_the_tables_are_scored_with_a_table_that_has_not_seen_the_test_day(self):
+        # stop S3 is 4 min late only on the last day: a table that had seen it would learn it, one that has not cannot
+        trains = [train(i, 0, 3) for i in range(25)] + [train(100 + i, 1, 3) for i in range(25)] + [train(200 + i, 2, 3, offsets={3: 4}) for i in range(25)]
+        report = evaluate.evaluate({'trains': trains, 'exported_at': 1791900000}, CONSTANTS)
+        self.assertEqual(report['split']['test_day'], '2026-10-15')
+        cheating = evaluate.score([r for r in evaluate.build_pairs(trains) if r['day'] == '2026-10-15'],
+                                  evaluate.tables_predictor(evaluate.build_corrections(evaluate.build_pairs(trains), CONSTANTS)), CONSTANTS)['mae_1_to_6']
+        self.assertGreater(report['models']['tables']['mae_1_to_6'], cheating)
+        self.assertEqual([d['day'] for d in report['per_day']], ['2026-10-13', '2026-10-14', '2026-10-15'])
+        self.assertIn('tables_vs_rules', report['gains'])
+
+
+def statistics_median(values):
+    import statistics
+    return statistics.median(values)
 
 
 if __name__ == '__main__':

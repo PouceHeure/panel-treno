@@ -46,7 +46,14 @@ function modelCard(model, report, active) {
   if (score) {
     const better = beatsBaseline(model, report)
     const lines = [`Error ${minutes(score.mae_1_to_6)} over the next 1 to 6 stops`, `half the time under ${minutes(score.median_abs)}, 9 times in 10 under ${minutes(score.p90_abs)}`]
-    if (better && report.gain_vs_raw) lines.push(`${percent(report.gain_vs_raw)} better than the baseline`)
+    const raw = report.models.raw
+    if (better && raw) lines.push(`${percent(1 - score.mae_1_to_6 / raw.mae_1_to_6)} better than the baseline`)
+    // the same on every whole day, each scored with what it had not seen
+    const days = report.per_day || []
+    if (model.role !== 'baseline' && days.length) {
+      const wins = days.filter(d => d[model.id] < d.raw).length
+      lines.push(`better than raw on ${wins} of ${days.length} days`)
+    }
     if (model.role === 'baseline') lines.push('what the other models must beat')
     lines.forEach(l => card.append(node('p', 'lab-model-stat', l)))
   } else if (!model.mode) {
@@ -90,7 +97,7 @@ function renderDevice() {
   const s = predictionStats()
   const box = $('labDevice')
   const body = s.checked
-    ? node('p', 'lab-model-stat', `${s.checked} predictions checked against real arrivals. Mean error: raw ${minutes(s.rawMae)}, recovery rules ${minutes(s.modelMae)}.`)
+    ? node('p', 'lab-model-stat', `${s.checked} predictions checked against real arrivals. Mean error: raw ${minutes(s.rawMae)}, recovery rules ${minutes(s.modelMae)}${s.tablesMae !== null ? `, tables ${minutes(s.tablesMae)}` : ''}.`)
     : node('p', 'lab-model-stat', 'Nothing checked yet. Open a train and its arrivals are compared with what each model expected.')
   box.replaceChildren(sectionHead('On this device'), body)
 }

@@ -14,8 +14,8 @@ const MODEL_REGISTRY = [
     summary: 'Delay recovered on the way, from the last real departure; a stop lasts longer than the timetable says.', needsDays: 2
   },
   {
-    id: 'tables', mode: null, role: 'model', label: 'Line, hour and day tables',
-    summary: 'Typical delays by line, time of day and weekday.', needsDays: 7
+    id: 'tables', mode: 'tables', role: 'model', label: 'Segment tables',
+    summary: 'The rules, plus the usual error of each pair of stations, learned from past days.', needsDays: 3
   },
   {
     id: 'trees', mode: null, role: 'model', label: 'Trees, with the train ahead',

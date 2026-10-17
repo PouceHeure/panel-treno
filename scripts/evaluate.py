@@ -23,12 +23,17 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parent.parent
 MODEL_JS = ROOT / 'js' / 'modules' / 'model.js'
 REPORT = ROOT / 'data' / 'model-report.json'
+CORRECTIONS = ROOT / 'data' / 'segment-corrections.json'
 ROME = ZoneInfo('Europe/Rome')
 MAX_AHEAD = 8
 MIN_TRAINS_PER_DAY = 20 # a day with fewer trains is a fragment of a day, not a day
+PARTIAL_DAY_SHARE = 0.5 # ... and so is one with fewer than half the trains of a usual day (an export made in the morning)
+SHRINK = 8 # a correction seen n times counts n / (n + SHRINK) of its median
+MIN_SEEN = 5 # no correction for a pair or a station seen fewer times
+TABLES_FLOOR = -1.0 # min: a train is not predicted more than a minute early
 HORIZONS = (1, 2, 3, 4, 6)
 # days of data a model needs before it is worth comparing (a rule of thumb, not a guarantee)
-NEEDS = {'tables': 7, 'trees': 14}
+NEEDS = {'trees': 14}
 
 
 def recovery_constants(text):
@@ -60,7 +65,7 @@ def build_pairs(trains):
                 if not (b.get('real_arr') and b.get('sched_arr')):
                     continue
                 rows.append({
-                    'day': day, 'train': train['id'], 'k': j - i, 'r0': r0,
+                    'day': day, 'train': train['id'], 'k': j - i, 'r0': r0, 'from': a['station'], 'to': b['station'],
                     'h': (b['sched_arr'] - a['sched_dep']) / 60,
                     'y': (b['real_arr'] - b['sched_arr']) / 60,
                 })
@@ -78,6 +83,37 @@ def predict_rules(row, c):
     return max(-0.5, late - recovered + c['offset'])
 
 
+def build_corrections(rows, constants):
+    """The table of the "tables" model: { 'pairs': {'A>B': min}, 'stations': {'B': min} }, the usual error of the
+    recovery rules (real minus predicted), median of what was seen, shrunk when it was seen only a few times."""
+    pairs, stations = defaultdict(list), defaultdict(list)
+    for r in rows:
+        residual = r['y'] - predict_rules(r, constants)
+        pairs[f"{r['from']}>{r['to']}"].append(residual)
+        stations[r['to']].append(residual)
+
+    def shrunk(values):
+        n = len(values)
+        return round(statistics.median(values) * n / (n + SHRINK), 2) if n >= MIN_SEEN else None
+
+    def keep(table):
+        return {k: v for k, v in sorted((k, shrunk(vs)) for k, vs in table.items()) if v is not None and abs(v) >= 0.05}
+
+    return {'pairs': keep(pairs), 'stations': keep(stations)}
+
+
+def correction_for(row, table):
+    """The pair when it was seen enough, else the station, else nothing (the same order as in model.js)."""
+    pair = table['pairs'].get(f"{row['from']}>{row['to']}")
+    if pair is not None:
+        return pair
+    return table['stations'].get(row['to'], 0.0)
+
+
+def tables_predictor(table):
+    return lambda row, c: max(TABLES_FLOOR, predict_rules(row, c) + correction_for(row, table))
+
+
 MODELS = {'raw': predict_raw, 'rules-v2': predict_rules}
 
 
@@ -89,12 +125,21 @@ def percentile(sorted_values, q):
     return sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * (pos - lo)
 
 
-def split_days(rows):
-    """(calibration days, test day): the test day is the last day with enough trains, and needs earlier days."""
+def usable_days(rows):
+    """The days that are whole days: enough trains, and not a fragment such as a morning export."""
     trains_per_day = defaultdict(set)
     for r in rows:
         trains_per_day[r['day']].add(r['train'])
-    usable = sorted(d for d, ids in trains_per_day.items() if len(ids) >= MIN_TRAINS_PER_DAY)
+    counts = {d: len(ids) for d, ids in trains_per_day.items() if len(ids) >= MIN_TRAINS_PER_DAY}
+    if not counts:
+        return []
+    usual = statistics.median(counts.values())
+    return sorted(d for d, n in counts.items() if n >= PARTIAL_DAY_SHARE * usual)
+
+
+def split_days(rows):
+    """(calibration days, test day): the test day is the last whole day, and needs earlier days."""
+    usable = usable_days(rows)
     if len(usable) < 2:
         return usable, None
     return usable[:-1], usable[-1]
@@ -134,6 +179,45 @@ def intervals(calibration_rows, test_rows, predict, constants):
             'coverage_on_test': round(sum(covered) / len(covered), 3) if covered else None,
         }
     return table
+
+
+def tables_intervals(calibration_rows, test_rows, constants, days):
+    """90 % intervals of the tables model. Its residuals on the days it was built from would be too small, so each
+    calibration day is scored with a table built from the others; the test day is scored with all of them."""
+    residuals = defaultdict(list)
+    for d in days:
+        others = [r for r in calibration_rows if r['day'] != d]
+        if not others:
+            continue
+        predict = tables_predictor(build_corrections(others, constants))
+        for r in calibration_rows:
+            if r['day'] == d:
+                residuals[r['k']].append(r['y'] - predict(r, constants))
+    table = build_corrections(calibration_rows, constants)
+    predict = tables_predictor(table)
+    out = {}
+    for k in range(1, MAX_AHEAD + 1):
+        values = sorted(residuals.get(k, []))
+        if len(values) < 50:
+            continue
+        lo, hi = percentile(values, 0.05), percentile(values, 0.95)
+        covered = [lo <= r['y'] - predict(r, constants) <= hi for r in test_rows if r['k'] == k]
+        out[str(k)] = {'lo': round(lo, 2), 'hi': round(hi, 2), 'n': len(values), 'coverage_on_test': round(sum(covered) / len(covered), 3) if covered else None}
+    return out
+
+
+def per_day_scores(rows, days, constants):
+    """Each whole day scored in turn, with the tables built from the other days: is the gain there every day?"""
+    out = []
+    for d in days:
+        test = [r for r in rows if r['day'] == d]
+        others = [r for r in rows if r['day'] in days and r['day'] != d]
+        if not test or not others:
+            continue
+        predict = tables_predictor(build_corrections(others, constants))
+        scored = {name: score(test, p, constants)['mae_1_to_6'] for name, p in (('raw', predict_raw), ('rules-v2', predict_rules), ('tables', predict))}
+        out.append({'day': d, 'trains': len({r['train'] for r in test}), **scored})
+    return out
 
 
 def data_summary(trains):
@@ -186,7 +270,7 @@ def evaluate(export, constants):
     calibration_days, test_day = split_days(rows)
     calibration = [r for r in rows if r['day'] in calibration_days]
     test = [r for r in rows if r['day'] == test_day] if test_day else []
-    usable_days = len(calibration_days) + (1 if test_day else 0)
+    n_days = len(calibration_days) + (1 if test_day else 0)
     report = {
         'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
         'source_exported_at': datetime.fromtimestamp(export.get('exported_at', 0), timezone.utc).isoformat(timespec='seconds'),
@@ -195,21 +279,30 @@ def evaluate(export, constants):
         'recovery_constants': constants,
         'models': {},
         'interval_90': {},
-        'readiness': {name: {'needs_days': n, 'have_days': usable_days} for name, n in NEEDS.items()},
+        'readiness': {name: {'needs_days': n, 'have_days': n_days} for name, n in NEEDS.items()},
     }
     if test:
-        for name, predict in MODELS.items():
+        table = build_corrections(calibration, constants)
+        predictors = {**MODELS, 'tables': tables_predictor(table)}
+        for name, predict in predictors.items():
             report['models'][name] = score(test, predict, constants)
-        base = report['models']['raw']['mae_1_to_6']
-        best = report['models']['rules-v2']['mae_1_to_6']
-        report['gain_vs_raw'] = round(1 - best / base, 3) if base else None
-        report['interval_90'] = intervals(calibration, test, predict_rules, constants)
+        raw, rules, tables = (report['models'][n]['mae_1_to_6'] for n in ('raw', 'rules-v2', 'tables'))
+        report['gain_vs_raw'] = round(1 - rules / raw, 3) if raw else None
+        report['gains'] = {
+            'rules_vs_raw': round(1 - rules / raw, 3) if raw else None,
+            'tables_vs_raw': round(1 - tables / raw, 3) if raw else None,
+            'tables_vs_rules': round(1 - tables / rules, 3) if rules else None,
+        }
+        report['interval_90_rules'] = intervals(calibration, test, predict_rules, constants)
+        report['interval_90'] = tables_intervals(calibration, test, constants, calibration_days)
+        report['per_day'] = per_day_scores(rows, calibration_days + [test_day], constants)
+        report['corrections_seen'] = {'pairs': len(table['pairs']), 'stations': len(table['stations'])}
         fitted = fit_constants(calibration, constants)
         report['recalibration'] = {
             'fitted_on': calibration_days,
             'constants': fitted,
             'test_mae_1_to_6': score(test, predict_rules, fitted)['mae_1_to_6'],
-            'shipped_test_mae_1_to_6': report['models']['rules-v2']['mae_1_to_6'],
+            'shipped_test_mae_1_to_6': rules,
         }
     return report
 
@@ -219,19 +312,30 @@ def main(argv):
         print(__doc__)
         return 2
     export = json.loads(Path(argv[1]).read_text())
-    report = evaluate(export, recovery_constants(MODEL_JS.read_text()))
+    constants = recovery_constants(MODEL_JS.read_text())
+    report = evaluate(export, constants)
     REPORT.write_text(json.dumps(report, indent=2, ensure_ascii=False) + '\n')
     print(f"{report['data']['trains']} trains, days {list(report['data']['days'])}")
     if report['split']['test_day']:
         print(f"calibration {report['split']['calibration_days']}  ->  test {report['split']['test_day']}")
         for name, m in report['models'].items():
             print(f"  {name:10s} MAE 1-6 {m['mae_1_to_6']} min  median {m['median_abs']}  p90 {m['p90_abs']}  bias {m['bias']}")
-        print(f"  gain vs raw: {report.get('gain_vs_raw')}")
+        print(f"  gains: {report['gains']}")
+        for d in report['per_day']:
+            print(f"  {d['day']} ({d['trains']} trains)  raw {d['raw']}  rules {d['rules-v2']}  tables {d['tables']}")
         rc = report['recalibration']
-        print(f"  recalibrating on {rc['fitted_on']} would give {rc['test_mae_1_to_6']} min on the test day (shipped constants: {rc['shipped_test_mae_1_to_6']})")
+        print(f"  recalibrating the rules on {len(rc['fitted_on'])} days would give {rc['test_mae_1_to_6']} min on the test day (shipped constants: {rc['shipped_test_mae_1_to_6']})")
     else:
-        print('not enough days for a chronological test (needs at least 2 days with enough trains)')
-    print(f'written {REPORT.relative_to(ROOT)}')
+        print('not enough days for a chronological test (needs at least 2 whole days)')
+    # the table shipped with the app: every whole day, since the scores above are what vouch for it
+    rows = build_pairs(export['trains'])
+    days = usable_days(rows)
+    table = build_corrections([r for r in rows if r['day'] in days], constants)
+    CORRECTIONS.write_text(json.dumps({
+        'generated_at': report['generated_at'], 'days': days, 'shrink': SHRINK, 'min_seen': MIN_SEEN,
+        'pairs': table['pairs'], 'stations': table['stations'],
+    }, separators=(',', ':'), ensure_ascii=False) + '\n')
+    print(f"written {REPORT.relative_to(ROOT)} and {CORRECTIONS.relative_to(ROOT)} ({len(table['pairs'])} pairs, {len(table['stations'])} stations, {CORRECTIONS.stat().st_size // 1024} KB)")
     return 0
 
 

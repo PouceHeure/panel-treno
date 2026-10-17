@@ -403,6 +403,8 @@ function renderEmpty() {
   recent.replaceChildren(head, ...items)
 }
 
+window.addEventListener('treno-corrections', () => { if (loadPinned() && !$('following').hidden) renderFollowing() })
+
 document.addEventListener('DOMContentLoaded', () => {
   $('btn-search').textContent = LABELS.btnsearch
   $('title').textContent = LABELS.title

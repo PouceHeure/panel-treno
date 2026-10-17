@@ -1,21 +1,30 @@
 // The prediction model shared by every view: where a train will be, and when, from what is known now.
 //
-// "raw" keeps the announced delay unchanged on every following stop (scheduled time + delay).
-// "model" predicts each stop directly from the last real datum (the real departure, or the real arrival when
-// the train is in a station) and the scheduled time between that datum and the stop. A prediction never
-// depends on the prediction made for the stop before it. Calibrated on 535 trains / 33 000 (datum, stop)
-// pairs collected over two days (Liguria and a few long-distance runs, mostly regional trains):
+// Three ways to show the times ahead (the footer switch, or ?times=raw|model|tables):
 //
+// "raw" keeps the announced delay unchanged on every following stop (scheduled time + delay).
+//
+// "model" (the recovery rules) predicts each stop directly from the last real datum (the real departure, or the
+// real arrival when the train is in a station) and the scheduled time between that datum and the stop. A
+// prediction never depends on the prediction made for the stop before it:
 // 1. delay at a stop = last real delay - what trains typically recover, + a small offset: they recover about
 //    half of their delay, up to ~4.4 min, the more the longer the way (saturating with a 25 min time constant);
 // 2. a train stays about 1.7 + 0.8 x the scheduled stop (regional), so its departure is later than the timetable.
 //
-// Measured against real arrival times, the mean error is 1.8 min at the next stop and 3.0 min three stops
-// ahead, against 2.4 and 3.6 min for "raw" (the same ranking holds fitting on one day and testing on the other).
+// "tables" (the default) is the rules plus the usual error of each pair of stations (last known stop -> stop
+// ahead): some stretches are always slower or faster than the rules say. The table, data/segment-corrections.json,
+// is built from past days by scripts/evaluate.py, which also scores it on days it has not seen.
+//
+// Measured on four whole days (1 284 trains, 80 000 pairs), each day scored with a table built from the other days,
+// the mean error over the next 1 to 6 stops is 3.7 min for "raw", 3.2 for "model" and 2.7 for "tables"; "tables"
+// wins on every one of the four days. The recovery constants were checked on the same data and left as they are:
+// refitting them on other days does not lower the error.
 //
 // The kinematics (speed profile between two stations, from their distance) do not predict arrivals any better
 // than that; they give the shape of the movement between two stations (position and speed).
 const TIMES_KEY = 'panelTreno.times'
+const TIMES_MODES = ['raw', 'model', 'tables']
+const DEFAULT_TIMES_MODE = 'tables'
 
 const KINEMATICS = {
   reg: { kmh: 105, acc: 0.22 }, // regional trains
@@ -27,20 +36,54 @@ const DWELL = { reg: [1.7, 0.8], long: [1.0, 1.0] } // expected stop (min) = a +
 const DWELL_SPREAD = { reg: [-0.5, 0.5], long: [-0.5, 1.0] } // 25 % / 75 % of the difference, in min
 
 let timesMode = (() => {
+  if (typeof window === 'undefined') return DEFAULT_TIMES_MODE
   const fromUrl = new URLSearchParams(window.location.search).get('times')
-  if (fromUrl === 'raw' || fromUrl === 'model') return fromUrl
-  try { return localStorage.getItem(TIMES_KEY) === 'raw' ? 'raw' : 'model' } catch { return 'model' }
+  if (TIMES_MODES.includes(fromUrl)) return fromUrl
+  try {
+    const stored = localStorage.getItem(TIMES_KEY)
+    return TIMES_MODES.includes(stored) ? stored : DEFAULT_TIMES_MODE
+  } catch { return DEFAULT_TIMES_MODE }
 })()
 
-const modelOn = () => timesMode === 'model'
+const modelOn = () => timesMode !== 'raw'
+const tablesOn = () => timesMode === 'tables'
 
 function setTimesMode(mode) {
-  timesMode = mode === 'raw' ? 'raw' : 'model'
+  timesMode = TIMES_MODES.includes(mode) ? mode : DEFAULT_TIMES_MODE
   try { localStorage.setItem(TIMES_KEY, timesMode) } catch { /* storage is optional */ }
   const url = new URLSearchParams(window.location.search)
-  if (timesMode === 'raw') url.set('times', 'raw')
-  else url.delete('times')
+  if (timesMode === DEFAULT_TIMES_MODE) url.delete('times')
+  else url.set('times', timesMode)
   window.history.replaceState(null, '', `${window.location.pathname}?${url}${window.location.hash}`)
+  loadCorrections()
+}
+
+// The corrections of the "tables" model: { pairs: { 'A>B': min }, stations: { 'B': min } }.
+const MIN_TABLES_DELAY = -1 // min: a train is not predicted more than a minute early
+let corrections = null
+let correctionsLoading = false
+
+function loadCorrections() {
+  if (corrections || correctionsLoading || typeof fetch === 'undefined' || typeof window === 'undefined') return
+  correctionsLoading = true
+  fetch('data/segment-corrections.json', { cache: 'no-cache' })
+    .then(r => (r.ok ? r.json() : null))
+    .then(table => {
+      if (!table || !table.pairs) return
+      corrections = table
+      window.dispatchEvent(new Event('treno-corrections')) // the pages show their times again
+    })
+    .catch(() => { /* without the table, "tables" behaves as "model" */ })
+    .finally(() => { correctionsLoading = false })
+}
+
+// The usual error of the rules (min) for a train whose last known stop is `fromId` and that is heading to `toId`:
+// the pair when it was seen enough, else the stop alone, else nothing.
+function correctionFor(fromId, toId) {
+  if (!tablesOn() || !corrections) return 0
+  const pair = corrections.pairs[`${fromId}>${toId}`]
+  if (pair !== undefined) return pair
+  return corrections.stations[toId] || 0
 }
 
 // 'reg' for regional trains, 'long' for the others; an unknown category is treated as regional.
@@ -112,8 +155,10 @@ function delayAt(r0, h) {
 
 // When a train whose last real datum is a delay of `r0` min, measured at the scheduled time `baseMs`, reaches
 // a stop scheduled at `schedArrMs`.
-function predictArrival(r0, baseMs, schedArrMs) {
-  return schedArrMs + delayAt(r0, (schedArrMs - baseMs) / 60000) * 60000
+function predictArrival(r0, baseMs, schedArrMs, correction = 0) {
+  const delay = delayAt(r0, (schedArrMs - baseMs) / 60000)
+  const corrected = correction && modelOn() ? Math.max(MIN_TABLES_DELAY, delay + correction) : delay
+  return schedArrMs + corrected * 60000
 }
 
 // Predicted times for the stops after `lastPassed`: Map(stop index -> { arrDelay, depDelay, arrMs, depMs })
@@ -145,7 +190,7 @@ function predictStopTimes(stops, delayNow, lastPassed, opts = {}) {
   out.leaveMs = depMs
 
   for (let i = from + 1; i < stops.length; i++) {
-    const arrMs = predictArrival(r0, baseMs, arr(stops[i]))
+    const arrMs = predictArrival(r0, baseMs, arr(stops[i]), correctionFor(here.id, stops[i].id))
     let nextDep = dep(stops[i]) + late * 60000
     if (modelOn()) nextDep = Math.max(dep(stops[i]), arrMs + dwellExpected((dep(stops[i]) - arr(stops[i])) / 60000, cls).mid * 60000)
     else nextDep = dep(stops[i]) + r0 * 60000
@@ -159,4 +204,13 @@ function withTimesMode(mode, fn) {
   const previous = timesMode
   timesMode = mode
   try { return fn() } finally { timesMode = previous }
+}
+
+loadCorrections()
+
+if (typeof module !== 'undefined') {
+  module.exports = {
+    delayAt, predictArrival, predictStopTimes, correctionFor, withTimesMode, dwellExpected, motionProfile,
+    setCorrectionsForTests: table => { corrections = table }
+  }
 }
