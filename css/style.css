@@ -3,24 +3,24 @@
    Deep slate, one warm accent (the live estimate), green / amber / coral only to say on time / slight / late.
    =============================== */
 :root {
-  --bg: #0b1220;
-  --surface: #121b2e;
-  --tile: #182338;
-  --line: #25334d;
-  --rule: #0a101c; /* separators inside cards */
-  --text: #eaf0f8;
-  --muted: #9fb0c7;
-  --faint: #6c7f9c;
-  --accent: #f5c542;
-  --ok: #4fd1a1;
-  --slight: #f5c542;
-  --late: #ff8c7a;
-  --here: #4fd1a1;
-  --on-here: #052e22;
+  --bg: #EEF1F5;
+  --surface: #FFFFFF;
+  --tile: #E6EBF2;
+  --line: #D6DCE5;
+  --rule: #E3E8EF; /* separators inside cards */
+  --text: #10213A;
+  --muted: #5B6980;
+  --faint: #8591A6;
+  --accent: #0B4AA2;
+  --ok: #1B9E6B;
+  --slight: #B87A00;
+  --late: #D9482B;
+  --here: #1B9E6B;
+  --on-here: #FFFFFF;
   --radius: 12px;
   --font: ui-sans-serif, system-ui, -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
