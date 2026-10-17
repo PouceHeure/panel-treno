@@ -72,7 +72,7 @@ scripts/update-model.sh path/to/export.json       # all in one: evaluate, restam
 python3 scripts/evaluate.py path/to/export.json   # only the evaluation: writes data/model-report.json and data/segment-corrections.json
 ```
 
-`data/segment-corrections.json` also holds the median and mean arrival delay seen on the whole days, per station and per direction (`delays`); the Charts tab of a trip plots them ("usual delay per station").
+`data/segment-corrections.json` also holds the median and mean arrival delay seen on the whole days, per station and per direction (`delays`); the Charts tab of a trip plots them ("usual delay at the next stops").
 
 The script scores the models on the last whole day of the export (a morning export is not a whole day) with everything learned from the days before it, then each whole day in turn with the tables built from the other days. It reads the rule constants from `model.js`, so it always scores what the app runs, and says whether refitting them would help. The table shipped with the app is built from every whole day.
 

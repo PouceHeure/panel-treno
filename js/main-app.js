@@ -2681,14 +2681,16 @@ function nerdTrackTable(d, cur) {
 }
 
 // The delay trains usually have on arrival at each stop of the trip, from the recorded days: median (bar) and mean (tick).
-function nerdTrackHabits(d) {
+function nerdTrackHabits(d, cur) {
   const panel = el('div', ['nerd-panel'])
   const head = el('div', ['nerd-panel-head'])
-  head.append(el('span', [], 'usual delay per station'), el('span', [], 'this direction · median · mean'))
+  head.append(el('span', [], 'usual delay at the next stops'), el('span', [], 'this direction · median · mean'))
   panel.append(head)
   const all = d.fermate || []
-  const rows = all.map((f, i) => ({ name: niceName(f.stazione), info: stationDelay(f.id, all[i + 1] && all[i + 1].id) }))
-  if (!rows.length) { panel.append(el('p', ['nerd-dim'], 'no stops')); return panel }
+  const hereIdx = Math.max(all.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1), 0)
+  const rows = all.map((f, i) => ({ i, name: niceName(f.stazione), info: stationDelay(f.id, all[i + 1] && all[i + 1].id) }))
+    .filter(r => r.i > hereIdx).slice(0, 8)
+  if (!rows.length || cur.kind === 'arrived' || cur.kind === 'cancelled') { panel.append(el('p', ['nerd-dim'], 'no stop ahead')); return panel }
   if (rows.every(r => r.info === null)) { panel.append(el('p', ['nerd-dim'], 'loading the table…')); return panel }
   const W = chartWidth()
   const LEFT = chartLeft()
@@ -2748,7 +2750,7 @@ function renderTrackNerd(d) {
   // on a wide screen: the live reading on the left, the technical charts open on the right
   const cols = el('div', ['nerd-cols'])
   const left = el('div', ['nerd-col'])
-  left.append(nerdTrackKin(d, cur, now), nerdTrackBars(d, cur, now), nerdTrackTable(d, cur), nerdTrackHabits(d))
+  left.append(nerdTrackKin(d, cur, now), nerdTrackBars(d, cur, now), nerdTrackTable(d, cur), nerdTrackHabits(d, cur))
   cols.append(left, more)
   wrap.append(nerdDashboard(d), cols)
   // redrawn every few seconds: the page keeps at least its previous height and scroll position, so it does not jump
