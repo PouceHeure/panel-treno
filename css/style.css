@@ -1387,27 +1387,26 @@ button.route-open { font: inherit; cursor: pointer; }
 @media (min-width: 1000px) { .lab-page .search-main > * { margin-block: 0; } .lab-page .search-main { row-gap: 1.1rem; } }
 @media (min-width: 1000px) { .lab-page .search-main { align-content: start; } }
 
-/* Train page, wide screens: a breadcrumb bar. [home] [< station] / TRAIN ......... [clock] [Follow] [Share] */
+/* Wide screens, every page: the same bar. [home] [< station /] TITLE ............ [page controls] [clock] */
 @media (min-width: 860px) {
-  body.view-train .header-inner { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto auto; align-items: center; gap: 0.5rem 0.6rem; }
-  body.view-train .title-row, body.view-train .toolbar { display: contents; }
-  body.view-train #text-search { order: 1; width: 34px; padding: 0; }
-  body.view-train #text-search span { display: none; }
-  body.view-train #text-search i { margin: 0; }
-  body.view-train #trainBack { order: 2; border-color: transparent; background: transparent; padding: 0 0.5rem; max-width: 18rem; }
-  body.view-train #trainBack { font-size: 1.25rem; font-weight: 500; height: 38px; gap: 0.4rem; }
-  body.view-train #trainBack i { font-size: 1.05rem; }
-  body.view-train #trainBack::after { content: "/"; margin-left: 0.7rem; color: var(--faint); }
-  body.view-train #trainBack:hover { color: var(--text); background: var(--tile); }
-  body.view-train #stationTitle { order: 3; justify-self: start; font-size: 1.25rem; }
-  body.view-train .clock { order: 4; }
-  body.view-train #trackToggle { order: 5; }
-  body.view-train #trainPin { order: 6; }
-  body.view-train #trainShare { order: 7; }
-  body.view-train #trainPin:not(.is-on) { background: var(--accent); border-color: var(--accent); color: #fff; }
-  body.view-train #trainPin:not(.is-on):hover { filter: brightness(1.1); }
-  body.view-train #trainPin.is-on { background: transparent; }
+  .header-inner { display: flex; align-items: center; gap: 0.5rem 0.6rem; }
+  .title-row, .toolbar { display: contents; }
+  .toolbar > * { order: 5; }
+  #text-search { order: 1; width: 34px; padding: 0; }
+  #text-search span { display: none; }
+  #text-search i { margin: 0; }
+  #trainBack { order: 2; border-color: transparent; background: transparent; padding: 0 0.5rem; max-width: 18rem; font-size: 1.25rem; font-weight: 500; height: 38px; gap: 0.4rem; }
+  #trainBack i { font-size: 1.05rem; }
+  #trainBack::after { content: "/"; margin-left: 0.7rem; color: var(--faint); }
+  #trainBack:hover { color: var(--text); background: var(--tile); }
+  .station-name { order: 3; margin-right: auto; font-size: 1.25rem; }
+  .clock { order: 20; margin-left: 0.4rem; }
+  #trainPin:not(.is-on) { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #trainPin:not(.is-on):hover { filter: brightness(1.1); }
+  #trainPin.is-on { background: transparent; }
 }
+/* phones, every page: the home button always comes first on its row */
+#text-search { order: -1; }
 
 /* the clock looks the same on every page and at every width: a small pill with mono digits */
 .clock { align-self: center; align-items: center; gap: 0; padding: 0.2rem 0.75rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
