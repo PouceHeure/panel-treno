@@ -1340,3 +1340,11 @@ button.route-open { font: inherit; cursor: pointer; }
 .tk-seg-train::after { content: ""; position: absolute; bottom: -0.25rem; left: 50%; width: 2px; height: 0.45rem; background: var(--accent); }
 .tk-seg-ghost { position: absolute; top: 0.2rem; width: 2rem; height: 2rem; margin-left: -1rem; display: flex; align-items: center; justify-content: center; opacity: 0.35; border: 2px dashed var(--muted); border-radius: 50%; }
 .tk-seg-foot { margin: 0.3rem 0 0; text-align: center; color: var(--muted); font-size: 0.8rem; }
+
+/* the glance card: next stop and final stop side by side */
+.glance-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem 1.4rem; }
+.glance-cols.is-single { grid-template-columns: 1fr; }
+.glance-col { min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.glance-name { font-weight: 600; font-size: 1rem; overflow-wrap: anywhere; }
+.glance-cols .glance-big { font-size: 2rem; }
+.glance-cols .glance-col:first-child:not(:last-child) .glance-big { font-size: 1.6rem; opacity: 0.9; }

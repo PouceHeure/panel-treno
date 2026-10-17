@@ -3246,16 +3246,27 @@ function glanceCard(d, now, pred, finalMs, lastPassed) {
     card.append(el('div', ['glance-label'], `Arrived at ${niceName(d.destinazione) || 'the terminus'}`), el('div', ['glance-big'], last.arrivoReale ? formatEpochHHMM(last.arrivoReale) : 'Arrived'))
     return card
   }
-  card.append(el('div', ['glance-label'], `Arrives at ${niceName(d.destinazione) || 'the terminus'}`))
-  const row = el('div', ['glance-row'])
-  row.append(el('span', ['glance-big'], finalMs ? formatEpochHHMM(finalMs) : '—'))
-  // the range: measured on days the model was not fitted on; only the recovery rules have one
-  const ahead = stops.length - 1 - Math.max(lastPassed, 0)
-  // each model has its own range: the tables are closer to the truth, so their range is narrower
+  // the next stop and the final one, side by side: when, and the range the model was measured to hold
+  const nextIdx = Math.max(lastPassed, 0) + 1
   const bands = modelReport && (tablesOn() ? modelReport.interval_90 : modelReport.interval_90_rules)
-  const band = bands && bands[String(Math.min(Math.max(ahead, 1), 8))]
-  if (finalMs && band && modelOn()) row.append(el('span', ['glance-range'], `likely ${formatEpochHHMM(finalMs + band.lo * 60000)} to ${formatEpochHHMM(finalMs + band.hi * 60000)}`))
-  card.append(row)
+  const column = (labelText, name, ms, ahead) => {
+    const col = el('div', ['glance-col'])
+    col.append(el('div', ['glance-label'], labelText), el('div', ['glance-name'], name))
+    const row = el('div', ['glance-row'])
+    row.append(el('span', ['glance-big'], ms ? formatEpochHHMM(ms) : '—'))
+    // measured on days the model was not fitted on; each model has its own range (the tables are closer to the truth)
+    const band = bands && bands[String(Math.min(Math.max(ahead, 1), 8))]
+    if (ms && band && modelOn()) row.append(el('span', ['glance-range'], `${formatEpochHHMM(ms + band.lo * 60000)}–${formatEpochHHMM(ms + band.hi * 60000)}`))
+    col.append(row)
+    return col
+  }
+  const cols = el('div', ['glance-cols'])
+  const nextStop = stops[nextIdx]
+  const finalAhead = stops.length - 1 - Math.max(lastPassed, 0)
+  if (nextStop && nextIdx < stops.length - 1) cols.append(column('Next stop', niceName(nextStop.stazione), (pred.get(nextIdx) || {}).arrMs, 1))
+  cols.append(column('Final stop', niceName(d.destinazione) || 'the terminus', finalMs, finalAhead))
+  cols.classList.toggle('is-single', cols.children.length === 1)
+  card.append(cols)
   const chips = el('div', ['glance-chips'])
   if (delay !== 0) chips.append(chip(delay > 0 ? `+${delay} min` : `${delay} min`, delay >= LATE_THRESHOLD ? 'is-late' : delay > 0 ? 'is-slight' : 'is-early'))
   else chips.append(chip('on time', 'is-ok'))
