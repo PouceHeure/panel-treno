@@ -2571,25 +2571,26 @@ function nerdTrackBars(d, cur, now) {
   }
   const raw = withTimesMode('raw', () => predOf(d, now))
   const mod = withTimesMode('model', () => predOf(d, now))
+  const tab = withTimesMode('tables', () => predOf(d, now))
   const rowsAll = all.map(i => {
     const sched = stops[i].arrivo_teorico || stops[i].programmata
-    return { name: niceName(stops[i].stazione), sched, raw: (raw.get(i) || {}).arrMs, model: (mod.get(i) || {}).arrMs }
+    return { name: niceName(stops[i].stazione), sched, raw: (raw.get(i) || {}).arrMs, rules: (mod.get(i) || {}).arrMs, tables: (tab.get(i) || {}).arrMs }
   })
   // "now" is at the same place as in the other charts: the future gets the right 30 % of the plot
   const MAX_AHEAD = 40 * 60000
-  const rows = rowsAll.filter((r, i) => !i || Math.min(r.sched, r.model ?? r.sched) <= now + MAX_AHEAD)
-  const span = Math.min(MAX_AHEAD, Math.max(10 * 60000, ...rows.flatMap(r => [r.sched, r.raw, r.model]).filter(Number.isFinite).map(t => t - now)))
+  const rows = rowsAll.filter((r, i) => !i || Math.min(r.sched, r.tables ?? r.sched) <= now + MAX_AHEAD)
+  const span = Math.min(MAX_AHEAD, Math.max(10 * 60000, ...rows.flatMap(r => [r.sched, r.raw, r.rules, r.tables]).filter(Number.isFinite).map(t => t - now)))
   const W = chartWidth()
   const LEFT = chartLeft()
   const RIGHT = 44
   const TOP = 16
-  const group = 34
+  const group = 43
   const H = TOP + rows.length * group + 22
   const xNow = LEFT + nowFrac(W) * (W - LEFT - 12) // the same place as in the other charts (they keep 12 px on the right)
   const xEnd = W - RIGHT // the bars stop here: the labels need the room after it
   const perMs = (xEnd - xNow) / span
   const xOf = t => Math.min(xEnd, Math.max(LEFT, xNow + (t - now) * perMs))
-  const svg = svgChart(H, 'Arrival at each stop: timetable, raw and model', W)
+  const svg = svgChart(H, 'Arrival at each stop: timetable, raw, rules and tables', W)
   const stepMin = [1, 2, 5, 10, 15, 30, 60].find(m => m * 60000 * perMs >= 52) || 60 // labels at least ~50 px apart
   const tFirst = now - (xNow - LEFT) / perMs
   for (let t = Math.ceil(tFirst / (stepMin * 60000)) * stepMin * 60000; t <= now + span; t += stepMin * 60000) {
@@ -2600,8 +2601,8 @@ function nerdTrackBars(d, cur, now) {
   svg.append(svgEl('text', { x: xNow, y: TOP - 1, class: 'tk-dwell-state is-here', 'text-anchor': 'middle' }, 'NOW'))
   rows.forEach((r, i) => {
     const y = TOP + i * group
-    svg.append(svgEl('text', { x: LEFT - 8, y: y + 17, class: 'tl-label', 'text-anchor': 'end' }, r.name.length > Math.floor((LEFT - 10) / 6.4) ? `${r.name.slice(0, Math.floor((LEFT - 10) / 6.4) - 1)}…` : r.name))
-    ;[['timetable', r.sched, 'tk-bar-sched'], ['raw', r.raw, 'tk-bar-raw'], ['model', r.model, 'tk-bar-model']].forEach(([label, t, cls], k) => {
+    svg.append(svgEl('text', { x: LEFT - 8, y: y + 21, class: 'tl-label', 'text-anchor': 'end' }, r.name.length > Math.floor((LEFT - 10) / 6.4) ? `${r.name.slice(0, Math.floor((LEFT - 10) / 6.4) - 1)}…` : r.name))
+    ;[['timetable', r.sched, 'tk-bar-sched'], ['raw', r.raw, 'tk-bar-raw'], ['rules', r.rules, 'tk-bar-rules'], ['tables', r.tables, 'tk-bar-model']].forEach(([label, t, cls], k) => {
       if (!Number.isFinite(t)) return
       const late = (t - r.sched) / 60000
       const x1 = xOf(t)
@@ -2617,7 +2618,64 @@ function nerdTrackBars(d, cur, now) {
   panel.append(svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
   const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
-  legend.append(item('k-bar-sched', 'timetable'), item('k-bar-raw', 'raw (delay held)'), item('k-bar-model', 'model'))
+  legend.append(item('k-bar-sched', 'timetable'), item('k-bar-raw', 'raw (delay held)'), item('k-bar-rules', 'rules'), item('k-bar-model', 'tables'))
+  panel.append(legend)
+  return panel
+}
+
+// What the table of the "tables" model adds to the rules for the stops ahead of this train, from the last stop it was
+// seen to leave: the usual error of that stretch (later than the rules say: +, earlier: -).
+function nerdTrackTable(d, cur) {
+  const panel = el('div', ['nerd-panel'])
+  const stops = d.fermate || []
+  const hereIdx = Math.max(stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1), 0)
+  const from = stops[hereIdx]
+  const head = el('div', ['nerd-panel-head'])
+  head.append(el('span', [], 'what the tables add to the rules'), el('span', [], from ? `from ${niceName(from.stazione)}` : ''))
+  panel.append(head)
+  const ahead = []
+  for (let i = hereIdx + 1; i < stops.length && ahead.length < 8; i++) ahead.push(i)
+  if (!from || !ahead.length || cur.kind === 'arrived' || cur.kind === 'cancelled') {
+    panel.append(el('p', ['nerd-dim'], 'no stop ahead'))
+    return panel
+  }
+  const rows = ahead.map(i => ({ name: niceName(stops[i].stazione), info: correctionInfo(from.id, stops[i].id) }))
+  if (rows.every(r => r.info === null)) {
+    panel.append(el('p', ['nerd-dim'], 'loading the table…'))
+    return panel
+  }
+  const W = chartWidth()
+  const LEFT = chartLeft()
+  const RIGHT = 54
+  const TOP = 12
+  const rowH = 26
+  const H = TOP + rows.length * rowH + 24
+  const reach = Math.max(2, Math.ceil(Math.max(...rows.map(r => Math.abs(r.info ? r.info.value : 0)))))
+  const x0 = LEFT + (W - LEFT - RIGHT) / 2
+  const xOf = v => x0 + (v / reach) * ((W - LEFT - RIGHT) / 2)
+  const svg = svgChart(H, 'Usual error of the rules on each stretch ahead, from the table', W)
+  ;[-reach, -reach / 2, 0, reach / 2, reach].forEach(v => {
+    svg.append(svgEl('line', { x1: xOf(v), x2: xOf(v), y1: TOP - 4, y2: H - 20, class: v === 0 ? 'tl-grid' : 'tl-vgrid' }))
+    svg.append(svgEl('text', { x: xOf(v), y: H - 6, class: 'tl-label', 'text-anchor': 'middle' }, `${v > 0 ? '+' : ''}${Number.isInteger(v) ? v : v.toFixed(1)}`))
+  })
+  const name = rowName => (rowName.length > Math.floor((LEFT - 10) / 6.4) ? `${rowName.slice(0, Math.floor((LEFT - 10) / 6.4) - 1)}…` : rowName)
+  rows.forEach((r, i) => {
+    const y = TOP + i * rowH
+    svg.append(svgEl('text', { x: LEFT - 8, y: y + 15, class: 'tl-label', 'text-anchor': 'end' }, name(r.name)))
+    if (!r.info || r.info.source === 'none') {
+      svg.append(svgEl('text', { x: x0 + 8, y: y + 15, class: 'tk-axis-scale' }, 'no habit seen yet'))
+      return
+    }
+    const v = r.info.value
+    const bar = svgEl('rect', { x: Math.min(x0, xOf(v)), y: y + 4, width: Math.max(2, Math.abs(xOf(v) - x0)), height: 12, rx: 2, class: `tk-tab-bar ${v > 0 ? 'is-later' : 'is-earlier'}${r.info.source === 'station' ? ' is-station' : ''}` })
+    bar.append(svgEl('title', {}, `${r.name}: trains are usually ${Math.abs(v).toFixed(1)} min ${v > 0 ? 'later' : 'earlier'} than the rules say${r.info.source === 'station' ? ' (from this stop alone: this stretch is rare)' : ''}`))
+    svg.append(bar)
+    svg.append(svgEl('text', { x: v >= 0 ? xOf(v) + 5 : xOf(v) - 5, y: y + 15, class: 'tk-axis-scale', 'text-anchor': v >= 0 ? 'start' : 'end' }, `${v > 0 ? '+' : ''}${v.toFixed(1)}${r.info.source === 'station' ? '*' : ''}`))
+  })
+  panel.append(svg)
+  const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
+  const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
+  legend.append(item('k-tab-later', 'later than the rules say'), item('k-tab-earlier', 'earlier'), el('span', [], '* from the stop alone'))
   panel.append(legend)
   return panel
 }
@@ -2648,7 +2706,7 @@ function renderTrackNerd(d) {
   // on a wide screen: the live reading on the left, the technical charts open on the right
   const cols = el('div', ['nerd-cols'])
   const left = el('div', ['nerd-col'])
-  left.append(nerdTrackKin(d, cur, now), nerdTrackBars(d, cur, now))
+  left.append(nerdTrackKin(d, cur, now), nerdTrackBars(d, cur, now), nerdTrackTable(d, cur))
   cols.append(left, more)
   wrap.append(nerdDashboard(d), cols)
   // redrawn every few seconds: the page keeps at least its previous height and scroll position, so it does not jump

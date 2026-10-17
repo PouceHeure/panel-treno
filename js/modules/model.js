@@ -77,13 +77,22 @@ function loadCorrections() {
     .finally(() => { correctionsLoading = false })
 }
 
-// The usual error of the rules (min) for a train whose last known stop is `fromId` and that is heading to `toId`:
-// the pair when it was seen enough, else the stop alone, else nothing.
-function correctionFor(fromId, toId) {
-  if (!tablesOn() || !corrections) return 0
+// What the table says for a train whose last known stop is `fromId` and that is heading to `toId`, whatever the
+// current mode: { value (min, the usual error of the rules), source: 'pair' | 'station' | 'none' }, or null while
+// the table is not loaded.
+function correctionInfo(fromId, toId) {
+  if (!corrections) return null
   const pair = corrections.pairs[`${fromId}>${toId}`]
-  if (pair !== undefined) return pair
-  return corrections.stations[toId] || 0
+  if (pair !== undefined) return { value: pair, source: 'pair' }
+  const station = corrections.stations[toId]
+  return station !== undefined ? { value: station, source: 'station' } : { value: 0, source: 'none' }
+}
+
+// The correction the "tables" model adds (0 in the other modes): the pair when it was seen enough, else the stop alone.
+function correctionFor(fromId, toId) {
+  if (!tablesOn()) return 0
+  const info = correctionInfo(fromId, toId)
+  return info ? info.value : 0
 }
 
 // 'reg' for regional trains, 'long' for the others; an unknown category is treated as regional.
@@ -210,7 +219,7 @@ loadCorrections()
 
 if (typeof module !== 'undefined') {
   module.exports = {
-    delayAt, predictArrival, predictStopTimes, correctionFor, withTimesMode, dwellExpected, motionProfile,
+    delayAt, predictArrival, predictStopTimes, correctionFor, correctionInfo, withTimesMode, dwellExpected, motionProfile,
     setCorrectionsForTests: table => { corrections = table }
   }
 }

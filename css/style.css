@@ -1304,3 +1304,13 @@ button.route-open { font: inherit; cursor: pointer; }
   .toolbar .filter-wrap.expanded, .toolbar .filter-wrap:focus-within { flex: 1 0 100%; order: 8; max-width: none; }
   .toolbar:has(.filter-wrap.expanded) #groupBySelect { flex: 1 1 auto; }
 }
+
+/* the tables: four bars per stop, and the corrections */
+.tk-bar-rules { fill: color-mix(in srgb, var(--accent) 45%, transparent); }
+.k-bar-rules { width: 16px; height: 6px; background: color-mix(in srgb, var(--accent) 45%, transparent); display: inline-block; }
+.tk-tab-bar { fill: var(--accent); }
+.tk-tab-bar.is-later { fill: var(--late); }
+.tk-tab-bar.is-earlier { fill: var(--ok); }
+.tk-tab-bar.is-station { opacity: 0.55; }
+.k-tab-later { width: 16px; height: 6px; background: var(--late); display: inline-block; }
+.k-tab-earlier { width: 16px; height: 6px; background: var(--ok); display: inline-block; }
