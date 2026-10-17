@@ -1249,8 +1249,8 @@ button.route-open { font: inherit; cursor: pointer; }
 
 /* the board on a big screen: three columns, and the flat list gets room */
 @media (min-width: 1400px) {
-  .board { max-width: 1500px; }
-  .card-grid.is-multi { grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); }
+  .board { max-width: 1212px; } /* one column of 1180 on every desktop page, so the top bar never moves */
+  .card-grid.is-multi { grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); }
 }
 @media (min-width: 1000px) {
   .card-grid.is-single { grid-template-columns: minmax(0, 900px); }
@@ -1413,12 +1413,18 @@ button.route-open { font: inherit; cursor: pointer; }
 .clock { align-self: center; align-items: center; gap: 0; padding: 0.2rem 0.75rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
 .clock-digit, .clock-colon { display: inline; padding: 0; border-radius: 0; background: transparent; color: var(--text); font-size: 0.95rem; font-weight: 600; line-height: 1.3; }
 
-/* the bar lines up with the content under it: the page body is 1200 wide up to 1400 px of screen, 1500 above, minus its own
-   1rem each side; a train page keeps 1180 inside that */
+/* the top bar is in the same place on every page: it follows the page body (1200 wide with 1rem each side, 1212 from 1400 px of screen) */
 @media (min-width: 1000px) {
   .app-header .header-inner { max-width: 1168px; }
 }
 @media (min-width: 1400px) {
-  body:not(.view-train) .app-header .header-inner { max-width: 1468px; }
-  body.view-train .app-header .header-inner { max-width: 1180px; }
+  .app-header .header-inner { max-width: 1180px; }
 }
+
+/* the home button is an icon alone on wide screens: no margin left over from the labelled version, so the house sits in the middle */
+@media (min-width: 860px) {
+  body #text-search i, body:not(.view-train) #text-search i { margin: 0; }
+}
+
+/* the page keeps the room of its scrollbar, so the bar and the content do not shift between a long page and a short one */
+html { scrollbar-gutter: stable; }
