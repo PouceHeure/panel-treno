@@ -59,6 +59,7 @@ function setTimesMode(mode) {
 }
 
 // The corrections of the "tables" model: { pairs: { 'A>B': min }, stations: { 'B': min } }.
+const MIN_RUN_MS = 60000 // the shortest run between two stops the prediction allows
 const MIN_TABLES_DELAY = -1 // min: a train is not predicted more than a minute early
 let corrections = null
 let correctionsLoading = false
@@ -206,12 +207,16 @@ function predictStopTimes(stops, delayNow, lastPassed, opts = {}) {
   } else depMs = dep(here) + late * 60000
   out.leaveMs = depMs
 
+  let prevDepMs = depMs
   for (let i = from + 1; i < stops.length; i++) {
-    const arrMs = predictArrival(r0, baseMs, arr(stops[i]), correctionFor(here.id, stops[i].id))
+    let arrMs = predictArrival(r0, baseMs, arr(stops[i]), correctionFor(here.id, stops[i].id))
+    // each stop is predicted on its own, so two corrections can disagree: a train still cannot arrive before it left the stop before
+    if (modelOn()) arrMs = Math.max(arrMs, prevDepMs + MIN_RUN_MS)
     let nextDep = dep(stops[i]) + late * 60000
     if (modelOn()) nextDep = Math.max(dep(stops[i]), arrMs + dwellExpected((dep(stops[i]) - arr(stops[i])) / 60000, cls).mid * 60000)
     else nextDep = dep(stops[i]) + r0 * 60000
     out.set(i, { arrDelay: (arrMs - arr(stops[i])) / 60000, depDelay: (nextDep - dep(stops[i])) / 60000, arrMs, depMs: nextDep })
+    prevDepMs = nextDep
   }
   return out
 }

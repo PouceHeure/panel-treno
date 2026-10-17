@@ -40,3 +40,13 @@ test('stationDelay prefers the direction, falls back to the station, null when u
   assert.deepEqual(M.stationDelay('S1', 'S9'), { n: 40, median: 1.5, mean: 3.2, source: 'station' })
   assert.equal(M.stationDelay('S2', 'S1'), null)
 })
+
+test('predicted times never go back in time, even when the corrections of two stretches disagree', () => {
+  M.setCorrectionsForTests({ pairs: { 'A>B': 6, 'A>C': -1 }, stations: {} })
+  const t0 = Date.UTC(2026, 9, 17, 8, 0)
+  const mk = (id, min) => ({ id, arrivo_teorico: t0 + min * 60000, partenza_teorica: t0 + (min + 1) * 60000 })
+  const list = [mk('A', 0), mk('B', 5), mk('C', 8)]
+  list[0].partenzaReale = list[0].partenza_teorica
+  const out = M.withTimesMode('tables', () => M.predictStopTimes(list, 0, 0, { nowMs: t0 }))
+  assert.ok(out.get(2).arrMs > out.get(1).depMs)
+})
