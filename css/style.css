@@ -1448,3 +1448,11 @@ html { scrollbar-gutter: stable; }
 .tk-row.is-focus { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: 8px; }
 .tv-stop.is-focus { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: 8px; }
 .tv-stop.is-beyond { opacity: 0.45; }
+
+/* the focus picture: the stops between as small dots on the rail */
+.tk-seg-dots { position: absolute; left: 0; right: 0; top: 0; height: 0; }
+.tk-seg-mid { position: absolute; top: calc(1.9rem + 0px); width: 10px; height: 10px; margin: -2px 0 0 -5px; border-radius: 50%; background: var(--surface); border: 2px solid var(--muted); box-sizing: border-box; }
+.tk-seg-mid.is-passed { border-color: var(--accent); background: var(--accent); }
+.tk-seg-stop.is-focus { border-color: var(--accent); border-width: 4px; }
+.tk-seg-focus { border-color: var(--accent); }
+.tk-seg-focus[hidden] { display: none; }

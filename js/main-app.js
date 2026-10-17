@@ -3112,6 +3112,24 @@ function renderTracking(d) {
   seg.append(segNames, rail, els.segFoot)
   root.append(seg)
 
+  // with a focus stop: the same picture over the whole way to it, the stops between as dots, to see when the train gets there
+  const fseg = el('section', ['tv-card', 'tk-seg', 'tk-seg-focus'])
+  fseg.hidden = true
+  const fNames = el('div', ['tk-seg-names'])
+  els.fsA = el('span')
+  els.fsB = el('span')
+  fNames.append(els.fsA, els.fsB)
+  const fRail = el('div', ['tk-seg-rail'])
+  els.fsDone = el('div', ['tk-seg-done'])
+  els.fsDots = el('div', ['tk-seg-dots'])
+  els.fsTrain = el('div', ['tk-seg-train'])
+  els.fsTrain.append(icon('bi-train-front-fill'))
+  fRail.append(el('div', ['tk-seg-line']), els.fsDone, el('span', ['tk-seg-stop', 'is-a']), el('span', ['tk-seg-stop', 'is-b', 'is-focus']), els.fsDots, els.fsTrain)
+  els.fsFoot = el('p', ['tk-seg-foot'])
+  fseg.append(fNames, fRail, els.fsFoot)
+  els.fsCard = fseg
+  root.append(fseg)
+
   // the line: a window of stops around the train (or all of them), the train sliding along it
   const stops = d.fermate || []
   const trackPred = predOf(d)
@@ -3180,6 +3198,7 @@ function renderTracking(d) {
     live.segKey = model.segKey
     live.shown = 0
     live.segShown = undefined
+    live.fsShown = undefined
   } else if (live.lastFetch !== trainFetchedAt) {
     const jump = model.p - live.shown
     live.correction = { pct: Math.round(jump * 100), at: Date.now() }
@@ -3188,6 +3207,30 @@ function renderTracking(d) {
   cancelAnimationFrame(live.raf)
   live.lastTs = 0
   live.raf = requestAnimationFrame(tickTracking)
+}
+
+// What the focus picture needs, worked out at most once a second (the prediction is not cheap, the frames are many):
+// when the train leaves, when it gets to the focus stop, and where the stops in between fall on the way.
+function focusState(els, d, model, now) {
+  const fi = focusIndex(d)
+  const key = `${fi}|${model.segKey}|${Math.floor(now / 1000)}`
+  if (els.fsKey === key) return els.fsState
+  els.fsKey = key
+  els.fsState = null
+  if (fi < 0 || !['between', 'station', 'waiting'].includes(model.kind)) return null
+  const pred = predOf(d, now)
+  const end = (pred.get(fi) || {}).arrMs
+  const start = model.kind === 'between' ? model.since : model.target
+  if (!end || !(end > start)) return null
+  const stops = d.fermate
+  const hereIdx = els.hereIdx
+  const mids = []
+  for (let i = hereIdx + 1; i < fi; i++) {
+    const at = (pred.get(i) || {}).arrMs
+    if (at) mids.push({ name: niceName(stops[i].stazione), frac: Math.min(1, Math.max(0, (at - start) / (end - start))), at })
+  }
+  els.fsState = { fi, start, end, mids, name: niceName(stops[fi].stazione), here: niceName(stops[hereIdx].stazione), left: fi - hereIdx }
+  return els.fsState
 }
 
 function tickTracking(ts) {
@@ -3223,6 +3266,30 @@ function tickTracking(ts) {
   els.segGhost.hidden = model.kind !== 'between'
   const modeName = { raw: 'delay held', model: 'rules', tables: 'tables' }[timesMode] || timesMode
   els.segFoot.textContent = model.kind === 'between' ? `${Math.round(live.segShown * 100)} % of the way · arrives ~${formatEpochHHMM(model.eta)} (${modeName})` : model.kind === 'waiting' ? 'waiting to leave' : 'in the station'
+  const fs = focusState(els, live.data, model, now)
+  els.fsCard.hidden = !fs
+  if (fs) {
+    els.fsA.textContent = fs.here
+    els.fsB.textContent = fs.name
+    const sig = fs.mids.map(m => m.name).join('|')
+    if (els.fsDots.dataset.sig !== sig) {
+      els.fsDots.dataset.sig = sig
+      els.fsDots.replaceChildren()
+    }
+    fs.mids.forEach((m, k) => {
+      let dot = els.fsDots.children[k]
+      if (!dot) { dot = el('span', ['tk-seg-mid']); els.fsDots.append(dot) }
+      dot.style.left = `${m.frac * 100}%`
+      dot.title = `${m.name} · ~${formatEpochHHMM(m.at)}`
+      dot.classList.toggle('is-passed', now >= m.at)
+    })
+    const byTime = Math.min(0.98, Math.max(0, (now - fs.start) / (fs.end - fs.start)))
+    if (live.fsShown === undefined) live.fsShown = byTime
+    live.fsShown += (byTime - live.fsShown) * (1 - Math.exp(-dt / 1.2))
+    els.fsTrain.style.left = `${live.fsShown * 100}%`
+    els.fsDone.style.width = `${live.fsShown * 100}%`
+    els.fsFoot.textContent = now >= fs.end ? `should be at ${fs.name} now` : `${Math.round(live.fsShown * 100)} % of the way · ${fs.left} stop${fs.left > 1 ? 's' : ''} to go · arrives ~${formatEpochHHMM(fs.end)}`
+  }
   els.label.textContent = 'Next stop'
   els.name.textContent = niceName(model.next.stazione)
   els.eta.textContent = `~${formatEpochHHMM(model.eta)}`
