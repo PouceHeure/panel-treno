@@ -1400,8 +1400,7 @@ button.route-open { font: inherit; cursor: pointer; }
   body.view-train #trainBack::after { content: "/"; margin-left: 0.7rem; color: var(--faint); }
   body.view-train #trainBack:hover { color: var(--text); background: var(--tile); }
   body.view-train #stationTitle { order: 3; justify-self: start; font-size: 1.25rem; }
-  body.view-train .clock { order: 4; padding: 0.2rem 0.75rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
-  body.view-train .clock-digit, body.view-train .clock-colon { color: var(--text); font-size: 0.95rem; }
+  body.view-train .clock { order: 4; }
   body.view-train #trackToggle { order: 5; }
   body.view-train #trainPin { order: 6; }
   body.view-train #trainShare { order: 7; }
@@ -1409,3 +1408,7 @@ button.route-open { font: inherit; cursor: pointer; }
   body.view-train #trainPin:not(.is-on):hover { filter: brightness(1.1); }
   body.view-train #trainPin.is-on { background: transparent; }
 }
+
+/* the clock looks the same on every page and at every width: a small pill with mono digits */
+.clock { align-self: center; align-items: center; gap: 0; padding: 0.2rem 0.75rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.clock-digit, .clock-colon { display: inline; padding: 0; border-radius: 0; background: transparent; color: var(--text); font-size: 0.95rem; font-weight: 600; line-height: 1.3; }
