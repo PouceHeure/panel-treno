@@ -888,15 +888,15 @@ body.view-train .source-switch { display: none; }
 
 /* Tracking, nerd: position and delay plots */
 .tl-vgrid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.7; }
-.tk-plot-sched { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 4; }
-.tk-plot-pred { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 2 3; opacity: 0.8; }
-.tk-plot-est { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
-.tk-plot-fix { stroke: var(--late); stroke-width: 2; }
+.tk-plot-sched { fill: none; stroke: var(--muted); stroke-width: 2.5; stroke-dasharray: 4 4; }
+.tk-plot-pred { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 2 3; opacity: 0.8; }
+.tk-plot-est { fill: none; stroke: var(--accent); stroke-width: 3.5; stroke-linejoin: round; }
+.tk-plot-fix { stroke: var(--late); stroke-width: 3; }
 .tk-plot-fetch { fill: var(--bg); stroke: var(--accent); stroke-width: 1.5; }
 .tk-plot-legend { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; margin: 0.5rem 0 0; font-size: 0.72rem; }
 .tk-plot-key { display: inline-flex; align-items: center; gap: 0.35rem; }
 .tk-plot-key span { display: inline-block; }
-.k-est { width: 16px; height: 2px; background: var(--accent); }
+.k-est { width: 16px; height: 3px; background: var(--accent); }
 .k-pred { width: 16px; height: 0; border-top: 2px dotted var(--accent); }
 .k-sched { width: 16px; height: 0; border-top: 2px dashed var(--muted); }
 .k-fix { width: 2px; height: 12px; background: var(--late); }
@@ -907,14 +907,14 @@ body.view-train .source-switch { display: none; }
 
 .route-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 
-.tk-plot-real { fill: none; stroke: var(--ok); stroke-width: 2; stroke-linejoin: round; opacity: 0.85; }
+.tk-plot-real { fill: none; stroke: var(--ok); stroke-width: 3.5; stroke-linejoin: round; opacity: 0.85; }
 .tl-dot.is-arrival { fill: var(--bg); stroke: var(--ok); stroke-width: 2; }
-.k-real { width: 16px; height: 2px; background: var(--ok); }
+.k-real { width: 16px; height: 3px; background: var(--ok); }
 
 @media (max-width: 420px) { .tk-zoom.is-small .tk-zoom-btn { padding: 0 0.42rem; } }
 
-.tk-plot-band { fill: var(--accent); opacity: 0.16; stroke: none; }
-.k-band { width: 16px; height: 8px; background: var(--accent); opacity: 0.3; }
+.tk-plot-dwell { fill: var(--accent); opacity: 0.14; stroke: none; }
+.k-band { width: 16px; height: 12px; background: var(--accent); opacity: 0.18; }
 
 .tk-readout { height: 1.3em; margin: 0 0 0.3rem; font-size: 0.74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .timeline-svg { touch-action: pan-y; }
@@ -935,8 +935,8 @@ body.view-train .source-switch { display: none; }
 .tv-pass-dot { position: relative; z-index: 1; width: 9px; height: 9px; margin-left: 7px; background: var(--surface); border: 2px solid var(--accent); transform: rotate(45deg); }
 .tv-pass-text { color: var(--muted); font-size: 0.78rem; }
 
-.tk-plot-belief { fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 1 3; opacity: 0.8; stroke-linejoin: round; }
-.k-belief { width: 16px; height: 0; border-top: 1px dotted var(--accent); }
+.tk-plot-belief { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 1 3; opacity: 0.8; stroke-linejoin: round; }
+.k-belief { width: 16px; height: 0; border-top: 2px dotted var(--accent); }
 
 /* raw / model */
 .times-switch { display: inline-flex; align-items: center; gap: 0; height: 22px; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--tile); font-size: 0.7rem; }

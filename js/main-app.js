@@ -2062,6 +2062,27 @@ function nerdTrackChart(d) {
   svg.append(defs)
   const plot = svgEl('g', { 'clip-path': `url(#${clipId})` })
   svg.append(plot)
+  // the time the train is (supposed to be) in a station, on the whole height: real times where they are known,
+  // else what the model expects
+  const hereIdx0 = stops.indexOf(model.here)
+  rows.forEach((f, i) => {
+    const idx = lo + i
+    let from = null
+    let to = null
+    if (f.arrivoReale && (f.partenzaReale || idx === hereIdx0)) { from = f.arrivoReale; to = f.partenzaReale || Math.max(now, f.arrivoReale) }
+    else if (idx > hereIdx0 || (idx === hereIdx0 && model.kind === 'station')) {
+      const m = modelPred.get(idx)
+      const at = predAt(idx) || arrOf(f) + extra
+      const dwell = m && m.depMs && m.arrMs ? m.depMs - m.arrMs : depOf(f) - arrOf(f)
+      from = at; to = at + dwell
+    }
+    if (from === null || to === null || to < tMin || from > tMax) return
+    const x1 = Math.max(LEFT, xOf(from))
+    const x2 = Math.min(W - RIGHT, xOf(to))
+    const band = svgEl('rect', { x: x1, y: TOP, width: Math.max(4, x2 - x1), height: plotH, class: 'tk-plot-dwell' })
+    band.append(svgEl('title', {}, `${niceName(f.stazione)}: in station ${formatEpochHHMM(from)}–${formatEpochHHMM(to)}`))
+    plot.append(band)
+  })
   const path = (pts, cls) => plot.append(svgEl('polyline', { points: pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '), class: cls }))
   // timetable alone
   path(rows.flatMap((f, i) => [[xOf(arrOf(f)), yAt(lo + i)], [xOf(depOf(f)), yAt(lo + i)]]), 'tk-plot-sched')
@@ -2074,15 +2095,8 @@ function nerdTrackChart(d) {
   let revised = null
   if (model.kind === 'between' && model.kal) {
     const hereI = stops.indexOf(model.here)
-    const yBand = v => yAt(hereI + Math.min(1, Math.max(0, v)))
     const run = kalmanRun(d, model.here, model.next, model.since, now, 5000)
     revised = run.samples.map(x => ({ t: x.t, s: hereI + x.p }))
-    const pts = run.samples.concat(kalmanForecast(run, now, Math.max(model.eta, now) + 60000))
-    const upper = pts.map(x => [xOf(x.t), yBand(x.p + 2 * x.sigma)])
-    const lower = pts.map(x => [xOf(x.t), yBand(x.p - 2 * x.sigma)]).reverse()
-    const poly = svgEl('polygon', { points: upper.concat(lower).map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '), class: 'tk-plot-band' })
-    poly.append(svgEl('title', {}, 'Kalman smoother: +-2 sigma around the revised position'))
-    plot.append(poly)
   }
   // estimated position over time
   const sortT = (a, b) => a.t - b.t
@@ -2151,7 +2165,7 @@ function nerdTrackChart(d) {
   panel.append(readout, svg)
   const legend = el('p', ['nerd-dim', 'tk-plot-legend'])
   const item = (cls, text) => { const k = el('span', ['tk-plot-key']); k.append(el('span', [cls]), text); return k }
-  legend.append(item('k-est', 'revised estimate'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-belief', 'believed then'), item('k-band', '±2σ'), item('k-fix', 'correction'), item('k-real', 'real times'), item('k-det', 'passed, no stop'))
+  legend.append(item('k-est', 'revised estimate'), item('k-pred', 'predicted'), item('k-sched', 'timetable'), item('k-belief', 'believed then'), item('k-band', 'in station'), item('k-fix', 'correction'), item('k-real', 'real times'), item('k-det', 'passed, no stop'))
   panel.append(legend)
   return panel
 }
