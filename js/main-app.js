@@ -2282,17 +2282,32 @@ function nerdTrackDelay(d) {
   }
   const { tMin, tMax, LEFT, RIGHT, W, winMs, now } = trackView
   const stops = d.fermate || []
+  // where the timetable has the train at position `v` (stop index + fraction of the segment): the train does not run at a
+  // constant speed (it speeds up, cruises, brakes), so the fraction of the way is turned into time with the same motion
+  // profile as everywhere else. A straight line between the stops would show a delay that swings up and down on every
+  // segment when there is none.
+  const cls = trainClass(d)
   const schedAt = v => {
     const i = Math.min(stops.length - 1, Math.floor(v))
     const a = stops[i].partenza_teorica || stops[i].programmata
     if (i >= stops.length - 1) return stops[i].arrivo_teorico || stops[i].programmata
     const b = stops[i + 1].arrivo_teorico || stops[i + 1].programmata
-    return a + (v - i) * (b - a)
+    const km = segmentKm(stops, i)
+    const phase = km ? (() => { const prof = motionProfile(km, cls); return prof.total > 0 ? prof.timeAt(v - i) / prof.total : v - i })() : v - i
+    return a + phase * (b - a)
   }
-  // implied delay, only where the train is between two stops (in a station the position says nothing)
-  const implied = trackView.est
+  // implied delay: where the train is between two stops (in a station the position says nothing) ...
+  const between = trackView.est
     .filter(x => { const f = x.s - Math.floor(x.s); return f > 0.02 && f < 0.98 && x.t <= now })
     .map(x => ({ t: x.t, v: (x.t - schedAt(x.s)) / 60000 }))
+  // ... and in the stations the delay is the one the arrival and the departure had, so the curve is not cut there
+  const atStops = []
+  stops.forEach(f => {
+    if (f.actualFermataType !== 1) return
+    if (f.arrivoReale) atStops.push({ t: f.arrivoReale, v: (f.arrivoReale - (f.arrivo_teorico || f.programmata)) / 60000 })
+    if (f.partenzaReale) atStops.push({ t: f.partenzaReale, v: (f.partenzaReale - (f.partenza_teorica || f.programmata)) / 60000 })
+  })
+  const implied = between.concat(atStops.filter(x => x.t <= now)).sort((a, b) => a.t - b.t)
   const reported = trackHist.fetches.map(x => ({ t: x.t, v: x.delay }))
   // forecast from the model: the delay at each stop ahead
   const pred = predOf(d, now)
