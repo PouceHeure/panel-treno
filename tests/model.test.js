@@ -92,3 +92,22 @@ test('a stop with a real departure and no real arrival gets an estimated arrival
   assert.ok(list[1].arrivoEstimated)
   assert.ok(list[1].arrivoReale >= min(20) + 60000 && list[1].arrivoReale <= min(21))
 })
+
+test('the train is moved along on the predicted times while the data lags, and the data corrects it', () => {
+  const t0 = Date.UTC(2026, 9, 17, 8, 0)
+  const min = m => t0 + m * 60000
+  const mk = (id, a, d) => ({ id, arrivo_teorico: min(a), partenza_teorica: min(d), actualFermataType: 0 })
+  const list = [mk('A', 0, 1), mk('B', 10, 11), mk('C', 20, 21), mk('D', 30, 31)]
+  list[0].actualFermataType = 1
+  list[0].partenzaReale = min(1) // left on time, nothing since
+  const at = nowMin => M.withTimesMode('model', () => M.inferProgress(list, 0, { nowMs: min(nowMin) }))
+  assert.equal(at(5).steps, 0, 'still on its way')
+  const there = at(12)
+  assert.equal(there.steps, 1, 'past its predicted arrival: at B')
+  assert.equal(there.stops[1].actualFermataType, 1)
+  assert.ok(there.stops[1].arrivoEstimated)
+  const gone = at(16)
+  assert.ok(gone.stops[1].departureEstimated, 'and past its usual time there: gone')
+  assert.equal(list[1].actualFermataType, 0, 'the data itself is not changed')
+  assert.equal(M.withTimesMode('model', () => M.inferProgress(list, 0, { nowMs: min(500) })).steps, 4, 'no more than four steps on a guess')
+})

@@ -259,6 +259,42 @@ function repairStopTimes(stops) {
   return stops
 }
 
+// The data of a train lags: the arrival at a stop, or the departure from it, is announced a minute or two after it happened.
+// The page must not wait for that: from the last stop the data knows, the train is moved along on the predicted times, and
+// the real data corrects it when it comes. Returns copies of the stops where the stops reached (and left) on the prediction
+// alone carry their estimated times (flagged `arrivoEstimated` / `departureEstimated`, and as passed). At most MAX_INFERRED
+// steps, and nothing before the train has left its first stop.
+const ARRIVE_GRACE_MS = 30000 // a train past its predicted arrival by this much is taken as arrived
+const MAX_INFERRED = 4
+function inferProgress(stops, delayNow, opts = {}) {
+  const { cls = 'reg', nowMs = Date.now() } = opts
+  const list = stops.map(f => ({ ...f }))
+  let last = list.reduce((l, f, i) => (f.actualFermataType === 1 ? i : l), -1)
+  let steps = 0
+  while (last >= 0 && last < list.length - 1 && steps < MAX_INFERRED) {
+    const here = list[last]
+    const inStation = !here.partenzaReale
+    const pred = predictStopTimes(list, delayNow, last, { inStation: inStation && !!here.arrivoReale, cls, nowMs })
+    if (inStation) {
+      if (!here.arrivoReale) break // no arrival to build on: the data has to say it
+      if (!pred.assumedLeft) break
+      here.partenzaReale = pred.leaveMs
+      here.departureEstimated = true
+      steps++
+      continue
+    }
+    const arrMs = (pred.get(last + 1) || {}).arrMs
+    if (!arrMs || nowMs <= arrMs + ARRIVE_GRACE_MS) break
+    const next = list[last + 1]
+    next.actualFermataType = 1
+    next.arrivoReale = arrMs
+    next.arrivoEstimated = true
+    last++
+    steps++
+  }
+  return { stops: list, steps }
+}
+
 // Runs `fn` as if the times mode were `mode`, to compare the two on the same train.
 function withTimesMode(mode, fn) {
   const previous = timesMode
@@ -270,7 +306,7 @@ loadCorrections()
 
 if (typeof module !== 'undefined') {
   module.exports = {
-    delayAt, predictArrival, predictStopTimes, repairStopTimes, correctionFor, correctionInfo, stationDelay, withTimesMode, dwellExpected, motionProfile,
+    delayAt, predictArrival, predictStopTimes, repairStopTimes, inferProgress, correctionFor, correctionInfo, stationDelay, withTimesMode, dwellExpected, motionProfile,
     setCorrectionsForTests: table => { corrections = table }
   }
 }

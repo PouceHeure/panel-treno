@@ -359,6 +359,19 @@ function trackReliability(lastSeenMs, now = Date.now()) {
 }
 
 // Predicted times (see js/modules/model.js) for the stops of a train detail still ahead.
+// The train as it is most likely to be right now: the data, moved along on the predicted times where it lags behind
+// (see inferProgress in model.js). Worked out at most every two seconds per data set.
+const inferCache = { src: null, key: 0, out: null }
+function inferred(d, nowMs = Date.now()) {
+  const key = Math.floor(nowMs / 2000)
+  if (inferCache.src === d && inferCache.key === key) return inferCache.out
+  const { stops, steps } = inferProgress(d.fermate || [], d.ritardo || 0, { cls: trainClass(d), nowMs })
+  inferCache.src = d
+  inferCache.key = key
+  inferCache.out = steps ? { ...d, fermate: stops, inferredSteps: steps } : d
+  return inferCache.out
+}
+
 function predOf(d, nowMs = Date.now()) {
   const stops = d.fermate || []
   const lastPassed = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
@@ -1651,7 +1664,7 @@ function trainStopEl(f, index, stops, detail, lastPassedIndex, pred) {
   const depSched = f.partenza_teorica || f.programmata
   const guess = pred && pred.get(index)
   const arrCell = isFirst ? el('span', ['tv-cell']) : tvTimeCell(arrSched, f.arrivoReale, guess ? guess.arrDelay : delayNow, passed, !!f.arrivoEstimated)
-  const depCell = isLast ? el('span', ['tv-cell']) : tvTimeCell(depSched, f.partenzaReale, guess ? guess.depDelay : delayNow, passed)
+  const depCell = isLast ? el('span', ['tv-cell']) : tvTimeCell(depSched, f.partenzaReale, guess ? guess.depDelay : delayNow, passed, !!f.departureEstimated)
 
   const info = el('div', ['tv-info'])
   const stationLink = el('a', ['tv-name'], niceName(f.stazione))
@@ -3220,27 +3233,23 @@ function renderTracking(d) {
   live.raf = requestAnimationFrame(tickTracking)
 }
 
-// What the focus picture needs, worked out at most once a second (the prediction is not cheap, the frames are many):
-// when the train leaves, when it gets to the focus stop, and where the stops in between fall on the way.
+// What the focus picture needs, worked out at most once a second (the prediction is not cheap, the frames are many).
+// The picture is fixed: the trip from its first stop to the focus stop, every stop at its own place on the rail, so it does
+// not change when the train passes a station; only the train moves on it.
 function focusState(els, d, model, now) {
   const fi = focusIndex(d)
-  const key = `${fi}|${model.segKey}|${Math.floor(now / 1000)}`
+  const key = `${fi}|${Math.floor(now / 1000)}`
   if (els.fsKey === key) return els.fsState
   els.fsKey = key
   els.fsState = null
   if (fi < 0 || !['between', 'station', 'waiting'].includes(model.kind)) return null
   const pred = predOf(d, now)
   const end = (pred.get(fi) || {}).arrMs
-  const start = model.kind === 'between' ? model.since : model.target
-  if (!end || !(end > start)) return null
+  if (!end) return null
   const stops = d.fermate
-  const hereIdx = els.hereIdx
   const mids = []
-  for (let i = hereIdx + 1; i < fi; i++) {
-    const at = (pred.get(i) || {}).arrMs
-    if (at) mids.push({ name: niceName(stops[i].stazione), frac: Math.min(1, Math.max(0, (at - start) / (end - start))), at })
-  }
-  els.fsState = { fi, start, end, mids, name: niceName(stops[fi].stazione), here: niceName(stops[hereIdx].stazione), left: fi - hereIdx }
+  for (let i = 1; i < fi; i++) mids.push({ name: niceName(stops[i].stazione), frac: i / fi, idx: i, at: (pred.get(i) || {}).arrMs })
+  els.fsState = { fi, end, mids, origin: niceName(stops[0].stazione), name: niceName(stops[fi].stazione), left: fi - els.hereIdx }
   return els.fsState
 }
 
@@ -3248,7 +3257,7 @@ function tickTracking(ts) {
   const els = live.els
   if (!els || !live.data) return
   const now = Date.now()
-  const d = live.data
+  const d = inferred(live.data, now)
   const model = trackingModel(d, now)
   if (model.kind !== 'between' && model.kind !== 'station' && model.kind !== 'waiting') return
   const dt = live.lastTs ? (ts - live.lastTs) / 1000 : 0
@@ -3277,29 +3286,38 @@ function tickTracking(ts) {
   els.segGhost.hidden = model.kind !== 'between'
   const modeName = { raw: 'delay held', model: 'rules', tables: 'tables' }[timesMode] || timesMode
   els.segFoot.textContent = model.kind === 'between' ? `${Math.round(live.segShown * 100)} % of the way · arrives ~${formatEpochHHMM(model.eta)} (${modeName})` : model.kind === 'waiting' ? `waiting to leave${model.target > now ? ` · ${clockLeft(model.target, now)}` : ''}` : model.target > now ? `in the station · leaves in ${clockLeft(model.target, now)}` : 'in the station · should be leaving'
-  const fs = focusState(els, live.data, model, now)
+  const fs = focusState(els, d, model, now)
   els.fsCard.hidden = !fs
   if (fs) {
-    els.fsA.textContent = fs.here
+    els.fsA.textContent = fs.origin
     els.fsB.textContent = fs.name
     const sig = fs.mids.map(m => m.name).join('|')
     if (els.fsDots.dataset.sig !== sig) {
       els.fsDots.dataset.sig = sig
-      els.fsDots.replaceChildren()
+      els.fsDots.replaceChildren(...fs.mids.map(m => {
+        const dot = el('span', ['tk-seg-mid'])
+        dot.style.left = `${m.frac * 100}%`
+        return dot
+      }))
     }
     fs.mids.forEach((m, k) => {
-      let dot = els.fsDots.children[k]
-      if (!dot) { dot = el('span', ['tk-seg-mid']); els.fsDots.append(dot) }
-      dot.style.left = `${m.frac * 100}%`
-      dot.title = `${m.name} · ~${formatEpochHHMM(m.at)}`
-      dot.classList.toggle('is-passed', now >= m.at)
+      const dot = els.fsDots.children[k]
+      dot.title = `${m.name}${m.at ? ` · ~${formatEpochHHMM(m.at)}` : ''}`
+      dot.classList.toggle('is-passed', m.idx <= els.hereIdx)
     })
-    const byTime = Math.min(0.98, Math.max(0, (now - fs.start) / (fs.end - fs.start)))
-    if (live.fsShown === undefined) live.fsShown = byTime
-    live.fsShown += (byTime - live.fsShown) * (1 - Math.exp(-dt / 1.2))
+    // where the train is on the fixed rail: at its stop, or part of the way to the next one
+    const inStation = model.kind !== 'between'
+    const target = Math.min(1, (els.hereIdx + (inStation ? 0 : live.segShown)) / fs.fi)
+    if (live.fsShown === undefined) live.fsShown = target
+    live.fsShown += (target - live.fsShown) * (1 - Math.exp(-dt / 1.2))
     els.fsTrain.style.left = `${live.fsShown * 100}%`
     els.fsDone.style.width = `${live.fsShown * 100}%`
-    els.fsFoot.textContent = now >= fs.end ? `should be at ${fs.name} now` : `${Math.round(live.fsShown * 100)} % of the way · ${fs.left} stop${fs.left > 1 ? 's' : ''} to go · arrives ~${formatEpochHHMM(fs.end)}`
+    els.fsTrain.classList.toggle('is-stopped', inStation) // in a station: the train sits on its stop, ringed; moving: it has motion lines
+    els.fsTrain.classList.toggle('is-moving', !inStation)
+    const left = `${fs.left} stop${fs.left > 1 ? 's' : ''} to go · arrives ~${formatEpochHHMM(fs.end)}`
+    const where = model.kind === 'between' ? `between ${niceName(model.here.stazione)} and ${niceName(model.next.stazione)}`
+      : `${model.kind === 'waiting' ? 'waiting at' : 'in the station'} ${niceName(model.here.stazione)}`
+    els.fsFoot.textContent = now >= fs.end ? `should be at ${fs.name} now` : `${where} · ${left}`
   }
   const ago = ms => {
     const m = Math.max(0, Math.round((now - ms) / 60000))
@@ -3408,6 +3426,7 @@ function glanceCard(d, now, pred, finalMs, lastPassed, live = false) {
 
 function renderTrainPage(d) {
   try { logPredictions(d) } catch { /* the log is a side note: it must never stop the page */ }
+  d = inferred(d) // from here on the page works on the estimate, the real data corrects it when it comes
   document.body.classList.toggle('view-nerd', trackingMode && nerdTrack)
   if (trackingMode && nerdTrack) {
     stopTracking()
