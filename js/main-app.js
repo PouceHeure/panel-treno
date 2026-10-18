@@ -358,28 +358,10 @@ function trackReliability(lastSeenMs, now = Date.now()) {
   return TRACK_TIERS.find(t => minutes < t.maxMin)
 }
 
-// Predicted times (see js/modules/model.js) for the stops of a train detail still ahead.
-// The train as it is most likely to be right now: the data, moved along on the predicted times where it lags behind
-// (see inferProgress in model.js). Worked out at most every two seconds per data set.
-const inferCache = { src: null, key: 0, out: null }
-function inferred(d, nowMs = Date.now()) {
-  const key = Math.floor(nowMs / 2000)
-  if (inferCache.src === d && inferCache.key === key) return inferCache.out
-  const { stops, steps } = inferProgress(d.fermate || [], d.ritardo || 0, { cls: trainClass(d), nowMs })
-  inferCache.src = d
-  inferCache.key = key
-  inferCache.out = steps ? { ...d, fermate: stops, inferredSteps: steps } : d
-  return inferCache.out
-}
-
-function predOf(d, nowMs = Date.now()) {
-  const stops = d.fermate || []
-  const lastPassed = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
-  const here = stops[lastPassed]
-  return predictStopTimes(stops, d.ritardo || 0, lastPassed, {
-    inStation: !!here && !here.partenzaReale, cls: trainClass(d), nowMs
-  })
-}
+// The train as it is now, and the times of its stops: both come from js/modules/model.js and are the only source of times
+// for every page, card and chart (see trainEstimate there).
+const inferred = trainEstimate
+const predOf = predictTrain
 
 // Where a train is right now, read from the times recorded at its last stops:
 // arrived and not left = in the station; left and not arrived at the next one = between the two.
@@ -388,13 +370,14 @@ function trainPosition(d, stops, lastPassed, delay, now = Date.now()) {
   const here = stops[lastPassed]
   const next = stops[lastPassed + 1]
   if (!here || !next) return null
+  const pred = predOf(d, now)
   if (here.partenzaReale) {
-    const eta = (predOf(d).get(lastPassed + 1) || {}).arrMs || (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
+    const eta = (pred.get(lastPassed + 1) || {}).arrMs || (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
     const span = eta - here.partenzaReale
     const progress = span > 0 ? Math.min(0.97, Math.max(0, (now - here.partenzaReale) / span)) : null
-    return { kind: 'between', from: here.stazione, to: next.stazione, since: here.partenzaReale, progress }
+    return { kind: 'between', from: here.stazione, to: next.stazione, since: here.partenzaReale, progress, eta }
   }
-  if (here.arrivoReale) return { kind: 'station', at: here.stazione, since: here.arrivoReale }
+  if (here.arrivoReale) return { kind: 'station', at: here.stazione, since: here.arrivoReale, leaveMs: pred.leaveMs || (here.partenza_teorica || here.programmata) + Math.max(delay, 0) * 60000 }
   return null
 }
 
@@ -1564,6 +1547,30 @@ function initViewToggle() {
 // =======================
 let trainRef = null // { number, from, date }
 let trainDetail = null
+let trainCorrection = null // { at, text }: the last time new data overturned what the page was showing
+
+// What the page shows about a train, to see afterwards what the data changed: where the train is, whether it has left, when
+// it gets to the end.
+function trainSnapshot(d, now) {
+  const e = trainEstimate(d, now)
+  const stops = e.fermate || []
+  const last = stops.reduce((l, f, i) => (f.actualFermataType === 1 ? i : l), -1)
+  const pred = predictTrain(e, now)
+  return { stops, last, left: last >= 0 && !!stops[last].partenzaReale, finalMs: (pred.get(stops.length - 1) || {}).arrMs || null }
+}
+
+// New data that contradicts what was shown is a correction, said as such: the train was not where it was shown, or has not
+// left yet, or will not arrive when it was said. Null when the new data only confirms.
+function describeCorrection(before, after) {
+  if (!before || !after || !before.stops.length) return null
+  const name = i => niceName(after.stops[i].stazione)
+  if (after.last < before.last) return `the train had not reached ${name(before.last)} yet`
+  if (after.last === before.last && before.left && !after.left && after.last >= 0) return `the train has not left ${name(after.last)} yet`
+  if (before.finalMs && after.finalMs && Math.abs(after.finalMs - before.finalMs) >= 2 * 60000) {
+    return `arrival at ${niceName(after.stops[after.stops.length - 1].stazione)} moved from ${formatEpochHHMM(before.finalMs)} to ${formatEpochHHMM(after.finalMs)}`
+  }
+  return null
+}
 let trainFocus = null // id of the stop the page is focused on (a stop ahead), from ?focus= and the drop-down
 
 // Index of the focus stop while it is still ahead of the train, else -1.
@@ -1687,7 +1694,7 @@ function trainStopEl(f, index, stops, detail, lastPassedIndex, pred) {
   if (passed && stopDelay > 0) meta.append(el('span', ['is-late'], ` · +${stopDelay} min`))
   if (index === lastPassedIndex) meta.append(el('span', ['is-here'], ' · last stop reached'))
   if (index === lastPassedIndex + 1 && !passed && !detail.arrivato) {
-    const eta = (arrSched || 0) + delayNow * 60000
+    const eta = guess ? guess.arrMs : (arrSched || 0) + delayNow * 60000 // the model's time, as in every other card
     if (eta) meta.append(el('span', ['is-here'], ` · next, ${untilLabel(eta)}`))
   }
   info.append(meta)
@@ -1753,7 +1760,7 @@ function passEl(det) {
 
 function betweenEl(position, next, delay, now) {
   const row = el('div', ['tv-between'])
-  const eta = (predOf(trainDetail).get(trainDetail.fermate.indexOf(next)) || {}).arrMs || (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000
+  const eta = position.eta
   const train = el('span', ['tv-between-train'])
   train.append(icon('bi-train-front-fill'))
   train.style.top = `calc((100% - 24px) * ${position.progress === null ? 0.5 : position.progress})`
@@ -1790,8 +1797,8 @@ function positionEl(position, now, lastSeenMs, here, next, delay) {
   }
   // how long until the next stop (or until the train leaves, when it is in a station)
   const when = position.kind === 'station'
-    ? { name: 'departs', ms: predOf(trainDetail).leaveMs || (here.partenza_teorica || here.programmata) + Math.max(delay, 0) * 60000 }
-    : { name: `reaches ${niceName(next.stazione)}`, ms: (predOf(trainDetail).get(trainDetail.fermate.indexOf(next)) || {}).arrMs || (next.arrivo_teorico || next.programmata) + Math.max(delay, 0) * 60000 }
+    ? { name: 'departs', ms: position.leaveMs }
+    : { name: `reaches ${niceName(next.stazione)}`, ms: position.eta }
   const left = untilLabel(when.ms, now)
   const eta = el('p', ['tv-position-eta'])
   eta.append(icon('bi-stopwatch'), el('strong', [], ` ${left === 'now' ? 'due now' : left}`), ` · ${when.name} ~${formatEpochHHMM(when.ms)}`)
@@ -2043,28 +2050,20 @@ function nerdTrackChart(d) {
   // predicted passing times: the filter's arrival at the next stop, then the timetable's gaps after it
   const hereStop = stops.indexOf(model.here)
   const nextS = hereStop >= 0 ? stops[hereStop + 1] : null
-  let nextArrival = model.eta
-  if (model.kind === 'between' && model.kal && Number.isFinite(model.kal.minToGo)) {
-    nextArrival = Math.min(now + 3 * 3600000, now + model.kal.minToGo * 60000)
-  }
   const modelPred = predOf(d)
   const modelAt = i => (modelPred.get(i) || {}).arrMs
-  // the Kalman arrival knows nothing of the tables: the stops after it are shifted from the rules' arrival at the next stop, so that
-  // the table's correction of every stop counts (not only its difference with the next one). model.eta already comes from the model.
-  const fromKalman = model.kind === 'between' && model.kal && Number.isFinite(model.kal.minToGo)
-  const rulesNext = fromKalman ? (withTimesMode('model', () => predOf(d)).get(hereStop + 1) || {}).arrMs : modelAt(hereStop + 1)
   const predArr = new Map() // stop index -> predicted arrival (ms), filled below once the dwell is known
   const predAt = i => (predArr.has(i) ? predArr.get(i) : null)
   const extra = Math.max(d.ritardo || 0, 0) * 60000
   // how long the model keeps the train in a stop ahead: the same for the predicted line and the band
   const dwellAt = (idx, f) => { const m = modelPred.get(idx); return m && m.depMs && m.arrMs ? m.depMs - m.arrMs : depOf(f) - arrOf(f) }
-  // in order, from now: a stop is never reached before the train could have left the one before (a negative table correction
-  // would otherwise put the next arrival in the past, and the line would go back in time)
-  if (nextS && nextArrival && rulesNext) {
+  // the times of the model, as everywhere else on the page; never before now, and a stop is never reached before the train
+  // could have left the one before
+  if (nextS) {
     let free = now + 15000
     for (let i = hereStop + 1; i < stops.length; i++) {
       if (!modelAt(i)) break
-      const at = Math.max(nextArrival + modelAt(i) - rulesNext, free)
+      const at = Math.max(modelAt(i), free)
       predArr.set(i, at)
       free = at + dwellAt(i, stops[i]) + 60000
     }
@@ -2077,7 +2076,8 @@ function nerdTrackChart(d) {
   const nextStop = stops[Math.min(stops.length - 1, Math.floor(sNow) + 1)]
   const tMin = winMs ? winStart : firstT - 2 * 60000
   const focusT = fi >= 0 ? (modelAt(fi) || arrOf(stops[fi]) + extra) + 2 * 60000 : 0
-  const tMax = winMs ? winStart + winMs : Math.max(now + 3 * 60000, arrOf(nextStop) + extra + 2 * 60000, tMin + 20 * 60000, focusT)
+  const nextAt = modelAt(Math.min(stops.length - 1, Math.floor(sNow) + 1)) || arrOf(nextStop) + extra
+  const tMax = winMs ? winStart + winMs : Math.max(now + 3 * 60000, nextAt + 2 * 60000, tMin + 20 * 60000, focusT)
   const LEFT = chartLeft()
   const RIGHT = 12
   const TOP = 14
@@ -3029,6 +3029,7 @@ function stopTracking() {
 
 // What the timetable and the last detections say about the train at time `now`.
 function trackingModel(d, now) {
+  d = trainEstimate(d, now)
   const stops = d.fermate || []
   const delay = d.ritardo || 0
   const lastPassed = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
@@ -3413,7 +3414,8 @@ function glanceCard(d, now, pred, finalMs, lastPassed, live = false) {
     row.append(el('span', ['glance-big'], ms ? formatEpochHHMM(ms) : '—'))
     // measured on days the model was not fitted on; each model has its own range (the tables are closer to the truth)
     const band = bands && bands[String(Math.min(Math.max(ahead, 1), 8))]
-    if (ms && band && modelOn()) row.append(el('span', ['glance-range'], `${formatEpochHHMM(ms + band.lo * 60000)}–${formatEpochHHMM(ms + band.hi * 60000)}`))
+    // a time still ahead cannot be earlier than now, whatever the range says
+    if (ms && band && modelOn()) row.append(el('span', ['glance-range'], `${formatEpochHHMM(ms > now ? Math.max(ms + band.lo * 60000, now) : ms + band.lo * 60000)}–${formatEpochHHMM(ms + band.hi * 60000)}`))
     col.append(row)
     // how long to go: to the second on the live tab (the page ticks it), to the minute on the others
     const count = el('div', ['glance-count'], ms ? (live ? clockLeft(ms, now) : untilLabel(ms, now)) : '')
@@ -3433,6 +3435,7 @@ function glanceCard(d, now, pred, finalMs, lastPassed, live = false) {
   cols.classList.toggle('is-single', cols.children.length === 1)
   card.append(cols)
   const chips = el('div', ['glance-chips'])
+  if (trainCorrection && now - trainCorrection.at < 120000) chips.append(chip(`Correction · ${trainCorrection.text}`, 'is-correction'))
   if (d.oraUltimoRilevamento) chips.append(chip(`seen ${formatEpochHHMM(d.oraUltimoRilevamento)}${d.stazioneUltimoRilevamento ? ` · ${niceName(d.stazioneUltimoRilevamento)}` : ''}`, 'is-seen'))
   chips.append(chip(`estimate · ${modelOn() ? 'model' : 'raw'}`, 'is-estimate'))
   card.append(chips)
@@ -3551,7 +3554,11 @@ async function loadTrainPage() {
   await stationsReady
   repairStopTimes(data.fermate)
   const previous = trainDetail
+  const seenAt = Date.now()
+  const before = previous ? trainSnapshot(previous, seenAt) : null
   trainDetail = data
+  const note = describeCorrection(before, trainSnapshot(data, seenAt))
+  if (note) trainCorrection = { at: seenAt, text: note }
   trainFetchedAt = Date.now()
   recordDetection(data)
   recordFetch(previous, data)

@@ -196,11 +196,13 @@ function summarizeTrain(d, now) {
   const lastIndex = stops.length - 1
   const base = { label: `${(d.categoria || '').trim()} ${d.numeroTreno}`.trim(), destination: d.destinazione || stops[lastIndex].stazione, delay: d.ritardo || 0 }
   if (d.provvedimento === 1) return { ...base, state: 'Cancelled' }
-  const lastPassed = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
+  d = trainEstimate(d, now) // the same estimate as on the train page
+  const est = d.fermate
+  const lastPassed = est.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
   if (d.arrivato || lastPassed >= lastIndex) return { ...base, state: 'Arrived' }
-  const here = stops[Math.max(lastPassed, 0)]
+  const here = est[Math.max(lastPassed, 0)]
   const inStation = lastPassed >= 0 && !here.partenzaReale
-  const pred = predictStopTimes(stops, d.ritardo || 0, lastPassed, { inStation, cls: trainClass(d), nowMs: now })
+  const pred = predictTrain(d, now)
   const nextIndex = Math.max(lastPassed, 0) + 1
   const final = pred.get(lastIndex)
   const next = pred.get(nextIndex)

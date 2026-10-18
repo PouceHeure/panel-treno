@@ -295,6 +295,31 @@ function inferProgress(stops, delayNow, opts = {}) {
   return { stops: list, steps }
 }
 
+// THE one place where the data of a train becomes "the train as it is now" and where its times come from. Every page,
+// card and chart reads a train through these two functions, so they all show the same stops, the same position and the same
+// times. `trainEstimate` moves the data along on the predictions where it lags (see inferProgress), `predictTrain` gives the
+// times of the stops ahead for that estimate. The result of the first is flagged (`estimated`) so that it is never moved
+// along twice; it is a copy, the data itself is never changed.
+const estimateCache = { src: null, key: 0, out: null }
+function trainEstimate(d, nowMs = Date.now()) {
+  if (!d || d.estimated) return d
+  const key = Math.floor(nowMs / 2000)
+  if (estimateCache.src === d && estimateCache.key === key) return estimateCache.out
+  const { stops, steps } = inferProgress(d.fermate || [], d.ritardo || 0, { cls: trainClass(d), nowMs })
+  estimateCache.src = d
+  estimateCache.key = key
+  estimateCache.out = { ...d, fermate: stops, estimated: true, inferredSteps: steps }
+  return estimateCache.out
+}
+
+function predictTrain(d, nowMs = Date.now()) {
+  const e = trainEstimate(d, nowMs)
+  const stops = (e && e.fermate) || []
+  const lastPassed = stops.reduce((last, f, i) => (f.actualFermataType === 1 ? i : last), -1)
+  const here = stops[lastPassed]
+  return predictStopTimes(stops, (e && e.ritardo) || 0, lastPassed, { inStation: !!here && !here.partenzaReale, cls: trainClass(e), nowMs })
+}
+
 // Runs `fn` as if the times mode were `mode`, to compare the two on the same train.
 function withTimesMode(mode, fn) {
   const previous = timesMode
@@ -306,7 +331,7 @@ loadCorrections()
 
 if (typeof module !== 'undefined') {
   module.exports = {
-    delayAt, predictArrival, predictStopTimes, repairStopTimes, inferProgress, correctionFor, correctionInfo, stationDelay, withTimesMode, dwellExpected, motionProfile,
+    delayAt, predictArrival, predictStopTimes, repairStopTimes, inferProgress, trainEstimate, predictTrain, correctionFor, correctionInfo, stationDelay, withTimesMode, dwellExpected, motionProfile,
     setCorrectionsForTests: table => { corrections = table }
   }
 }

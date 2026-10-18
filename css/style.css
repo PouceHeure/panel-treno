@@ -1468,3 +1468,6 @@ html { scrollbar-gutter: stable; }
 /* the focus picture: in a station the train sits ringed on its stop, moving it trails motion lines */
 .tk-seg-train.is-stopped::after { content: ""; position: absolute; inset: 0.1rem; border: 2px solid var(--accent); border-radius: 50%; opacity: 0.5; width: auto; height: auto; bottom: auto; left: 0; }
 .tk-seg-train.is-moving::before { content: ""; position: absolute; right: 100%; top: 50%; width: 1.1rem; height: 2px; margin-right: -0.2rem; background: linear-gradient(to left, var(--accent), transparent); }
+
+/* new data that overturns what was shown: said as a correction, for two minutes */
+.tv-chip.is-correction { background: color-mix(in srgb, var(--late) 12%, var(--surface)); color: var(--late); border: 1px solid color-mix(in srgb, var(--late) 45%, transparent); font-weight: 600; }

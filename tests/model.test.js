@@ -111,3 +111,22 @@ test('the train is moved along on the predicted times while the data lags, and t
   assert.equal(list[1].actualFermataType, 0, 'the data itself is not changed')
   assert.equal(M.withTimesMode('model', () => M.inferProgress(list, 0, { nowMs: min(500) })).steps, 4, 'no more than four steps on a guess')
 })
+
+test('one estimate for every reader: estimating twice changes nothing, and the times come from that estimate', () => {
+  const t0 = Date.UTC(2026, 9, 17, 8, 0)
+  const min = m => t0 + m * 60000
+  const mk = (id, a, d) => ({ id, arrivo_teorico: min(a), partenza_teorica: min(d), actualFermataType: 0 })
+  const list = [mk('A', 0, 1), mk('B', 10, 11), mk('C', 20, 21)]
+  list[0].actualFermataType = 1
+  list[0].partenzaReale = min(1)
+  const d = { fermate: list, ritardo: 0, numeroTreno: 1 }
+  const now = min(13) // past the predicted arrival at B
+  M.withTimesMode('model', () => {
+    const e = M.trainEstimate(d, now)
+    assert.equal(e.fermate[1].actualFermataType, 1, 'taken as arrived at B')
+    assert.equal(M.trainEstimate(e, now), e, 'an estimate is not estimated again')
+    assert.equal(d.fermate[1].actualFermataType, 0, 'the data itself is untouched')
+    assert.deepEqual([...M.predictTrain(d, now).keys()], [...M.predictTrain(e, now).keys()])
+    assert.equal(M.predictTrain(d, now).get(2).arrMs, M.predictTrain(e, now).get(2).arrMs)
+  })
+})
